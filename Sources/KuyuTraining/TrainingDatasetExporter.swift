@@ -7,14 +7,24 @@ public struct TrainingDatasetExporter {
     public init() {}
 
     @discardableResult
-    public func write(entries: [ScenarioLogEntry], to directory: URL) throws -> [ScenarioKey: URL] {
+    public func write(
+        entries: [ScenarioLogEntry],
+        to directory: URL,
+        observationByScenarioKey: [ScenarioKey: TrainingObservationMetadata] = [:],
+        provenanceByScenarioKey: [ScenarioKey: TrainingProvenanceManifest] = [:]
+    ) throws -> [ScenarioKey: URL] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let writer = TrainingDatasetWriter()
         var outputs: [ScenarioKey: URL] = [:]
 
         for entry in entries {
             let subdir = directory.appendingPathComponent(subdirectoryName(for: entry.key), isDirectory: true)
-            let url = try writer.write(log: entry.log, to: subdir)
+            let url = try writer.write(
+                log: entry.log,
+                to: subdir,
+                observation: observationByScenarioKey[entry.key],
+                provenance: provenanceByScenarioKey[entry.key]
+            )
             outputs[entry.key] = url
         }
 

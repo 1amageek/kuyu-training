@@ -3,6 +3,10 @@ import KuyuPhysics
 import KuyuScenarios
 
 public struct ParallelDataCollector {
+    public enum CollectionError: Error, Equatable {
+        case countMismatch(logsCount: Int, definitionsCount: Int)
+    }
+
     public let buffer: OnlineDataBuffer
     public let evaluator: ExtendedScenarioEvaluator
 
@@ -24,7 +28,10 @@ public struct ParallelDataCollector {
     public func collect(
         logs: [SimulationLog],
         definitions: [ReferenceQuadrotorScenarioDefinition]
-    ) -> CollectionResult {
+    ) throws -> CollectionResult {
+        guard logs.count == definitions.count else {
+            throw CollectionError.countMismatch(logsCount: logs.count, definitionsCount: definitions.count)
+        }
         var evaluations: [ExtendedScenarioEvaluation] = []
         var totalRecords = 0
 

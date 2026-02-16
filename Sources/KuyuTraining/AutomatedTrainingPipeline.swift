@@ -4,7 +4,7 @@ import KuyuScenarios
 
 /// Orchestrates the full generate-run-evaluate-collect training loop.
 ///
-/// Integrates ParametricScenarioGenerator, ParallelScenarioRunner,
+/// Integrates ParametricScenarioGenerator, ScenarioRunner,
 /// ExtendedScenarioEvaluator, ParallelDataCollector, and CurriculumController
 /// into a single iterative pipeline.
 public struct AutomatedTrainingPipeline<Runner: PlantScenarioRunner>
@@ -42,7 +42,7 @@ where Runner.Scenario == ReferenceQuadrotorScenarioDefinition {
     public var curriculum: CurriculumController
     public let buffer: OnlineDataBuffer
     public let labeler: AutoLabeler
-    public let scenarioRunner: ParallelScenarioRunner<Runner>
+    public let scenarioRunner: ScenarioRunner<Runner>
     public let collector: ParallelDataCollector
 
     public init(
@@ -50,7 +50,7 @@ where Runner.Scenario == ReferenceQuadrotorScenarioDefinition {
         curriculum: CurriculumController,
         buffer: OnlineDataBuffer,
         labeler: AutoLabeler = AutoLabeler(),
-        scenarioRunner: ParallelScenarioRunner<Runner>,
+        scenarioRunner: ScenarioRunner<Runner>,
         collector: ParallelDataCollector
     ) {
         self.generator = generator
@@ -94,7 +94,7 @@ where Runner.Scenario == ReferenceQuadrotorScenarioDefinition {
         )
 
         // 3. Collect data and evaluate
-        let collectionResult = collector.collect(logs: logs, definitions: definitions)
+        let collectionResult = try collector.collect(logs: logs, definitions: definitions)
 
         // 4. Label results
         let labels = labeler.labelAll(evaluations: collectionResult.evaluations)

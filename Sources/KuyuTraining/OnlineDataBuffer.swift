@@ -10,6 +10,10 @@ import Synchronization
 /// accumulates training records during simulation and supports random
 /// sampling for online/on-policy training.
 public final class OnlineDataBuffer: Sendable {
+    public enum ValidationError: Error, Equatable {
+        case nonPositiveMaxRecords
+    }
+
     private struct Storage: Sendable {
         var records: [TrainingDatasetRecord]
         var writeIndex: Int
@@ -27,7 +31,8 @@ public final class OnlineDataBuffer: Sendable {
 
     private let storage: Mutex<Storage>
 
-    public init(maxRecords: Int) {
+    public init(maxRecords: Int) throws {
+        guard maxRecords > 0 else { throw ValidationError.nonPositiveMaxRecords }
         self.storage = Mutex(Storage(maxRecords: maxRecords))
     }
 

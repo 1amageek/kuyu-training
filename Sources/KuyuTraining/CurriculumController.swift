@@ -10,6 +10,11 @@ import KuyuScenarios
 public struct CurriculumController {
 
     public struct Config: Sendable, Equatable {
+        public enum ValidationError: Error, Equatable {
+            case nonPositive(String)
+            case outOfRange(String)
+        }
+
         public let totalLevels: Int
         public let scenariosPerLevel: Int
         public let advanceThreshold: Double
@@ -20,12 +25,20 @@ public struct CurriculumController {
             scenariosPerLevel: Int = 20,
             advanceThreshold: Double = 0.8,
             maxEpochsPerLevel: Int = 10
-        ) {
+        ) throws {
+            guard totalLevels > 0 else { throw ValidationError.nonPositive("totalLevels") }
+            guard scenariosPerLevel > 0 else { throw ValidationError.nonPositive("scenariosPerLevel") }
+            guard maxEpochsPerLevel > 0 else { throw ValidationError.nonPositive("maxEpochsPerLevel") }
+            guard advanceThreshold > 0, advanceThreshold <= 1.0 else { throw ValidationError.outOfRange("advanceThreshold") }
             self.totalLevels = totalLevels
             self.scenariosPerLevel = scenariosPerLevel
             self.advanceThreshold = advanceThreshold
             self.maxEpochsPerLevel = maxEpochsPerLevel
         }
+
+        public static let `default`: Config = {
+            do { return try Config() } catch { preconditionFailure("Invalid default Config: \(error)") }
+        }()
     }
 
     public enum AdvanceResult: Sendable, Equatable {
@@ -46,7 +59,7 @@ public struct CurriculumController {
         public let finalPassRate: Double
     }
 
-    public init(config: Config = Config()) {
+    public init(config: Config = .default) {
         self.config = config
         self.currentLevel = 0
         self.epochsAtCurrentLevel = 0

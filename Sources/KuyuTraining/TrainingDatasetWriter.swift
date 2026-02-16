@@ -6,7 +6,12 @@ import KuyuScenarios
 public struct TrainingDatasetWriter {
     public init() {}
 
-    public func write(log: SimulationLog, to directory: URL) throws -> URL {
+    public func write(
+        log: SimulationLog,
+        to directory: URL,
+        observation: TrainingObservationMetadata? = nil,
+        provenance: TrainingProvenanceManifest? = nil
+    ) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let records = buildRecords(from: log)
@@ -20,7 +25,9 @@ public struct TrainingDatasetWriter {
             driveCount: maxDriveCount(records),
             recordCount: records.count,
             failureReason: log.failureReason?.rawValue,
-            failureTime: log.failureTime
+            failureTime: log.failureTime,
+            observation: observation,
+            provenance: provenance
         )
 
         let encoder = JSONEncoder()
@@ -33,18 +40,18 @@ public struct TrainingDatasetWriter {
         let recordsURL = directory.appendingPathComponent("records.jsonl")
         FileManager.default.createFile(atPath: recordsURL.path, contents: nil)
         let handle = try FileHandle(forWritingTo: recordsURL)
-        defer {
-            do {
-                try handle.close()
-            } catch {
-                assertionFailure("Failed to close training dataset handle: \(error)")
-            }
-        }
 
-        for record in records {
-            let data = try encoder.encode(record)
-            handle.write(data)
-            handle.write(Data("\n".utf8))
+        do {
+            for record in records {
+                let data = try encoder.encode(record)
+                handle.write(data)
+                handle.write(Data("\n".utf8))
+            }
+            try handle.close()
+        } catch {
+            // Attempt to close on encode failure before re-throwing
+            try? handle.close()
+            throw error
         }
 
         return directory

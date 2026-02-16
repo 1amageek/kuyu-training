@@ -4,6 +4,10 @@ import KuyuPhysics
 import KuyuScenarios
 
 public struct TrainingDatasetWriter {
+    public enum WriteError: Error {
+        case closeFailedAfterWriteError(writeError: any Error, closeError: any Error)
+    }
+
     public init() {}
 
     public func write(
@@ -48,10 +52,13 @@ public struct TrainingDatasetWriter {
                 handle.write(Data("\n".utf8))
             }
             try handle.close()
-        } catch {
-            // Attempt to close on encode failure before re-throwing
-            try? handle.close()
-            throw error
+        } catch let writeError {
+            do {
+                try handle.close()
+            } catch let closeError {
+                throw WriteError.closeFailedAfterWriteError(writeError: writeError, closeError: closeError)
+            }
+            throw writeError
         }
 
         return directory

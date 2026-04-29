@@ -99,6 +99,9 @@ public struct TrainingProvenanceManifest: Sendable, Codable, Equatable {
 }
 
 public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
+    public static let currentSchemaVersion = 2
+
+    public let schemaVersion: Int
     public let scenarioId: String
     public let seed: UInt64
     public let timeStep: Double
@@ -109,6 +112,13 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
     public let recordCount: Int
     public let failureReason: String?
     public let failureTime: Double?
+    public let episodeId: String?
+    public let policyId: String?
+    public let rewardSum: Double?
+    public let done: Bool?
+    public let truncated: Bool?
+    public let terminalReason: String?
+    public let rewardDescriptor: RewardDescriptor?
     public let observation: TrainingObservationMetadata?
     public let provenance: TrainingProvenanceManifest?
 
@@ -121,11 +131,20 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         channelCount: Int,
         driveCount: Int,
         recordCount: Int,
+        schemaVersion: Int = TrainingDatasetMetadata.currentSchemaVersion,
         failureReason: String? = nil,
         failureTime: Double? = nil,
+        episodeId: String? = nil,
+        policyId: String? = nil,
+        rewardSum: Double? = nil,
+        done: Bool? = nil,
+        truncated: Bool? = nil,
+        terminalReason: String? = nil,
+        rewardDescriptor: RewardDescriptor? = nil,
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
     ) {
+        self.schemaVersion = schemaVersion
         self.scenarioId = scenarioId
         self.seed = seed
         self.timeStep = timeStep
@@ -136,8 +155,62 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         self.recordCount = recordCount
         self.failureReason = failureReason
         self.failureTime = failureTime
+        self.episodeId = episodeId
+        self.policyId = policyId
+        self.rewardSum = rewardSum
+        self.done = done
+        self.truncated = truncated
+        self.terminalReason = terminalReason
+        self.rewardDescriptor = rewardDescriptor
         self.observation = observation
         self.provenance = provenance
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case scenarioId
+        case seed
+        case timeStep
+        case determinismTier
+        case configHash
+        case channelCount
+        case driveCount
+        case recordCount
+        case failureReason
+        case failureTime
+        case episodeId
+        case policyId
+        case rewardSum
+        case done
+        case truncated
+        case terminalReason
+        case rewardDescriptor
+        case observation
+        case provenance
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        scenarioId = try container.decode(String.self, forKey: .scenarioId)
+        seed = try container.decode(UInt64.self, forKey: .seed)
+        timeStep = try container.decode(Double.self, forKey: .timeStep)
+        determinismTier = try container.decode(String.self, forKey: .determinismTier)
+        configHash = try container.decode(String.self, forKey: .configHash)
+        channelCount = try container.decode(Int.self, forKey: .channelCount)
+        driveCount = try container.decode(Int.self, forKey: .driveCount)
+        recordCount = try container.decode(Int.self, forKey: .recordCount)
+        failureReason = try container.decodeIfPresent(String.self, forKey: .failureReason)
+        failureTime = try container.decodeIfPresent(Double.self, forKey: .failureTime)
+        episodeId = try container.decodeIfPresent(String.self, forKey: .episodeId)
+        policyId = try container.decodeIfPresent(String.self, forKey: .policyId)
+        rewardSum = try container.decodeIfPresent(Double.self, forKey: .rewardSum)
+        done = try container.decodeIfPresent(Bool.self, forKey: .done)
+        truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated)
+        terminalReason = try container.decodeIfPresent(String.self, forKey: .terminalReason)
+        rewardDescriptor = try container.decodeIfPresent(RewardDescriptor.self, forKey: .rewardDescriptor)
+        observation = try container.decodeIfPresent(TrainingObservationMetadata.self, forKey: .observation)
+        provenance = try container.decodeIfPresent(TrainingProvenanceManifest.self, forKey: .provenance)
     }
 }
 
@@ -184,16 +257,82 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
     public let sensors: [TrainingSensorSample]
     public let driveIntents: [TrainingDriveIntent]
     public let reflexCorrections: [TrainingReflexCorrection]
+    public let physicsState: [Double]?
+    public let actualState: [Double]?
+    public let actionValues: [Double]?
+    public let continueValue: Double?
+    public let reward: Double?
+    public let done: Bool?
+    public let truncated: Bool?
+    public let episodeId: String?
+    public let policyId: String?
 
     public init(
         time: Double,
         sensors: [TrainingSensorSample],
         driveIntents: [TrainingDriveIntent],
-        reflexCorrections: [TrainingReflexCorrection]
+        reflexCorrections: [TrainingReflexCorrection],
+        physicsState: [Double]? = nil,
+        actualState: [Double]? = nil,
+        actionValues: [Double]? = nil,
+        continueValue: Double? = nil,
+        reward: Double? = nil,
+        done: Bool? = nil,
+        truncated: Bool? = nil,
+        episodeId: String? = nil,
+        policyId: String? = nil
     ) {
         self.time = time
         self.sensors = sensors
         self.driveIntents = driveIntents
         self.reflexCorrections = reflexCorrections
+        self.physicsState = physicsState
+        self.actualState = actualState
+        self.actionValues = actionValues
+        self.continueValue = continueValue
+        self.reward = reward
+        self.done = done
+        self.truncated = truncated
+        self.episodeId = episodeId
+        self.policyId = policyId
+    }
+}
+
+public struct TrainingDataset: Sendable, Equatable {
+    public static let supportedSchemaVersions: Set<Int> = [1, 2]
+
+    public enum LoadError: Error, Equatable {
+        case unsupportedSchemaVersion(found: Int, supported: [Int])
+    }
+
+    public let metadata: TrainingDatasetMetadata
+    public let records: [TrainingDatasetRecord]
+
+    public init(metadata: TrainingDatasetMetadata, records: [TrainingDatasetRecord]) {
+        self.metadata = metadata
+        self.records = records
+    }
+
+    public static func load(from directory: URL) throws -> TrainingDataset {
+        let decoder = JSONDecoder()
+        let metadataURL = directory.appendingPathComponent("meta.json")
+        let recordsURL = directory.appendingPathComponent("records.jsonl")
+        let metadata = try decoder.decode(
+            TrainingDatasetMetadata.self,
+            from: Data(contentsOf: metadataURL)
+        )
+        guard supportedSchemaVersions.contains(metadata.schemaVersion) else {
+            throw LoadError.unsupportedSchemaVersion(
+                found: metadata.schemaVersion,
+                supported: Array(supportedSchemaVersions).sorted()
+            )
+        }
+        let lines = try String(contentsOf: recordsURL, encoding: .utf8)
+            .split(separator: "\n")
+            .filter { !$0.isEmpty }
+        let records = try lines.map { line in
+            try decoder.decode(TrainingDatasetRecord.self, from: Data(line.utf8))
+        }
+        return TrainingDataset(metadata: metadata, records: records)
     }
 }

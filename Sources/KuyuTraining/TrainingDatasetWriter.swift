@@ -64,8 +64,72 @@ public struct TrainingDatasetWriter {
         return directory
     }
 
+    public func write(
+        episode: RolloutEpisode,
+        timeStep: Double,
+        determinismTier: String,
+        to directory: URL,
+        observation: TrainingObservationMetadata? = nil,
+        provenance: TrainingProvenanceManifest? = nil
+    ) throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let records = buildRecords(from: episode)
+        let metadata = TrainingDatasetMetadata(
+            scenarioId: episode.scenarioId,
+            seed: episode.seed,
+            timeStep: timeStep,
+            determinismTier: determinismTier,
+            configHash: episode.configHash,
+            channelCount: maxChannelCount(records),
+            driveCount: maxDriveCount(records),
+            recordCount: records.count,
+            failureReason: episode.failureReason,
+            failureTime: episode.failureTime,
+            episodeId: episode.episodeId,
+            policyId: episode.policyId,
+            rewardSum: episode.rewardSum,
+            done: episode.done,
+            truncated: episode.truncated,
+            terminalReason: episode.terminalReason,
+            rewardDescriptor: episode.rewardDescriptor,
+            observation: observation,
+            provenance: provenance
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+
+        let metaURL = directory.appendingPathComponent("meta.json")
+        let metaData = try encoder.encode(metadata)
+        try metaData.write(to: metaURL, options: [.atomic])
+
+        let recordsURL = directory.appendingPathComponent("records.jsonl")
+        FileManager.default.createFile(atPath: recordsURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: recordsURL)
+
+        do {
+            for record in records {
+                let data = try encoder.encode(record)
+                handle.write(data)
+                handle.write(Data("\n".utf8))
+            }
+            try handle.close()
+        } catch let writeError {
+            do {
+                try handle.close()
+            } catch let closeError {
+                throw WriteError.closeFailedAfterWriteError(writeError: writeError, closeError: closeError)
+            }
+            throw writeError
+        }
+
+        return directory
+    }
+
     private func buildRecords(from log: SimulationLog) -> [TrainingDatasetRecord] {
-        log.events.map { event in
+        var lastDriveIntents: [TrainingDriveIntent] = []
+        return log.events.map { event in
             let sensors = event.sensorSamples.map { sample in
                 TrainingSensorSample(
                     channelIndex: sample.channelIndex,
@@ -73,12 +137,13 @@ public struct TrainingDatasetWriter {
                     timestamp: sample.timestamp
                 )
             }
-            let drives = event.driveIntents.map { intent in
-                TrainingDriveIntent(
-                    driveIndex: intent.index.rawValue,
-                    value: intent.activation,
-                    parameters: intent.parameters
-                )
+            let currentDrives = driveIntents(from: event)
+            let drives: [TrainingDriveIntent]
+            if currentDrives.isEmpty {
+                drives = lastDriveIntents
+            } else {
+                drives = currentDrives
+                lastDriveIntents = currentDrives
             }
             let reflex = event.reflexCorrections.map { correction in
                 TrainingReflexCorrection(
@@ -97,6 +162,51 @@ public struct TrainingDatasetWriter {
         }
     }
 
+    private func buildRecords(from episode: RolloutEpisode) -> [TrainingDatasetRecord] {
+        var lastDriveIntents: [TrainingDriveIntent] = []
+        return episode.steps.enumerated().map { index, step in
+            let event = step.log
+            let sensors = event.sensorSamples.map { sample in
+                TrainingSensorSample(
+                    channelIndex: sample.channelIndex,
+                    value: sample.value,
+                    timestamp: sample.timestamp
+                )
+            }
+            let currentDrives = driveIntents(from: event)
+            let drives: [TrainingDriveIntent]
+            if currentDrives.isEmpty {
+                drives = lastDriveIntents
+            } else {
+                drives = currentDrives
+                lastDriveIntents = currentDrives
+            }
+            let reflex = event.reflexCorrections.map { correction in
+                TrainingReflexCorrection(
+                    driveIndex: correction.driveIndex.rawValue,
+                    clamp: correction.clampMultiplier,
+                    damping: correction.damping,
+                    delta: correction.delta
+                )
+            }
+            return TrainingDatasetRecord(
+                time: event.time.time,
+                sensors: sensors,
+                driveIntents: drives,
+                reflexCorrections: reflex,
+                physicsState: physicsPredictionState(for: index, in: episode.steps),
+                actualState: stateVector(from: step.observation.plantState),
+                actionValues: actionValues(from: event),
+                continueValue: (step.done || step.truncated) ? 0.0 : 1.0,
+                reward: step.reward,
+                done: step.done,
+                truncated: step.truncated,
+                episodeId: episode.episodeId,
+                policyId: episode.policyId
+            )
+        }
+    }
+
     private func maxChannelCount(_ records: [TrainingDatasetRecord]) -> Int {
         let maxIndex = records.flatMap { $0.sensors }.map { Int($0.channelIndex) }.max() ?? -1
         return maxIndex + 1
@@ -105,5 +215,89 @@ public struct TrainingDatasetWriter {
     private func maxDriveCount(_ records: [TrainingDatasetRecord]) -> Int {
         let maxIndex = records.flatMap { $0.driveIntents }.map { Int($0.driveIndex) }.max() ?? -1
         return maxIndex + 1
+    }
+
+    private func driveIntents(from event: WorldStepLog) -> [TrainingDriveIntent] {
+        if !event.driveIntents.isEmpty {
+            return event.driveIntents.map { intent in
+                TrainingDriveIntent(
+                    driveIndex: intent.index.rawValue,
+                    value: intent.activation,
+                    parameters: intent.parameters
+                )
+            }
+        }
+
+        return event.actuatorValues
+            .sorted { $0.index.rawValue < $1.index.rawValue }
+            .map { value in
+                TrainingDriveIntent(
+                    driveIndex: value.index.rawValue,
+                    value: value.value,
+                    parameters: []
+                )
+            }
+    }
+
+    private func stateVector(from snapshot: PlantStateSnapshot) -> [Double] {
+        let root = snapshot.root
+        return [
+            root.position.x,
+            root.position.y,
+            root.position.z,
+            root.velocity.x,
+            root.velocity.y,
+            root.velocity.z,
+            root.orientation.w,
+            root.orientation.x,
+            root.orientation.y,
+            root.orientation.z,
+            root.angularVelocity.x,
+            root.angularVelocity.y,
+            root.angularVelocity.z,
+        ]
+    }
+
+    private func physicsPredictionState(for index: Int, in steps: [EnvironmentStep]) -> [Double] {
+        guard index > 0, steps.indices.contains(index), steps.indices.contains(index - 1) else {
+            return stateVector(from: steps[index].observation.plantState)
+        }
+        let previous = steps[index - 1]
+        let current = steps[index]
+        let dt = max(0.0, current.observation.time.time - previous.observation.time.time)
+        return predictedStateVector(
+            from: previous.observation.plantState,
+            dt: dt
+        )
+    }
+
+    private func predictedStateVector(from snapshot: PlantStateSnapshot, dt: Double) -> [Double] {
+        let root = snapshot.root
+        return [
+            root.position.x + root.velocity.x * dt,
+            root.position.y + root.velocity.y * dt,
+            root.position.z + root.velocity.z * dt,
+            root.velocity.x,
+            root.velocity.y,
+            root.velocity.z,
+            root.orientation.w,
+            root.orientation.x,
+            root.orientation.y,
+            root.orientation.z,
+            root.angularVelocity.x,
+            root.angularVelocity.y,
+            root.angularVelocity.z,
+        ]
+    }
+
+    private func actionValues(from event: WorldStepLog) -> [Double] {
+        if !event.actuatorValues.isEmpty {
+            return event.actuatorValues
+                .sorted { $0.index.rawValue < $1.index.rawValue }
+                .map(\.value)
+        }
+        return event.driveIntents
+            .sorted { $0.index.rawValue < $1.index.rawValue }
+            .map(\.activation)
     }
 }

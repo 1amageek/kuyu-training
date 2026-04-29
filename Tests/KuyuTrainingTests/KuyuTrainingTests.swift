@@ -346,7 +346,7 @@ struct AutoLabelerTests {
 struct TrainingDatasetWriterTests {
 
     @Test func writesMetaAndRecordsFiles() throws {
-        let dir = makeTemporaryDirectory()
+        let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }
 
         let log = try makeSimulationLog(steps: 3)
@@ -361,7 +361,7 @@ struct TrainingDatasetWriterTests {
     }
 
     @Test func metadataMatchesInput() throws {
-        let dir = makeTemporaryDirectory()
+        let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }
 
         let log = try makeSimulationLog(steps: 4)
@@ -377,7 +377,7 @@ struct TrainingDatasetWriterTests {
     }
 
     @Test func recordsJsonlHasOneLinePerEvent() throws {
-        let dir = makeTemporaryDirectory()
+        let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }
 
         let log = try makeSimulationLog(steps: 5)
@@ -397,7 +397,7 @@ struct TrainingDatasetWriterTests {
     }
 
     @Test func channelAndDriveCountsReflectMaxIndices() throws {
-        let dir = makeTemporaryDirectory()
+        let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }
 
         let log = try makeSimulationLog(steps: 2, sensorChannels: 4, driveCount: 3)
@@ -410,8 +410,45 @@ struct TrainingDatasetWriterTests {
         #expect(meta.driveCount == 3)
     }
 
+    @Test func actuatorOnlyTeacherActionsBecomeTrainingDriveTargets() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let log = try makeSimulationLog(steps: 2, driveCount: 0, actuatorCount: 2)
+        let writer = TrainingDatasetWriter()
+        _ = try writer.write(log: log, to: dir)
+
+        let metaData = try Data(contentsOf: dir.appendingPathComponent("meta.json"))
+        let meta = try JSONDecoder().decode(TrainingDatasetMetadata.self, from: metaData)
+        #expect(meta.driveCount == 2)
+
+        let records = try String(contentsOf: dir.appendingPathComponent("records.jsonl"), encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { line in
+                try JSONDecoder().decode(TrainingDatasetRecord.self, from: Data(line.utf8))
+            }
+        #expect(records.allSatisfy { $0.driveIntents.count == 2 })
+        #expect(records.first?.driveIntents.map(\.driveIndex) == [0, 1])
+    }
+
+    @Test func sparseTeacherActionsAreHeldBetweenCutUpdates() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let log = try makeSparseDriveSimulationLog()
+        let writer = TrainingDatasetWriter()
+        _ = try writer.write(log: log, to: dir)
+
+        let records = try String(contentsOf: dir.appendingPathComponent("records.jsonl"), encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { line in
+                try JSONDecoder().decode(TrainingDatasetRecord.self, from: Data(line.utf8))
+            }
+        #expect(records.map { $0.driveIntents.first?.value } == [nil, 0.8, 0.8, 0.6])
+    }
+
     @Test func emptyLogProducesEmptyRecords() throws {
-        let dir = makeTemporaryDirectory()
+        let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }
 
         let log = try makeSimulationLog(steps: 0)
@@ -490,7 +527,8 @@ private func makeDefinition(id: String, seed: UInt64) throws -> ReferenceQuadrot
 private func makeSimulationLog(
     steps: Int,
     sensorChannels: Int = 1,
-    driveCount: Int = 1
+    driveCount: Int = 1,
+    actuatorCount: Int = 0
 ) throws -> SimulationLog {
     let stepLogs = try (0..<steps).map { index in
         let sensors = try (0..<sensorChannels).map { ch in
@@ -507,13 +545,19 @@ private func makeSimulationLog(
                 parameters: []
             )
         }
+        let actuators = try (0..<actuatorCount).map { actuator in
+            try ActuatorValue(
+                index: ActuatorIndex(UInt32(actuator)),
+                value: 0.25 + Double(actuator) * 0.1
+            )
+        }
         return try WorldStepLog(
             time: WorldTime(stepIndex: UInt64(index), time: Double(index) * 0.01),
             events: [.timeAdvance, .logging],
             sensorSamples: sensors,
             driveIntents: drives,
             reflexCorrections: [],
-            actuatorValues: [],
+            actuatorValues: actuators,
             actuatorTelemetry: ActuatorTelemetrySnapshot(channels: []),
             safetyTrace: SafetyTrace(omegaMagnitude: 0.0, tiltRadians: 0.0),
             plantState: PlantStateSnapshot(
@@ -537,6 +581,50 @@ private func makeSimulationLog(
         timeStep: TimeStep(delta: 0.01),
         determinism: DeterminismConfig(tier: .tier0, tier1Tolerance: nil),
         configHash: "test-hash",
+        events: stepLogs
+    )
+}
+
+private func makeSparseDriveSimulationLog() throws -> SimulationLog {
+    let drivesByStep: [[DriveIntent]] = [
+        [],
+        [try DriveIntent(index: DriveIndex(0), activation: 0.8, parameters: [])],
+        [],
+        [try DriveIntent(index: DriveIndex(0), activation: 0.6, parameters: [])]
+    ]
+    let stepLogs = try drivesByStep.enumerated().map { index, drives in
+        try WorldStepLog(
+            time: WorldTime(stepIndex: UInt64(index), time: Double(index) * 0.01),
+            events: [.timeAdvance, .logging],
+            sensorSamples: [
+                ChannelSample(channelIndex: 0, value: 0.0, timestamp: Double(index) * 0.01),
+            ],
+            driveIntents: drives,
+            reflexCorrections: [],
+            actuatorValues: [],
+            actuatorTelemetry: ActuatorTelemetrySnapshot(channels: []),
+            safetyTrace: SafetyTrace(omegaMagnitude: 0.0, tiltRadians: 0.0),
+            plantState: PlantStateSnapshot(
+                root: RigidBodySnapshot(
+                    id: "root",
+                    position: Axis3(x: 0, y: 0, z: 2),
+                    velocity: Axis3(x: 0, y: 0, z: 0),
+                    orientation: QuaternionSnapshot(w: 1, x: 0, y: 0, z: 0),
+                    angularVelocity: Axis3(x: 0, y: 0, z: 0)
+                )
+            ),
+            disturbances: DisturbanceSnapshot(
+                forceWorld: Axis3(x: 0, y: 0, z: 0),
+                torqueBody: Axis3(x: 0, y: 0, z: 0)
+            )
+        )
+    }
+    return try SimulationLog(
+        scenarioId: ScenarioID("sparse-writer-test"),
+        seed: ScenarioSeed(42),
+        timeStep: TimeStep(delta: 0.01),
+        determinism: DeterminismConfig(tier: .tier0, tier1Tolerance: nil),
+        configHash: "sparse-test-hash",
         events: stepLogs
     )
 }
@@ -588,13 +676,17 @@ private func makeLogAndDefinitionPair(
     return (logs, defs)
 }
 
-private func makeTemporaryDirectory() -> URL {
+private func makeTemporaryDirectory() throws -> URL {
     let dir = FileManager.default.temporaryDirectory
         .appendingPathComponent("kuyu-training-test-\(UUID().uuidString)", isDirectory: true)
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir
 }
 
 private func cleanup(_ url: URL) {
-    try? FileManager.default.removeItem(at: url)
+    do {
+        try FileManager.default.removeItem(at: url)
+    } catch {
+        Issue.record("Failed to remove temporary directory \(url.path): \(error)")
+    }
 }

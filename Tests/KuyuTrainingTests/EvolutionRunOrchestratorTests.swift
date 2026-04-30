@@ -70,7 +70,12 @@ import Testing
     let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
     #expect(artifacts.manifest.runID == "evolution-run")
     #expect(artifacts.eliteArchive.bestCandidateID == "g1-c3")
+    #expect(artifacts.acceptedCheckpoint.accepted)
+    #expect(artifacts.acceptedCheckpoint.candidateID == "g1-c3")
+    #expect(artifacts.acceptedCheckpoint.checkpointURL?.path == "/tmp/checkpoint-g1-c3")
+    #expect(artifacts.acceptedCheckpoint.bestVsIncumbentDelta == 13)
     #expect(artifacts.contract.requiredFiles.contains(EvolutionQualityDiversityArchive.fileName))
+    #expect(artifacts.contract.requiredFiles.contains(EvolutionAcceptedCheckpointDecision.fileName))
     #expect(artifacts.qualityDiversityArchive.cells == result.qualityDiversityArchive.cells)
     #expect(artifacts.generations.first?.qualityDiversityCellCount ?? 0 > 0)
     #expect(artifacts.generations.first?.mutationRate == 0.08)
@@ -115,6 +120,8 @@ import Testing
 
     let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
     #expect(artifacts.manifest.terminalState == .rejected)
+    #expect(!artifacts.acceptedCheckpoint.accepted)
+    #expect(artifacts.acceptedCheckpoint.candidateID == nil)
 }
 
 @MainActor

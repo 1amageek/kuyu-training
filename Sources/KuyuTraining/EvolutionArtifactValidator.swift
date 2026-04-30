@@ -8,6 +8,7 @@ public struct EvolutionRunArtifactBundle: Sendable, Equatable {
     public let candidates: [GenomeCandidate]
     public let fitness: [FitnessSummary]
     public let eliteArchive: EvolutionEliteArchive
+    public let acceptedCheckpoint: EvolutionAcceptedCheckpointDecision
     public let qualityDiversityArchive: EvolutionQualityDiversityArchive
     public let lineage: [EvolutionLineageRecord]
 
@@ -19,6 +20,7 @@ public struct EvolutionRunArtifactBundle: Sendable, Equatable {
         candidates: [GenomeCandidate],
         fitness: [FitnessSummary],
         eliteArchive: EvolutionEliteArchive,
+        acceptedCheckpoint: EvolutionAcceptedCheckpointDecision,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord]
     ) {
@@ -29,9 +31,15 @@ public struct EvolutionRunArtifactBundle: Sendable, Equatable {
         self.candidates = candidates
         self.fitness = fitness
         self.eliteArchive = eliteArchive
+        self.acceptedCheckpoint = acceptedCheckpoint
         self.qualityDiversityArchive = qualityDiversityArchive
         self.lineage = lineage
     }
+}
+
+private func zipOptional<A, B>(_ lhs: A?, _ rhs: B?) -> (A, B)? {
+    guard let lhs, let rhs else { return nil }
+    return (lhs, rhs)
 }
 
 public struct EvolutionRunArtifactValidator: Sendable {
@@ -55,6 +63,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
         case missingCompletedEliteArchive
         case bestCandidateMissing(String)
         case bestCandidateNotElite(String)
+        case acceptedCheckpointMismatch(String)
+        case acceptedCheckpointCandidateMissing(String)
         case qualityDiversityCandidateMissing(String)
         case nonFiniteQualityDiversityCell(String)
     }
@@ -106,6 +116,12 @@ public struct EvolutionRunArtifactValidator: Sendable {
             directory: artifactDirectory,
             decoder: decoder
         )
+        let acceptedCheckpoint = try decode(
+            EvolutionAcceptedCheckpointDecision.self,
+            fileName: EvolutionAcceptedCheckpointDecision.fileName,
+            directory: artifactDirectory,
+            decoder: decoder
+        )
         let qualityDiversityArchive = try decode(
             EvolutionQualityDiversityArchive.self,
             fileName: EvolutionQualityDiversityArchive.fileName,
@@ -124,6 +140,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
             candidates: candidates,
             fitness: fitness,
             eliteArchive: eliteArchive,
+            acceptedCheckpoint: acceptedCheckpoint,
             qualityDiversityArchive: qualityDiversityArchive,
             lineage: lineage
         )
@@ -135,6 +152,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
             candidates: candidates,
             fitness: fitness,
             eliteArchive: eliteArchive,
+            acceptedCheckpoint: acceptedCheckpoint,
             qualityDiversityArchive: qualityDiversityArchive,
             lineage: lineage
         )
@@ -160,6 +178,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
         candidates: [GenomeCandidate],
         fitness: [FitnessSummary],
         eliteArchive: EvolutionEliteArchive,
+        acceptedCheckpoint: EvolutionAcceptedCheckpointDecision,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord]
     ) throws {
@@ -175,6 +194,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
             candidates: candidates,
             fitness: fitness,
             eliteArchive: eliteArchive,
+            acceptedCheckpoint: acceptedCheckpoint,
             qualityDiversityArchive: qualityDiversityArchive,
             lineage: lineage
         )
@@ -254,6 +274,13 @@ public struct EvolutionRunArtifactValidator: Sendable {
                 throw ValidationError.bestCandidateNotElite(bestCandidateID)
             }
         }
+        try validateAcceptedCheckpoint(
+            acceptedCheckpoint,
+            manifest: manifest,
+            candidates: candidates,
+            fitness: fitness,
+            eliteArchive: eliteArchive
+        )
         for cell in qualityDiversityArchive.cells {
             guard candidateIDs.contains(cell.candidateID) else {
                 throw ValidationError.qualityDiversityCandidateMissing(cell.candidateID)
@@ -271,6 +298,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
         candidates: [GenomeCandidate],
         fitness: [FitnessSummary],
         eliteArchive: EvolutionEliteArchive,
+        acceptedCheckpoint: EvolutionAcceptedCheckpointDecision,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord]
     ) throws {
@@ -279,6 +307,13 @@ public struct EvolutionRunArtifactValidator: Sendable {
         }
         if qualityDiversityArchive.runID != expected {
             throw ValidationError.runIDMismatch(file: EvolutionQualityDiversityArchive.fileName, expected: expected, actual: qualityDiversityArchive.runID)
+        }
+        if acceptedCheckpoint.runID != expected {
+            throw ValidationError.runIDMismatch(
+                file: EvolutionAcceptedCheckpointDecision.fileName,
+                expected: expected,
+                actual: acceptedCheckpoint.runID
+            )
         }
         for record in generations where record.runID != expected {
             throw ValidationError.runIDMismatch(file: "generations.jsonl", expected: expected, actual: record.runID)
@@ -291,6 +326,55 @@ public struct EvolutionRunArtifactValidator: Sendable {
         }
         for record in lineage where record.runID != expected {
             throw ValidationError.runIDMismatch(file: "lineage.json", expected: expected, actual: record.runID)
+        }
+    }
+
+    private func validateAcceptedCheckpoint(
+        _ decision: EvolutionAcceptedCheckpointDecision,
+        manifest: EvolutionRunManifest,
+        candidates: [GenomeCandidate],
+        fitness: [FitnessSummary],
+        eliteArchive: EvolutionEliteArchive
+    ) throws {
+        guard decision.terminalState == manifest.terminalState else {
+            throw ValidationError.acceptedCheckpointMismatch("terminal-state")
+        }
+        guard decision.accepted == (manifest.terminalState == .completed && eliteArchive.bestCandidateID != nil) else {
+            throw ValidationError.acceptedCheckpointMismatch("accepted")
+        }
+        if decision.accepted {
+            guard let candidateID = decision.candidateID else {
+                throw ValidationError.acceptedCheckpointMismatch("candidate-id")
+            }
+            guard let candidate = candidates.first(where: { $0.candidateID == candidateID }) else {
+                throw ValidationError.acceptedCheckpointCandidateMissing(candidateID)
+            }
+            guard eliteArchive.bestCandidateID == candidateID,
+                  decision.checkpointID == candidate.checkpointID,
+                  decision.checkpointURL == candidate.checkpointURL,
+                  decision.scalarFitness == eliteArchive.bestFitness else {
+                throw ValidationError.acceptedCheckpointMismatch(candidateID)
+            }
+        } else {
+            guard decision.candidateID == nil,
+                  decision.checkpointID == nil,
+                  decision.checkpointURL == nil,
+                  decision.scalarFitness == nil else {
+                throw ValidationError.acceptedCheckpointMismatch("rejected-candidate")
+            }
+        }
+
+        let expectedIncumbentFitness = decision.incumbentCandidateID.flatMap { candidateID in
+            fitness.first { $0.candidateID == candidateID }?.scalarFitness
+        }
+        guard decision.incumbentFitness == expectedIncumbentFitness else {
+            throw ValidationError.acceptedCheckpointMismatch("incumbent-fitness")
+        }
+        let expectedDelta = zipOptional(decision.scalarFitness, decision.incumbentFitness).map { best, incumbent in
+            best - incumbent
+        }
+        guard decision.bestVsIncumbentDelta == expectedDelta else {
+            throw ValidationError.acceptedCheckpointMismatch("best-vs-incumbent")
         }
     }
 

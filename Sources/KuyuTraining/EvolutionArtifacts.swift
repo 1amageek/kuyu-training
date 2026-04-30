@@ -1,7 +1,7 @@
 import Foundation
 
 public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
     public static let currentContractVersion = 1
     public static let fileName = "evolution-contract.json"
 
@@ -20,6 +20,7 @@ public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
             "candidates.jsonl",
             "fitness.jsonl",
             "elite-archive.json",
+            EvolutionAcceptedCheckpointDecision.fileName,
             "quality-diversity-archive.json",
             "lineage.json",
         ]
@@ -28,6 +29,48 @@ public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
         self.contractVersion = contractVersion
         self.producer = producer
         self.requiredFiles = requiredFiles
+    }
+}
+
+public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable {
+    public static let fileName = "accepted-checkpoint.json"
+
+    public let runID: String
+    public let terminalState: EvolutionRunTerminalState
+    public let accepted: Bool
+    public let candidateID: String?
+    public let checkpointID: String?
+    public let checkpointURL: URL?
+    public let scalarFitness: Double?
+    public let incumbentCandidateID: String?
+    public let incumbentFitness: Double?
+    public let bestVsIncumbentDelta: Double?
+    public let reasons: [String]
+
+    public init(
+        runID: String,
+        terminalState: EvolutionRunTerminalState,
+        accepted: Bool,
+        candidateID: String?,
+        checkpointID: String?,
+        checkpointURL: URL?,
+        scalarFitness: Double?,
+        incumbentCandidateID: String?,
+        incumbentFitness: Double?,
+        bestVsIncumbentDelta: Double?,
+        reasons: [String]
+    ) {
+        self.runID = runID
+        self.terminalState = terminalState
+        self.accepted = accepted
+        self.candidateID = candidateID
+        self.checkpointID = checkpointID
+        self.checkpointURL = checkpointURL
+        self.scalarFitness = scalarFitness
+        self.incumbentCandidateID = incumbentCandidateID
+        self.incumbentFitness = incumbentFitness
+        self.bestVsIncumbentDelta = bestVsIncumbentDelta
+        self.reasons = reasons
     }
 }
 
@@ -119,6 +162,16 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
             to: directory.appendingPathComponent("elite-archive.json"),
             options: [.atomic]
         )
+        try encoder.encode(Self.acceptedCheckpointDecision(
+            manifest: manifest,
+            generations: generations,
+            candidates: candidates,
+            fitness: fitness,
+            eliteArchive: eliteArchive
+        )).write(
+            to: directory.appendingPathComponent(EvolutionAcceptedCheckpointDecision.fileName),
+            options: [.atomic]
+        )
         try encoder.encode(qualityDiversityArchive).write(
             to: directory.appendingPathComponent(EvolutionQualityDiversityArchive.fileName),
             options: [.atomic]
@@ -153,4 +206,42 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
             encoding: .utf8
         )
     }
+
+    private static func acceptedCheckpointDecision(
+        manifest: EvolutionRunManifest,
+        generations: [PopulationGenerationRecord],
+        candidates: [GenomeCandidate],
+        fitness: [FitnessSummary],
+        eliteArchive: EvolutionEliteArchive
+    ) -> EvolutionAcceptedCheckpointDecision {
+        let bestCandidate = eliteArchive.bestCandidateID.flatMap { candidateID in
+            candidates.first { $0.candidateID == candidateID }
+        }
+        let incumbentCandidate = candidates.first { $0.isIncumbent == true }
+        let incumbentFitness = incumbentCandidate.flatMap { candidate in
+            fitness.first { $0.candidateID == candidate.candidateID }?.scalarFitness
+        }
+        let bestVsIncumbentDelta = zipOptional(
+            eliteArchive.bestFitness,
+            incumbentFitness
+        ).map { best, incumbent in best - incumbent }
+        return EvolutionAcceptedCheckpointDecision(
+            runID: manifest.runID,
+            terminalState: manifest.terminalState,
+            accepted: manifest.terminalState == .completed && bestCandidate != nil,
+            candidateID: bestCandidate?.candidateID,
+            checkpointID: bestCandidate?.checkpointID,
+            checkpointURL: bestCandidate?.checkpointURL,
+            scalarFitness: eliteArchive.bestFitness,
+            incumbentCandidateID: incumbentCandidate?.candidateID,
+            incumbentFitness: incumbentFitness,
+            bestVsIncumbentDelta: bestVsIncumbentDelta,
+            reasons: manifest.terminalState == .completed ? [] : generations.last?.rejectionReasons ?? []
+        )
+    }
+}
+
+private func zipOptional<A, B>(_ lhs: A?, _ rhs: B?) -> (A, B)? {
+    guard let lhs, let rhs else { return nil }
+    return (lhs, rhs)
 }

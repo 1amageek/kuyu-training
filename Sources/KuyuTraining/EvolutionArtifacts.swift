@@ -1,7 +1,7 @@
 import Foundation
 
 public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 5
+    public static let currentSchemaVersion = 6
     public static let currentContractVersion = 1
     public static let fileName = "evolution-contract.json"
 
@@ -23,6 +23,7 @@ public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
             EvolutionAcceptedCheckpointDecision.fileName,
             "quality-diversity-archive.json",
             "lineage.json",
+            "evaluation-trace.jsonl",
         ]
     ) {
         self.schemaVersion = schemaVersion
@@ -142,6 +143,7 @@ public protocol EvolutionArtifactWriting {
         eliteArchive: EvolutionEliteArchive,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace],
         to directory: URL
     ) throws
 }
@@ -157,6 +159,7 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         eliteArchive: EvolutionEliteArchive,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace],
         to directory: URL
     ) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -201,6 +204,7 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         try writeJSONLines(generations, to: directory.appendingPathComponent("generations.jsonl"))
         try writeJSONLines(candidates, to: directory.appendingPathComponent("candidates.jsonl"))
         try writeJSONLines(fitness, to: directory.appendingPathComponent("fitness.jsonl"))
+        try writeJSONLines(evaluationTraces, to: directory.appendingPathComponent("evaluation-trace.jsonl"))
     }
 
     private func writeJSONLines<T: Encodable>(_ records: [T], to url: URL) throws {

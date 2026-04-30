@@ -50,6 +50,7 @@ import Testing
     #expect(result.generations.count == 2)
     #expect(result.candidates.count == 8)
     #expect(result.fitness.count == 8)
+    #expect(result.evaluationTraces.count == 8)
     #expect(result.eliteArchive.bestCandidateID == "g1-c3")
     #expect(result.qualityDiversityArchive.cells.isEmpty == false)
     #expect(result.manifest.searchStrategy == .qualityDiversity)
@@ -78,6 +79,9 @@ import Testing
     #expect(artifacts.acceptedCheckpoint.bestVsIncumbentDelta == 13)
     #expect(artifacts.contract.requiredFiles.contains(EvolutionQualityDiversityArchive.fileName))
     #expect(artifacts.contract.requiredFiles.contains(EvolutionAcceptedCheckpointDecision.fileName))
+    #expect(artifacts.contract.requiredFiles.contains("evaluation-trace.jsonl"))
+    #expect(artifacts.evaluationTraces.count == 8)
+    #expect(artifacts.evaluationTraces.allSatisfy { $0.durationSeconds.isFinite && $0.durationSeconds >= 0 })
     #expect(artifacts.qualityDiversityArchive.cells == result.qualityDiversityArchive.cells)
     #expect(artifacts.generations.first?.qualityDiversityCellCount ?? 0 > 0)
     #expect(artifacts.generations.first?.mutationRate == 0.08)
@@ -118,6 +122,7 @@ import Testing
 
     #expect(result.manifest.terminalState == .completed)
     #expect(await probe.maximumActiveCount() > 1)
+    #expect(result.evaluationTraces.contains { $0.activeEvaluationCountAtStart > 1 })
 }
 
 @MainActor

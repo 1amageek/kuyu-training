@@ -11,6 +11,7 @@ public struct EvolutionRunArtifactBundle: Sendable, Equatable {
     public let acceptedCheckpoint: EvolutionAcceptedCheckpointDecision
     public let qualityDiversityArchive: EvolutionQualityDiversityArchive
     public let lineage: [EvolutionLineageRecord]
+    public let evaluationTraces: [EvolutionCandidateEvaluationTrace]
 
     public init(
         artifactDirectory: URL,
@@ -22,7 +23,8 @@ public struct EvolutionRunArtifactBundle: Sendable, Equatable {
         eliteArchive: EvolutionEliteArchive,
         acceptedCheckpoint: EvolutionAcceptedCheckpointDecision,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
-        lineage: [EvolutionLineageRecord]
+        lineage: [EvolutionLineageRecord],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace]
     ) {
         self.artifactDirectory = artifactDirectory
         self.contract = contract
@@ -34,6 +36,7 @@ public struct EvolutionRunArtifactBundle: Sendable, Equatable {
         self.acceptedCheckpoint = acceptedCheckpoint
         self.qualityDiversityArchive = qualityDiversityArchive
         self.lineage = lineage
+        self.evaluationTraces = evaluationTraces
     }
 }
 
@@ -67,6 +70,9 @@ public struct EvolutionRunArtifactValidator: Sendable {
         case acceptedCheckpointCandidateMissing(String)
         case qualityDiversityCandidateMissing(String)
         case nonFiniteQualityDiversityCell(String)
+        case duplicateEvaluationTrace(String)
+        case missingEvaluationTrace(String)
+        case invalidEvaluationTrace(String)
     }
 
     public init() {}
@@ -134,6 +140,12 @@ public struct EvolutionRunArtifactValidator: Sendable {
             directory: artifactDirectory,
             decoder: decoder
         )
+        let evaluationTraces = try loadJSONLines(
+            EvolutionCandidateEvaluationTrace.self,
+            fileName: "evaluation-trace.jsonl",
+            directory: artifactDirectory,
+            decoder: decoder
+        )
         try validate(
             manifest: manifest,
             generations: generations,
@@ -142,7 +154,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
             eliteArchive: eliteArchive,
             acceptedCheckpoint: acceptedCheckpoint,
             qualityDiversityArchive: qualityDiversityArchive,
-            lineage: lineage
+            lineage: lineage,
+            evaluationTraces: evaluationTraces
         )
         return EvolutionRunArtifactBundle(
             artifactDirectory: artifactDirectory,
@@ -154,7 +167,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
             eliteArchive: eliteArchive,
             acceptedCheckpoint: acceptedCheckpoint,
             qualityDiversityArchive: qualityDiversityArchive,
-            lineage: lineage
+            lineage: lineage,
+            evaluationTraces: evaluationTraces
         )
     }
 
@@ -180,7 +194,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
         eliteArchive: EvolutionEliteArchive,
         acceptedCheckpoint: EvolutionAcceptedCheckpointDecision,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
-        lineage: [EvolutionLineageRecord]
+        lineage: [EvolutionLineageRecord],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace]
     ) throws {
         guard !manifest.runID.isEmpty else {
             throw ValidationError.emptyRunID
@@ -196,7 +211,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
             eliteArchive: eliteArchive,
             acceptedCheckpoint: acceptedCheckpoint,
             qualityDiversityArchive: qualityDiversityArchive,
-            lineage: lineage
+            lineage: lineage,
+            evaluationTraces: evaluationTraces
         )
         var candidateIDs = Set<String>()
         var incumbentCandidateID: String?
@@ -290,6 +306,11 @@ public struct EvolutionRunArtifactValidator: Sendable {
                 throw ValidationError.nonFiniteQualityDiversityCell(cell.cellID)
             }
         }
+        try validateEvaluationTraces(
+            evaluationTraces,
+            manifest: manifest,
+            candidateIDs: candidateIDs
+        )
     }
 
     private func validateRunIDs(
@@ -300,7 +321,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
         eliteArchive: EvolutionEliteArchive,
         acceptedCheckpoint: EvolutionAcceptedCheckpointDecision,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
-        lineage: [EvolutionLineageRecord]
+        lineage: [EvolutionLineageRecord],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace]
     ) throws {
         if eliteArchive.runID != expected {
             throw ValidationError.runIDMismatch(file: "elite-archive.json", expected: expected, actual: eliteArchive.runID)
@@ -326,6 +348,37 @@ public struct EvolutionRunArtifactValidator: Sendable {
         }
         for record in lineage where record.runID != expected {
             throw ValidationError.runIDMismatch(file: "lineage.json", expected: expected, actual: record.runID)
+        }
+        for trace in evaluationTraces where trace.runID != expected {
+            throw ValidationError.runIDMismatch(file: "evaluation-trace.jsonl", expected: expected, actual: trace.runID)
+        }
+    }
+
+    private func validateEvaluationTraces(
+        _ traces: [EvolutionCandidateEvaluationTrace],
+        manifest: EvolutionRunManifest,
+        candidateIDs: Set<String>
+    ) throws {
+        var seen = Set<String>()
+        for trace in traces {
+            guard candidateIDs.contains(trace.candidateID) else {
+                throw ValidationError.missingEvaluationTrace(trace.candidateID)
+            }
+            guard seen.insert(trace.candidateID).inserted else {
+                throw ValidationError.duplicateEvaluationTrace(trace.candidateID)
+            }
+            guard trace.requestedConcurrency >= 1,
+                  trace.requestedConcurrency <= manifest.candidateEvaluationConcurrency,
+                  trace.activeEvaluationCountAtStart >= 1,
+                  trace.activeEvaluationCountAtStart <= trace.requestedConcurrency,
+                  trace.durationSeconds.isFinite,
+                  trace.durationSeconds >= 0,
+                  trace.completedAt >= trace.startedAt else {
+                throw ValidationError.invalidEvaluationTrace(trace.candidateID)
+            }
+        }
+        for candidateID in candidateIDs where !seen.contains(candidateID) {
+            throw ValidationError.missingEvaluationTrace(candidateID)
         }
     }
 

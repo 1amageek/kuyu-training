@@ -17,6 +17,7 @@ public struct EvolutionRunResult: Sendable, Equatable {
     public let eliteArchive: EvolutionEliteArchive
     public let qualityDiversityArchive: EvolutionQualityDiversityArchive
     public let lineage: [EvolutionLineageRecord]
+    public let evaluationTraces: [EvolutionCandidateEvaluationTrace]
 
     public init(
         manifest: EvolutionRunManifest,
@@ -25,7 +26,8 @@ public struct EvolutionRunResult: Sendable, Equatable {
         fitness: [FitnessSummary],
         eliteArchive: EvolutionEliteArchive,
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
-        lineage: [EvolutionLineageRecord]
+        lineage: [EvolutionLineageRecord],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace] = []
     ) {
         self.manifest = manifest
         self.generations = generations
@@ -34,6 +36,7 @@ public struct EvolutionRunResult: Sendable, Equatable {
         self.eliteArchive = eliteArchive
         self.qualityDiversityArchive = qualityDiversityArchive
         self.lineage = lineage
+        self.evaluationTraces = evaluationTraces
     }
 }
 
@@ -139,6 +142,7 @@ public struct EvolutionRunOrchestrator {
         var allGenerations: [PopulationGenerationRecord] = []
         var allCandidates: [GenomeCandidate] = []
         var allFitness: [FitnessSummary] = []
+        var allEvaluationTraces: [EvolutionCandidateEvaluationTrace] = []
         var bestAcceptedFitness: FitnessSummary?
         var finalGateReport: EvolutionGateReport?
         var incumbentCandidateID: String?
@@ -166,16 +170,17 @@ public struct EvolutionRunOrchestrator {
             allCandidates.append(contentsOf: currentPopulation.candidates)
             let generationFitness: [FitnessSummary]
             do {
-                let rawGenerationFitness = try await evaluate(
+                let evaluation = try await evaluate(
                     config: config,
                     population: currentPopulation,
                     generationArtifactDirectory: generationDirectory,
                     onEvent: nil
                 )
                 generationFitness = noveltyScoringPolicy.score(
-                    currentGeneration: rawGenerationFitness,
+                    currentGeneration: evaluation.fitness,
                     archive: allFitness
                 )
+                allEvaluationTraces.append(contentsOf: evaluation.traces)
             } catch {
                 return await finish(
                     manifest: manifest,
@@ -184,6 +189,7 @@ public struct EvolutionRunOrchestrator {
                     generations: allGenerations,
                     candidates: allCandidates,
                     fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
@@ -271,6 +277,7 @@ public struct EvolutionRunOrchestrator {
                     generations: allGenerations,
                     candidates: allCandidates,
                     fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
@@ -284,10 +291,16 @@ public struct EvolutionRunOrchestrator {
             generations: allGenerations,
             candidates: allCandidates,
             fitness: allFitness,
+            evaluationTraces: allEvaluationTraces,
             bestFitness: bestAcceptedFitness,
             artifactDirectory: artifactDirectory,
             onEvent: onEvent
         )
+    }
+
+    private struct EvaluationBatch: Sendable {
+        let fitness: [FitnessSummary]
+        let traces: [EvolutionCandidateEvaluationTrace]
     }
 
     private func evaluate(
@@ -295,7 +308,7 @@ public struct EvolutionRunOrchestrator {
         population: EvolutionPopulation,
         generationArtifactDirectory: URL,
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)?
-    ) async throws -> [FitnessSummary] {
+    ) async throws -> EvaluationBatch {
         if config.candidateEvaluationConcurrency <= 1 || population.candidates.count <= 1 {
             return try await evaluateSequentially(
                 config: config,
@@ -317,19 +330,31 @@ public struct EvolutionRunOrchestrator {
         population: EvolutionPopulation,
         generationArtifactDirectory: URL,
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)?
-    ) async throws -> [FitnessSummary] {
+    ) async throws -> EvaluationBatch {
         var records: [FitnessSummary] = []
+        var traces: [EvolutionCandidateEvaluationTrace] = []
         records.reserveCapacity(population.candidates.count)
+        traces.reserveCapacity(population.candidates.count)
+        let recorder = EvolutionEvaluationTraceRecorder()
         for candidate in population.candidates {
+            let started = await recorder.begin()
             let summary = try await evaluator.evaluateCandidate(request: EvolutionCandidateEvaluationRequest(
                 config: config,
                 candidate: candidate,
                 generationArtifactDirectory: generationArtifactDirectory,
                 workerCount: config.workerCount
             ))
+            let trace = await recorder.end(
+                runID: config.runID,
+                generationIndex: candidate.generationIndex,
+                candidateID: candidate.candidateID,
+                requestedConcurrency: 1,
+                started: started
+            )
             records.append(summary)
+            traces.append(trace)
         }
-        return records
+        return EvaluationBatch(fitness: records, traces: traces)
     }
 
     private func evaluateConcurrently(
@@ -337,33 +362,47 @@ public struct EvolutionRunOrchestrator {
         population: EvolutionPopulation,
         generationArtifactDirectory: URL,
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)?
-    ) async throws -> [FitnessSummary] {
+    ) async throws -> EvaluationBatch {
         var records = Array<FitnessSummary?>(repeating: nil, count: population.candidates.count)
+        var traces = Array<EvolutionCandidateEvaluationTrace?>(repeating: nil, count: population.candidates.count)
         let evaluator = evaluator
         let concurrency = max(1, min(config.candidateEvaluationConcurrency, population.candidates.count))
+        let recorder = EvolutionEvaluationTraceRecorder()
         var nextIndex = 0
         while nextIndex < population.candidates.count {
             let batchEnd = min(nextIndex + concurrency, population.candidates.count)
-            try await withThrowingTaskGroup(of: (Int, FitnessSummary).self) { group in
+            try await withThrowingTaskGroup(of: (Int, FitnessSummary, EvolutionCandidateEvaluationTrace).self) { group in
                 for index in nextIndex..<batchEnd {
                     let candidate = population.candidates[index]
                     group.addTask {
+                        let started = await recorder.begin()
                         let summary = try await evaluator.evaluateCandidate(request: EvolutionCandidateEvaluationRequest(
                             config: config,
                             candidate: candidate,
                             generationArtifactDirectory: generationArtifactDirectory,
                             workerCount: config.workerCount
                         ))
-                        return (index, summary)
+                        let trace = await recorder.end(
+                            runID: config.runID,
+                            generationIndex: candidate.generationIndex,
+                            candidateID: candidate.candidateID,
+                            requestedConcurrency: concurrency,
+                            started: started
+                        )
+                        return (index, summary, trace)
                     }
                 }
-                for try await (index, summary) in group {
+                for try await (index, summary, trace) in group {
                     records[index] = summary
+                    traces[index] = trace
                 }
             }
             nextIndex = batchEnd
         }
-        return records.compactMap { $0 }
+        return EvaluationBatch(
+            fitness: records.compactMap { $0 },
+            traces: traces.compactMap { $0 }
+        )
     }
 
     private func finish(
@@ -373,6 +412,7 @@ public struct EvolutionRunOrchestrator {
         generations: [PopulationGenerationRecord],
         candidates: [GenomeCandidate],
         fitness: [FitnessSummary],
+        evaluationTraces: [EvolutionCandidateEvaluationTrace] = [],
         bestFitness: FitnessSummary? = nil,
         artifactDirectory: URL,
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)?
@@ -407,7 +447,8 @@ public struct EvolutionRunOrchestrator {
             fitness: fitness,
             eliteArchive: archive,
             qualityDiversityArchive: qualityDiversityArchive,
-            lineage: lineage
+            lineage: lineage,
+            evaluationTraces: evaluationTraces
         )
         do {
             try artifactWriter.write(
@@ -418,6 +459,7 @@ public struct EvolutionRunOrchestrator {
                 eliteArchive: archive,
                 qualityDiversityArchive: qualityDiversityArchive,
                 lineage: lineage,
+                evaluationTraces: evaluationTraces,
                 to: artifactDirectory
             )
         } catch {
@@ -433,7 +475,8 @@ public struct EvolutionRunOrchestrator {
                 fitness: fitness,
                 eliteArchive: archive,
                 qualityDiversityArchive: qualityDiversityArchive,
-                lineage: lineage
+                lineage: lineage,
+                evaluationTraces: evaluationTraces
             )
             onEvent?(.completed(failedResult))
             return failedResult
@@ -487,5 +530,34 @@ public struct EvolutionRunOrchestrator {
 
     private func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {
         Swift.min(Swift.max(value, minimum), maximum)
+    }
+}
+
+private actor EvolutionEvaluationTraceRecorder {
+    private var activeCount = 0
+
+    func begin() -> (startedAt: Date, activeEvaluationCountAtStart: Int) {
+        activeCount += 1
+        return (Date(), activeCount)
+    }
+
+    func end(
+        runID: String,
+        generationIndex: Int,
+        candidateID: String,
+        requestedConcurrency: Int,
+        started: (startedAt: Date, activeEvaluationCountAtStart: Int)
+    ) -> EvolutionCandidateEvaluationTrace {
+        let completedAt = Date()
+        activeCount = max(0, activeCount - 1)
+        return EvolutionCandidateEvaluationTrace(
+            runID: runID,
+            generationIndex: generationIndex,
+            candidateID: candidateID,
+            requestedConcurrency: requestedConcurrency,
+            activeEvaluationCountAtStart: started.activeEvaluationCountAtStart,
+            startedAt: started.startedAt,
+            completedAt: completedAt
+        )
     }
 }

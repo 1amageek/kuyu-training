@@ -350,6 +350,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
         let expectedAccepted = manifest.terminalState == .completed
             && eliteArchive.bestCandidateID != nil
             && improvementAccepted
+            && decision.publishMetricRegressions.isEmpty
         guard decision.accepted == expectedAccepted else {
             throw ValidationError.acceptedCheckpointMismatch("accepted")
         }
@@ -407,6 +408,43 @@ public struct EvolutionRunArtifactValidator: Sendable {
         guard decision.bestVsIncumbentDelta == expectedDelta else {
             throw ValidationError.acceptedCheckpointMismatch("best-vs-incumbent")
         }
+        let expectedPublishRegressions = publishMetricRegressions(
+            bestCandidateID: decision.bestCandidateID,
+            incumbentCandidateID: decision.incumbentCandidateID,
+            fitness: fitness
+        )
+        guard decision.publishMetricRegressions == expectedPublishRegressions else {
+            throw ValidationError.acceptedCheckpointMismatch("publish-metric-regressions")
+        }
+    }
+
+    private func publishMetricRegressions(
+        bestCandidateID: String?,
+        incumbentCandidateID: String?,
+        fitness: [FitnessSummary]
+    ) -> [String] {
+        guard let bestCandidateID,
+              let incumbentCandidateID,
+              let best = fitness.first(where: { $0.candidateID == bestCandidateID }),
+              let incumbent = fitness.first(where: { $0.candidateID == incumbentCandidateID }) else {
+            return []
+        }
+        var reasons: [String] = []
+        if best.taskPassRate < incumbent.taskPassRate {
+            reasons.append("publish-metric-regression:taskPassRate:\(best.taskPassRate)<\(incumbent.taskPassRate)")
+        }
+        if best.safetyViolationRate > incumbent.safetyViolationRate {
+            reasons.append("publish-metric-regression:safetyViolationRate:\(best.safetyViolationRate)>\(incumbent.safetyViolationRate)")
+        }
+        if let bestHoldTimeRatio = best.holdTimeRatio,
+           let incumbentHoldTimeRatio = incumbent.holdTimeRatio,
+           bestHoldTimeRatio < incumbentHoldTimeRatio {
+            reasons.append("publish-metric-regression:holdTimeRatio:\(bestHoldTimeRatio)<\(incumbentHoldTimeRatio)")
+        }
+        if !best.failureReasons.isEmpty {
+            reasons.append("publish-metric-regression:failureReasons:\(best.failureReasons.joined(separator: ","))")
+        }
+        return reasons
     }
 
     private func decode<T: Decodable>(

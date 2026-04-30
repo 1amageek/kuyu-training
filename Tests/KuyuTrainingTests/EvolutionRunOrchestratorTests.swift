@@ -162,6 +162,83 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorRejectsLowNoveltyCandidatesWhenRequired() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = FakeEvolutionEvaluator()
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-low-novelty",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0,
+            minimumNoveltyScore: 0.25
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .rejected)
+    #expect(result.generations.first?.rejectionReasons.contains("no-candidate-passed-gate") == true)
+    #expect(result.generations.first?.rejectionReasons.contains { $0.hasPrefix("novelty-below-min:g0-c2:") } == true)
+}
+
+@MainActor
+@Test func evolutionRunOrchestratorDoesNotPublishScalarImprovementWithTaskRegression() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = PublishRegressionEvolutionEvaluator()
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-publish-regression",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 2,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 0.5,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 0.5,
+            minimumImprovementOverIncumbent: 0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .completed)
+    #expect(result.eliteArchive.bestCandidateID == "g0-c1")
+
+    let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
+    #expect(artifacts.acceptedCheckpoint.accepted == false)
+    #expect(artifacts.acceptedCheckpoint.candidateID == nil)
+    #expect(artifacts.acceptedCheckpoint.bestCandidateID == "g0-c1")
+    #expect(artifacts.acceptedCheckpoint.publishMetricRegressions.contains {
+        $0.hasPrefix("publish-metric-regression:taskPassRate:")
+    })
+}
+
+@MainActor
 @Test func evolutionRunOrchestratorArchivesButDoesNotPublishWhenNoCandidateImprovesOnIncumbent() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
@@ -365,6 +442,40 @@ private struct SlowEvolutionEvaluator: EvolutionCandidateEvaluating {
             taskPassRate: 1,
             safetyViolationRate: 0,
             holdTimeRatio: 1,
+            workerThroughput: Double(request.workerCount)
+        )
+    }
+}
+
+private struct PublishRegressionEvolutionEvaluator: EvolutionCandidateEvaluating {
+    func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary {
+        let candidateRank = Int(request.candidate.candidateID.split(separator: "c").last ?? "0") ?? 0
+        if candidateRank == 0 {
+            return FitnessSummary(
+                runID: request.config.runID,
+                generationIndex: request.candidate.generationIndex,
+                candidateID: request.candidate.candidateID,
+                taskID: request.config.taskID,
+                scalarFitness: 1,
+                rewardAverage: 1,
+                taskPassRate: 1,
+                safetyViolationRate: 0,
+                holdTimeRatio: 1,
+                noveltyScore: 1,
+                workerThroughput: Double(request.workerCount)
+            )
+        }
+        return FitnessSummary(
+            runID: request.config.runID,
+            generationIndex: request.candidate.generationIndex,
+            candidateID: request.candidate.candidateID,
+            taskID: request.config.taskID,
+            scalarFitness: 10,
+            rewardAverage: 10,
+            taskPassRate: 0.5,
+            safetyViolationRate: 0,
+            holdTimeRatio: 1,
+            noveltyScore: 1,
             workerThroughput: Double(request.workerCount)
         )
     }

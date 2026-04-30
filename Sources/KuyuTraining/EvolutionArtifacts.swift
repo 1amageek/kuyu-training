@@ -1,7 +1,7 @@
 import Foundation
 
 public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 4
+    public static let currentSchemaVersion = 5
     public static let currentContractVersion = 1
     public static let fileName = "evolution-contract.json"
 
@@ -50,6 +50,7 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
     public let incumbentFitness: Double?
     public let bestVsIncumbentDelta: Double?
     public let minimumImprovementOverIncumbent: Double?
+    public let publishMetricRegressions: [String]
     public let reasons: [String]
 
     public init(
@@ -68,6 +69,7 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
         incumbentFitness: Double?,
         bestVsIncumbentDelta: Double?,
         minimumImprovementOverIncumbent: Double? = nil,
+        publishMetricRegressions: [String] = [],
         reasons: [String]
     ) {
         self.runID = runID
@@ -85,6 +87,7 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
         self.incumbentFitness = incumbentFitness
         self.bestVsIncumbentDelta = bestVsIncumbentDelta
         self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
+        self.publishMetricRegressions = publishMetricRegressions
         self.reasons = reasons
     }
 }
@@ -232,10 +235,14 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         let bestCandidate = eliteArchive.bestCandidateID.flatMap { candidateID in
             candidates.first { $0.candidateID == candidateID }
         }
-        let incumbentCandidate = candidates.first { $0.isIncumbent == true }
-        let incumbentFitness = incumbentCandidate.flatMap { candidate in
-            fitness.first { $0.candidateID == candidate.candidateID }?.scalarFitness
+        let bestFitnessSummary = eliteArchive.bestCandidateID.flatMap { candidateID in
+            fitness.first { $0.candidateID == candidateID }
         }
+        let incumbentCandidate = candidates.first { $0.isIncumbent == true }
+        let incumbentFitnessSummary = incumbentCandidate.flatMap { candidate in
+            fitness.first { $0.candidateID == candidate.candidateID }
+        }
+        let incumbentFitness = incumbentFitnessSummary?.scalarFitness
         let bestVsIncumbentDelta = zipOptional(
             eliteArchive.bestFitness,
             incumbentFitness
@@ -252,10 +259,16 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         let accepted = manifest.terminalState == .completed
             && bestCandidate != nil
             && improvementAccepted
+            && Self.publishMetricRegressions(best: bestFitnessSummary, incumbent: incumbentFitnessSummary).isEmpty
         var reasons: [String] = []
         if manifest.terminalState != .completed {
             reasons.append(contentsOf: generations.last?.rejectionReasons ?? [])
         }
+        let publishMetricRegressions = Self.publishMetricRegressions(
+            best: bestFitnessSummary,
+            incumbent: incumbentFitnessSummary
+        )
+        reasons.append(contentsOf: publishMetricRegressions)
         if manifest.terminalState == .completed,
            !improvementAccepted,
            let minimumImprovementOverIncumbent,
@@ -280,8 +293,32 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
             incumbentFitness: incumbentFitness,
             bestVsIncumbentDelta: bestVsIncumbentDelta,
             minimumImprovementOverIncumbent: minimumImprovementOverIncumbent,
+            publishMetricRegressions: publishMetricRegressions,
             reasons: reasons
         )
+    }
+
+    private static func publishMetricRegressions(
+        best: FitnessSummary?,
+        incumbent: FitnessSummary?
+    ) -> [String] {
+        guard let best, let incumbent else { return [] }
+        var reasons: [String] = []
+        if best.taskPassRate < incumbent.taskPassRate {
+            reasons.append("publish-metric-regression:taskPassRate:\(best.taskPassRate)<\(incumbent.taskPassRate)")
+        }
+        if best.safetyViolationRate > incumbent.safetyViolationRate {
+            reasons.append("publish-metric-regression:safetyViolationRate:\(best.safetyViolationRate)>\(incumbent.safetyViolationRate)")
+        }
+        if let bestHoldTimeRatio = best.holdTimeRatio,
+           let incumbentHoldTimeRatio = incumbent.holdTimeRatio,
+           bestHoldTimeRatio < incumbentHoldTimeRatio {
+            reasons.append("publish-metric-regression:holdTimeRatio:\(bestHoldTimeRatio)<\(incumbentHoldTimeRatio)")
+        }
+        if !best.failureReasons.isEmpty {
+            reasons.append("publish-metric-regression:failureReasons:\(best.failureReasons.joined(separator: ","))")
+        }
+        return reasons
     }
 }
 

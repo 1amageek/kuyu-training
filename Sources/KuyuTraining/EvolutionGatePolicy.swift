@@ -47,6 +47,7 @@ public struct EvolutionGatePolicy: Sendable {
     public let minimumHoldTimeRatio: Double?
     public let minimumRewardAverage: Double?
     public let minimumImprovementOverIncumbent: Double?
+    public let minimumNoveltyScore: Double?
 
     public init(
         eliteCount: Int,
@@ -54,7 +55,8 @@ public struct EvolutionGatePolicy: Sendable {
         maximumSafetyViolationRate: Double = 0.0,
         minimumHoldTimeRatio: Double? = nil,
         minimumRewardAverage: Double? = nil,
-        minimumImprovementOverIncumbent: Double? = nil
+        minimumImprovementOverIncumbent: Double? = nil,
+        minimumNoveltyScore: Double? = nil
     ) {
         self.eliteCount = max(1, eliteCount)
         self.minimumTaskPassRate = minimumTaskPassRate
@@ -62,6 +64,7 @@ public struct EvolutionGatePolicy: Sendable {
         self.minimumHoldTimeRatio = minimumHoldTimeRatio
         self.minimumRewardAverage = minimumRewardAverage
         self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
+        self.minimumNoveltyScore = minimumNoveltyScore
     }
 
     public func report(
@@ -132,6 +135,12 @@ public struct EvolutionGatePolicy: Sendable {
         if let minimumRewardAverage {
             guard summary.rewardAverage >= minimumRewardAverage else { return false }
         }
+        if let minimumNoveltyScore {
+            guard let noveltyScore = summary.noveltyScore,
+                  noveltyScore >= minimumNoveltyScore else {
+                return false
+            }
+        }
         return summary.failureReasons.isEmpty
     }
 
@@ -154,6 +163,15 @@ public struct EvolutionGatePolicy: Sendable {
         }
         if let minimumRewardAverage, summary.rewardAverage < minimumRewardAverage {
             reasons.append("reward-average-below-min:\(summary.candidateID):\(summary.rewardAverage)<\(minimumRewardAverage)")
+        }
+        if let minimumNoveltyScore {
+            if let noveltyScore = summary.noveltyScore {
+                if noveltyScore < minimumNoveltyScore {
+                    reasons.append("novelty-below-min:\(summary.candidateID):\(noveltyScore)<\(minimumNoveltyScore)")
+                }
+            } else {
+                reasons.append("novelty-below-min:\(summary.candidateID):missing<\(minimumNoveltyScore)")
+            }
         }
         reasons.append(contentsOf: summary.failureReasons.map { "candidate-failure:\(summary.candidateID):\($0)" })
         return reasons

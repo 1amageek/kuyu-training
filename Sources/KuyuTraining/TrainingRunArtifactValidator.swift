@@ -34,6 +34,7 @@ public struct TrainingRunArtifactValidator: Sendable {
         case emptyRunID
         case runIDMismatch(file: String, expected: String, actual: String)
         case nonFiniteMetric(kind: TrainingMetricKind, iteration: Int)
+        case invalidWorkerMetric(kind: TrainingMetricKind, iteration: Int)
         case nonTerminalManifestState(LearningRunTerminalState)
     }
 
@@ -140,6 +141,15 @@ public struct TrainingRunArtifactValidator: Sendable {
             }
             guard metric.value.isFinite else {
                 throw ValidationError.nonFiniteMetric(kind: metric.kind, iteration: metric.iteration)
+            }
+            if metric.workerIndex != nil || metric.snapshotID != nil || metric.rolloutShardURL != nil {
+                guard let workerIndex = metric.workerIndex,
+                      workerIndex >= 0,
+                      let snapshotID = metric.snapshotID,
+                      !snapshotID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      metric.rolloutShardURL != nil else {
+                    throw ValidationError.invalidWorkerMetric(kind: metric.kind, iteration: metric.iteration)
+                }
             }
         }
     }

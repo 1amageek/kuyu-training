@@ -444,11 +444,45 @@ public struct TrainingRunOrchestrator {
                     value: finalLoss
                 ))
             }
+            metrics.append(contentsOf: workerMetricRecords(
+                runID: config.runID,
+                iteration: iteration,
+                workerMetrics: result.workerMetrics
+            ))
             return IterationTrainingResult(
                 metrics: metrics,
                 candidateCheckpointID: result.candidateCheckpointID,
                 candidateCheckpointURL: result.candidateCheckpointURL
             )
+        }
+    }
+
+    private func workerMetricRecords(
+        runID: String,
+        iteration: Int,
+        workerMetrics: [ReinforcementTrainingWorkerMetric]
+    ) -> [TrainingMetricRecord] {
+        workerMetrics.flatMap { metric in
+            [
+                TrainingMetricRecord(
+                    runID: runID,
+                    iteration: iteration,
+                    kind: .rewardAverage,
+                    value: metric.rewardAverage,
+                    workerIndex: metric.workerIndex,
+                    snapshotID: metric.snapshotID,
+                    rolloutShardURL: metric.rolloutShardURL
+                ),
+                TrainingMetricRecord(
+                    runID: runID,
+                    iteration: iteration,
+                    kind: .workerThroughput,
+                    value: metric.throughput,
+                    workerIndex: metric.workerIndex,
+                    snapshotID: metric.snapshotID,
+                    rolloutShardURL: metric.rolloutShardURL
+                )
+            ]
         }
     }
 

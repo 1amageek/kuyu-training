@@ -41,17 +41,42 @@ public struct ReinforcementTrainingBackendResult: Sendable, Equatable {
     public let finalLoss: Double?
     public let candidateCheckpointID: String?
     public let candidateCheckpointURL: URL?
+    public let workerMetrics: [ReinforcementTrainingWorkerMetric]
 
     public init(
         rewardAverage: Double,
         finalLoss: Double? = nil,
         candidateCheckpointID: String? = nil,
-        candidateCheckpointURL: URL? = nil
+        candidateCheckpointURL: URL? = nil,
+        workerMetrics: [ReinforcementTrainingWorkerMetric] = []
     ) {
         self.rewardAverage = rewardAverage
         self.finalLoss = finalLoss
         self.candidateCheckpointID = candidateCheckpointID
         self.candidateCheckpointURL = candidateCheckpointURL
+        self.workerMetrics = workerMetrics
+    }
+}
+
+public struct ReinforcementTrainingWorkerMetric: Sendable, Codable, Equatable {
+    public let workerIndex: Int
+    public let snapshotID: String
+    public let rolloutShardURL: URL
+    public let rewardAverage: Double
+    public let throughput: Double
+
+    public init(
+        workerIndex: Int,
+        snapshotID: String,
+        rolloutShardURL: URL,
+        rewardAverage: Double,
+        throughput: Double
+    ) {
+        self.workerIndex = workerIndex
+        self.snapshotID = snapshotID
+        self.rolloutShardURL = rolloutShardURL
+        self.rewardAverage = rewardAverage
+        self.throughput = throughput
     }
 }
 

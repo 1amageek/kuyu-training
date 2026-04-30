@@ -112,6 +112,9 @@ public struct TrainingMetricRecord: Sendable, Codable, Equatable {
     public let kind: TrainingMetricKind
     public let value: Double
     public let step: Int?
+    public let workerIndex: Int?
+    public let snapshotID: String?
+    public let rolloutShardURL: URL?
     public let timestamp: Date
 
     public init(
@@ -120,6 +123,9 @@ public struct TrainingMetricRecord: Sendable, Codable, Equatable {
         kind: TrainingMetricKind,
         value: Double,
         step: Int? = nil,
+        workerIndex: Int? = nil,
+        snapshotID: String? = nil,
+        rolloutShardURL: URL? = nil,
         timestamp: Date = Date()
     ) {
         self.runID = runID
@@ -127,6 +133,9 @@ public struct TrainingMetricRecord: Sendable, Codable, Equatable {
         self.kind = kind
         self.value = value
         self.step = step
+        self.workerIndex = workerIndex
+        self.snapshotID = snapshotID
+        self.rolloutShardURL = rolloutShardURL
         self.timestamp = timestamp
     }
 }

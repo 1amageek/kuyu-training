@@ -217,6 +217,66 @@ import Testing
     }
 }
 
+@Test func trainingRunArtifactValidatorRejectsPartialWorkerMetricIdentity() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+
+    let manifest = LearningRunManifest(
+        runID: "run-worker-metric",
+        mode: .rlRollout,
+        configHash: "config-hash",
+        suiteID: "Lift",
+        seedSet: [1],
+        policyID: "manasMLX",
+        outputCheckpointID: nil,
+        workerCount: 2,
+        startedAt: Date(timeIntervalSince1970: 1),
+        completedAt: Date(timeIntervalSince1970: 2),
+        terminalState: .completed,
+        failureReason: nil
+    )
+    let convergence = ConvergenceSummary(
+        runID: "run-worker-metric",
+        accepted: true,
+        reason: "accepted",
+        passRate: 1.0,
+        failureRate: 0.0,
+        safetyRegressionDetected: false,
+        plateauDetected: false,
+        overfitRiskDetected: false
+    )
+    let checkpointDecision = CheckpointDecision(
+        runID: "run-worker-metric",
+        state: .skipped,
+        reason: "no-candidate",
+        candidateCheckpointID: nil,
+        candidateCheckpointURL: nil,
+        publishedCheckpointURL: nil,
+        decidedAt: Date(timeIntervalSince1970: 3)
+    )
+    let metrics = [
+        TrainingMetricRecord(
+            runID: "run-worker-metric",
+            iteration: 1,
+            kind: .workerThroughput,
+            value: 10,
+            workerIndex: 0
+        )
+    ]
+
+    try TrainingArtifactWriter().write(
+        manifest: manifest,
+        metrics: metrics,
+        convergence: convergence,
+        checkpointDecision: checkpointDecision,
+        to: directory
+    )
+
+    #expect(throws: TrainingRunArtifactValidator.ValidationError.self) {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+    }
+}
+
 @MainActor
 @Test func TrainingRunOrchestratorWritesArtifactsForSuccessfulRun() async throws {
     let directory = try trainingContractTemporaryDirectory()
@@ -503,13 +563,6 @@ import Testing
     try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
     try Data("candidate".utf8).write(to: candidate.appendingPathComponent("model.json"))
     let executor = FakeTrainingScenarioExecutor(output: try trainingContractRunOutput(passed: true))
-    let backend = FakeReinforcementTrainingBackend(result: ReinforcementTrainingBackendResult(
-        rewardAverage: 0.9,
-        finalLoss: 0.1,
-        candidateCheckpointID: "rl-ckpt",
-        candidateCheckpointURL: candidate
-    ))
-    let orchestrator = TrainingRunOrchestrator(scenarioExecutor: executor, backend: backend)
     let workerPlan = ParallelTrainingWorkerPlan(
         runID: "run-rl",
         sourceSnapshot: nil,
@@ -529,6 +582,23 @@ import Testing
             )
         }
     )
+    let workerMetrics = workerPlan.assignments.map { assignment in
+        ReinforcementTrainingWorkerMetric(
+            workerIndex: assignment.workerIndex,
+            snapshotID: assignment.snapshot.identity.snapshotID,
+            rolloutShardURL: assignment.rolloutShardURL,
+            rewardAverage: 0.9 + Double(assignment.workerIndex) * 0.01,
+            throughput: 10 + Double(assignment.workerIndex)
+        )
+    }
+    let backend = FakeReinforcementTrainingBackend(result: ReinforcementTrainingBackendResult(
+        rewardAverage: 0.9,
+        finalLoss: 0.1,
+        candidateCheckpointID: "rl-ckpt",
+        candidateCheckpointURL: candidate,
+        workerMetrics: workerMetrics
+    ))
+    let orchestrator = TrainingRunOrchestrator(scenarioExecutor: executor, backend: backend)
 
     let result = await orchestrator.run(
         config: TrainingRunConfig(
@@ -561,6 +631,21 @@ import Testing
     #expect(backend.reinforcementRequests.first?.workerPlan == workerPlan)
     #expect(backend.reinforcementRequests.first?.algorithm == .actorCritic)
     #expect(result.metrics.contains { $0.kind == .rewardAverage && $0.value == 0.9 })
+    #expect(result.metrics.filter { $0.kind == .workerThroughput }.count == 4)
+    #expect(result.metrics.contains {
+        $0.kind == .workerThroughput
+            && $0.workerIndex == 3
+            && $0.snapshotID == "worker-3"
+            && $0.rolloutShardURL?.lastPathComponent == "worker-3"
+            && $0.value == 13
+    })
+    let artifactBundle = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+    #expect(artifactBundle.metrics.contains {
+        $0.kind == .workerThroughput
+            && $0.workerIndex == 2
+            && $0.snapshotID == "worker-2"
+            && $0.rolloutShardURL?.lastPathComponent == "worker-2"
+    })
     #expect(result.checkpointDecision.state == .accepted)
 }
 

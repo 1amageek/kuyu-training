@@ -279,7 +279,8 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
             runID: config.runID,
             generationIndex: generationIndex,
             candidates: (0..<config.populationSize).map { index in
-                GenomeCandidate(
+                let isIncumbent = generationIndex == 0 && index == 0
+                return GenomeCandidate(
                     runID: config.runID,
                     generationIndex: generationIndex,
                     candidateID: "g\(generationIndex)-c\(index)",
@@ -287,12 +288,13 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
                     parentCandidateIDs: parents,
                     checkpointID: "checkpoint-g\(generationIndex)-c\(index)",
                     checkpointURL: URL(fileURLWithPath: "/tmp/checkpoint-g\(generationIndex)-c\(index)"),
-                    mutationRate: mutationRate,
-                    mutationNoiseScale: mutationNoiseScale,
+                    mutationRate: isIncumbent ? 0 : mutationRate,
+                    mutationNoiseScale: isIncumbent ? 0 : mutationNoiseScale,
                     commonRandomSeed: commonRandomSeed,
                     antitheticPairID: config.antitheticSampling ? "g\(generationIndex)-p\(index / 2)" : nil,
                     antitheticSign: config.antitheticSampling ? (index.isMultiple(of: 2) ? 1 : -1) : nil,
-                    mutationSummary: generationIndex == 0 ? "seeded" : "mutated"
+                    mutationSummary: isIncumbent ? "incumbent-parent" : (generationIndex == 0 ? "seeded" : "mutated"),
+                    isIncumbent: isIncumbent
                 )
             }
         )

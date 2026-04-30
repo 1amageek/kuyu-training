@@ -49,6 +49,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
         case nonFiniteFitness(candidateID: String)
         case duplicateLineage(String)
         case lineageMismatch(candidateID: String)
+        case duplicateIncumbentCandidate(String)
+        case invalidIncumbentCandidate(String)
         case eliteCandidateMissing(String)
         case missingCompletedEliteArchive
         case bestCandidateMissing(String)
@@ -177,9 +179,22 @@ public struct EvolutionRunArtifactValidator: Sendable {
             lineage: lineage
         )
         var candidateIDs = Set<String>()
+        var incumbentCandidateID: String?
         for candidate in candidates {
             guard candidateIDs.insert(candidate.candidateID).inserted else {
                 throw ValidationError.duplicateCandidateID(candidate.candidateID)
+            }
+            if candidate.isIncumbent == true {
+                guard incumbentCandidateID == nil else {
+                    throw ValidationError.duplicateIncumbentCandidate(candidate.candidateID)
+                }
+                guard candidate.generationIndex == 0,
+                      candidate.parentCandidateIDs.isEmpty,
+                      candidate.mutationRate == 0,
+                      candidate.mutationNoiseScale == 0 else {
+                    throw ValidationError.invalidIncumbentCandidate(candidate.candidateID)
+                }
+                incumbentCandidateID = candidate.candidateID
             }
         }
         var fitnessByCandidateID: [String: FitnessSummary] = [:]

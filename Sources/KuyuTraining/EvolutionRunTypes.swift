@@ -247,6 +247,7 @@ public struct GenomeCandidate: Sendable, Codable, Equatable {
     public let antitheticPairID: String?
     public let antitheticSign: Int?
     public let mutationSummary: String?
+    public let isIncumbent: Bool?
 
     public init(
         runID: String,
@@ -261,7 +262,8 @@ public struct GenomeCandidate: Sendable, Codable, Equatable {
         commonRandomSeed: UInt64? = nil,
         antitheticPairID: String? = nil,
         antitheticSign: Int? = nil,
-        mutationSummary: String? = nil
+        mutationSummary: String? = nil,
+        isIncumbent: Bool = false
     ) {
         self.runID = runID
         self.generationIndex = max(0, generationIndex)
@@ -276,6 +278,7 @@ public struct GenomeCandidate: Sendable, Codable, Equatable {
         self.antitheticPairID = antitheticPairID
         self.antitheticSign = antitheticSign
         self.mutationSummary = mutationSummary
+        self.isIncumbent = isIncumbent
     }
 }
 

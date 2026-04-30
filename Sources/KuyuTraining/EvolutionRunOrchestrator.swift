@@ -135,6 +135,8 @@ public struct EvolutionRunOrchestrator {
         var allFitness: [FitnessSummary] = []
         var bestAcceptedFitness: FitnessSummary?
         var finalGateReport: EvolutionGateReport?
+        var incumbentCandidateID: String?
+        var incumbentFitness: Double?
         var mutationRate = config.mutationRate
         var mutationNoiseScale = config.mutationNoiseScale
 
@@ -177,16 +179,26 @@ public struct EvolutionRunOrchestrator {
                 )
             }
             allFitness.append(contentsOf: generationFitness)
+            if incumbentCandidateID == nil,
+               let incumbentCandidate = currentPopulation.candidates.first(where: { $0.isIncumbent == true }),
+               let summary = generationFitness.first(where: { $0.candidateID == incumbentCandidate.candidateID }) {
+                incumbentCandidateID = incumbentCandidate.candidateID
+                incumbentFitness = summary.scalarFitness
+            }
             let gateReport = gatePolicy.report(
                 runID: config.runID,
                 generationIndex: generationIndex,
-                fitness: generationFitness
+                fitness: generationFitness,
+                incumbentCandidateID: incumbentCandidateID,
+                incumbentFitness: incumbentFitness
             )
             finalGateReport = gateReport
-            bestAcceptedFitness = bestFitnessSummary(
-                current: bestAcceptedFitness,
-                candidateFitness: generationFitness.filter { gateReport.eliteCandidateIDs.contains($0.candidateID) }
-            )
+            if gateReport.accepted {
+                bestAcceptedFitness = bestFitnessSummary(
+                    current: bestAcceptedFitness,
+                    candidateFitness: generationFitness.filter { gateReport.eliteCandidateIDs.contains($0.candidateID) }
+                )
+            }
             let generationRecord = PopulationGenerationRecord(
                 runID: config.runID,
                 generationIndex: generationIndex,

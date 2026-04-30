@@ -7,6 +7,10 @@ public struct EvolutionGateReport: Sendable, Codable, Equatable {
     public let eliteCandidateIDs: [String]
     public let bestCandidateID: String?
     public let bestFitness: Double?
+    public let incumbentCandidateID: String?
+    public let incumbentFitness: Double?
+    public let bestVsIncumbentDelta: Double?
+    public let minimumImprovementOverIncumbent: Double?
     public let rejectionReasons: [String]
 
     public init(
@@ -16,6 +20,10 @@ public struct EvolutionGateReport: Sendable, Codable, Equatable {
         eliteCandidateIDs: [String],
         bestCandidateID: String?,
         bestFitness: Double?,
+        incumbentCandidateID: String? = nil,
+        incumbentFitness: Double? = nil,
+        bestVsIncumbentDelta: Double? = nil,
+        minimumImprovementOverIncumbent: Double? = nil,
         rejectionReasons: [String]
     ) {
         self.runID = runID
@@ -24,6 +32,10 @@ public struct EvolutionGateReport: Sendable, Codable, Equatable {
         self.eliteCandidateIDs = eliteCandidateIDs
         self.bestCandidateID = bestCandidateID
         self.bestFitness = bestFitness
+        self.incumbentCandidateID = incumbentCandidateID
+        self.incumbentFitness = incumbentFitness
+        self.bestVsIncumbentDelta = bestVsIncumbentDelta
+        self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
         self.rejectionReasons = rejectionReasons
     }
 }
@@ -34,25 +46,30 @@ public struct EvolutionGatePolicy: Sendable {
     public let maximumSafetyViolationRate: Double
     public let minimumHoldTimeRatio: Double?
     public let minimumRewardAverage: Double?
+    public let minimumImprovementOverIncumbent: Double?
 
     public init(
         eliteCount: Int,
         minimumTaskPassRate: Double = 1.0,
         maximumSafetyViolationRate: Double = 0.0,
         minimumHoldTimeRatio: Double? = nil,
-        minimumRewardAverage: Double? = nil
+        minimumRewardAverage: Double? = nil,
+        minimumImprovementOverIncumbent: Double? = nil
     ) {
         self.eliteCount = max(1, eliteCount)
         self.minimumTaskPassRate = minimumTaskPassRate
         self.maximumSafetyViolationRate = maximumSafetyViolationRate
         self.minimumHoldTimeRatio = minimumHoldTimeRatio
         self.minimumRewardAverage = minimumRewardAverage
+        self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
     }
 
     public func report(
         runID: String,
         generationIndex: Int,
-        fitness: [FitnessSummary]
+        fitness: [FitnessSummary],
+        incumbentCandidateID: String? = nil,
+        incumbentFitness knownIncumbentFitness: Double? = nil
     ) -> EvolutionGateReport {
         let validFitness = fitness.filter { summary in
             summary.scalarFitness.isFinite
@@ -70,6 +87,13 @@ public struct EvolutionGatePolicy: Sendable {
         let passing = ranked.filter { summary in
             candidatePasses(summary)
         }
+        let incumbentFitness = knownIncumbentFitness ?? incumbentCandidateID.flatMap { candidateID in
+            fitness.first { $0.candidateID == candidateID }?.scalarFitness
+        }
+        let bestPassing = passing.first
+        let bestVsIncumbentDelta = zipOptional(best?.scalarFitness, incumbentFitness).map { best, incumbent in
+            best - incumbent
+        }
         var reasons: [String] = []
         if fitness.isEmpty {
             reasons.append("empty-fitness")
@@ -81,6 +105,15 @@ public struct EvolutionGatePolicy: Sendable {
             reasons.append("no-candidate-passed-gate")
             reasons.append(contentsOf: validFitness.flatMap(candidateRejectionReasons))
         }
+        if let minimumImprovementOverIncumbent,
+           let incumbentFitness,
+           let bestPassing {
+            let improved = bestPassing.candidateID != incumbentCandidateID
+                && bestPassing.scalarFitness > incumbentFitness + minimumImprovementOverIncumbent
+            if !improved {
+                reasons.append("incumbent-improvement-below-min:\(bestPassing.candidateID):\(bestPassing.scalarFitness)-\(incumbentFitness)<=\(minimumImprovementOverIncumbent)")
+            }
+        }
         let eliteIDs = Array(passing.prefix(eliteCount).map(\.candidateID))
         return EvolutionGateReport(
             runID: runID,
@@ -89,6 +122,10 @@ public struct EvolutionGatePolicy: Sendable {
             eliteCandidateIDs: eliteIDs,
             bestCandidateID: best?.candidateID,
             bestFitness: best?.scalarFitness,
+            incumbentCandidateID: incumbentCandidateID,
+            incumbentFitness: incumbentFitness,
+            bestVsIncumbentDelta: bestVsIncumbentDelta,
+            minimumImprovementOverIncumbent: minimumImprovementOverIncumbent,
             rejectionReasons: reasons
         )
     }
@@ -131,4 +168,9 @@ public struct EvolutionGatePolicy: Sendable {
         reasons.append(contentsOf: summary.failureReasons.map { "candidate-failure:\(summary.candidateID):\($0)" })
         return reasons
     }
+}
+
+private func zipOptional<A, B>(_ lhs: A?, _ rhs: B?) -> (A, B)? {
+    guard let lhs, let rhs else { return nil }
+    return (lhs, rhs)
 }

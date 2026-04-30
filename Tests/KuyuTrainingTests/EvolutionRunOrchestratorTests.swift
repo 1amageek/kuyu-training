@@ -118,6 +118,44 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorRejectsWhenNoCandidateImprovesOnIncumbent() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = FakeEvolutionEvaluator(fixedFitness: 1.0)
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-no-incumbent-improvement",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0,
+            minimumImprovementOverIncumbent: 0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .rejected)
+    #expect(result.generations.first?.accepted == false)
+    #expect(result.generations.first?.rejectionReasons.contains { $0.hasPrefix("incumbent-improvement-below-min:") } == true)
+
+    let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
+    #expect(artifacts.generations.first?.rejectionReasons.contains { $0.hasPrefix("incumbent-improvement-below-min:") } == true)
+}
+
+@MainActor
 @Test func evolutionRunOrchestratorKeepsEarlierAcceptedEliteWhenLaterGenerationRegresses() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
@@ -307,22 +345,25 @@ private final class FakeEvolutionEvaluator: EvolutionCandidateEvaluating {
     let taskPassRate: Double
     let generationTaskPassRates: [Int: Double]
     let nonFiniteCandidateID: String?
+    let fixedFitness: Double?
 
     init(
         taskPassRate: Double = 1.0,
         generationTaskPassRates: [Int: Double] = [:],
-        nonFiniteCandidateID: String? = nil
+        nonFiniteCandidateID: String? = nil,
+        fixedFitness: Double? = nil
     ) {
         self.taskPassRate = taskPassRate
         self.generationTaskPassRates = generationTaskPassRates
         self.nonFiniteCandidateID = nonFiniteCandidateID
+        self.fixedFitness = fixedFitness
     }
 
     func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary {
         requests.append(request)
         let candidateRank = Double(Int(request.candidate.candidateID.split(separator: "c").last ?? "0") ?? 0)
         let generationOffset = Double(request.candidate.generationIndex) * 10
-        let finiteFitness = generationOffset + candidateRank
+        let finiteFitness = fixedFitness ?? (generationOffset + candidateRank)
         let scalarFitness = request.candidate.candidateID == nonFiniteCandidateID ? Double.nan : candidateRank
         return FitnessSummary(
             runID: request.config.runID,

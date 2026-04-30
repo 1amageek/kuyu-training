@@ -49,15 +49,18 @@ public struct EvolutionRunOrchestrator {
     public let backend: any EvolutionaryTrainingBackend
     public let evaluator: any EvolutionCandidateEvaluating
     public let artifactWriter: any EvolutionArtifactWriting
+    public let parentSelectionPolicy: EvolutionParentSelectionPolicy
 
     public init(
         backend: any EvolutionaryTrainingBackend,
         evaluator: any EvolutionCandidateEvaluating,
-        artifactWriter: any EvolutionArtifactWriting = EvolutionArtifactWriter()
+        artifactWriter: any EvolutionArtifactWriting = EvolutionArtifactWriter(),
+        parentSelectionPolicy: EvolutionParentSelectionPolicy = EvolutionParentSelectionPolicy()
     ) {
         self.backend = backend
         self.evaluator = evaluator
         self.artifactWriter = artifactWriter
+        self.parentSelectionPolicy = parentSelectionPolicy
     }
 
     public func run(
@@ -233,12 +236,18 @@ public struct EvolutionRunOrchestrator {
             )
             mutationRate = nextSchedule.mutationRate
             mutationNoiseScale = nextSchedule.mutationNoiseScale
+            let parentCandidateIDs = parentSelectionPolicy.parentCandidateIDs(
+                config: config,
+                eliteCandidateIDs: gateReport.eliteCandidateIDs,
+                generationFitness: generationFitness
+            )
             do {
                 currentPopulation = try await backend.produceNextGeneration(request: EvolutionGenerationRequest(
                     config: config,
                     previousPopulation: currentPopulation,
                     fitness: generationFitness,
                     eliteCandidateIDs: gateReport.eliteCandidateIDs,
+                    parentCandidateIDs: parentCandidateIDs,
                     mutationRate: mutationRate,
                     mutationNoiseScale: mutationNoiseScale,
                     commonRandomSeed: commonRandomSeed(config: config, generationIndex: generationIndex + 1),

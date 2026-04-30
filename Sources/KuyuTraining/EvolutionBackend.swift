@@ -27,6 +27,7 @@ public struct EvolutionGenerationRequest: Sendable, Equatable {
     public let previousPopulation: EvolutionPopulation
     public let fitness: [FitnessSummary]
     public let eliteCandidateIDs: [String]
+    public let parentCandidateIDs: [String]
     public let mutationRate: Double
     public let mutationNoiseScale: Double
     public let commonRandomSeed: UInt64
@@ -37,6 +38,7 @@ public struct EvolutionGenerationRequest: Sendable, Equatable {
         previousPopulation: EvolutionPopulation,
         fitness: [FitnessSummary],
         eliteCandidateIDs: [String],
+        parentCandidateIDs: [String]? = nil,
         mutationRate: Double? = nil,
         mutationNoiseScale: Double? = nil,
         commonRandomSeed: UInt64? = nil,
@@ -46,6 +48,7 @@ public struct EvolutionGenerationRequest: Sendable, Equatable {
         self.previousPopulation = previousPopulation
         self.fitness = fitness
         self.eliteCandidateIDs = eliteCandidateIDs
+        self.parentCandidateIDs = parentCandidateIDs ?? eliteCandidateIDs
         self.mutationRate = mutationRate ?? config.mutationRate
         self.mutationNoiseScale = mutationNoiseScale ?? config.mutationNoiseScale
         self.commonRandomSeed = commonRandomSeed ?? config.commonRandomSeed
@@ -78,7 +81,6 @@ public struct EvolutionCandidateEvaluationRequest: Sendable, Equatable {
     }
 }
 
-@MainActor
 public protocol EvolutionCandidateEvaluating: Sendable {
     func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary
 }

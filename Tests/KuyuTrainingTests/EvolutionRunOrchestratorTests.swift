@@ -65,6 +65,7 @@ import Testing
     #expect(backend.nextGenerationRequests.first?.mutationRate == 0.04)
     #expect(backend.nextGenerationRequests.first?.mutationNoiseScale == 0.02)
     #expect(backend.nextGenerationRequests.first?.eliteCandidateIDs == ["g0-c3", "g0-c2"])
+    #expect(backend.nextGenerationRequests.first?.parentCandidateIDs == ["g0-c3", "g0-c2", "g0-c1", "g0-c0"])
     #expect(evaluator.requests.count == 8)
 
     let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
@@ -82,6 +83,41 @@ import Testing
     #expect(artifacts.generations.first?.mutationRate == 0.08)
     #expect(artifacts.generations.first?.mutationNoiseScale == 0.04)
     #expect(artifacts.generations.last?.eliteCandidateIDs == ["g1-c3", "g1-c2"])
+}
+
+@MainActor
+@Test func evolutionRunOrchestratorEvaluatesCandidatesConcurrently() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let probe = EvaluationConcurrencyProbe()
+    let evaluator = SlowEvolutionEvaluator(probe: probe)
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-concurrent-evaluation",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 4,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            candidateEvaluationConcurrency: 4,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .completed)
+    #expect(await probe.maximumActiveCount() > 1)
 }
 
 @MainActor
@@ -285,6 +321,52 @@ import Testing
         Issue.record("Expected evolution artifact validator to reject tampered quality diversity archive")
     } catch let error as EvolutionRunArtifactValidator.ValidationError {
         #expect(error == .qualityDiversityCandidateMissing("missing-candidate"))
+    }
+}
+
+private actor EvaluationConcurrencyProbe {
+    private var activeCount = 0
+    private var maximumActive = 0
+
+    func enter() {
+        activeCount += 1
+        maximumActive = max(maximumActive, activeCount)
+    }
+
+    func leave() {
+        activeCount -= 1
+    }
+
+    func maximumActiveCount() -> Int {
+        maximumActive
+    }
+}
+
+private struct SlowEvolutionEvaluator: EvolutionCandidateEvaluating {
+    let probe: EvaluationConcurrencyProbe
+
+    func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary {
+        await probe.enter()
+        do {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            await probe.leave()
+        } catch {
+            await probe.leave()
+            throw error
+        }
+        let candidateRank = Double(Int(request.candidate.candidateID.split(separator: "c").last ?? "0") ?? 0)
+        return FitnessSummary(
+            runID: request.config.runID,
+            generationIndex: request.candidate.generationIndex,
+            candidateID: request.candidate.candidateID,
+            taskID: request.config.taskID,
+            scalarFitness: candidateRank,
+            rewardAverage: candidateRank,
+            taskPassRate: 1,
+            safetyViolationRate: 0,
+            holdTimeRatio: 1,
+            workerThroughput: Double(request.workerCount)
+        )
     }
 }
 

@@ -197,6 +197,41 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorComputesNoveltyForDuplicateBehavior() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = DuplicateBehaviorEvolutionEvaluator()
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-duplicate-behavior",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0,
+            minimumNoveltyScore: 0.1
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .rejected)
+    #expect(result.fitness.allSatisfy { $0.noveltyScore == 0 })
+    #expect(result.generations.first?.rejectionReasons.contains { $0.hasPrefix("novelty-below-min:g0-c") } == true)
+}
+
+@MainActor
 @Test func evolutionRunOrchestratorDoesNotPublishScalarImprovementWithTaskRegression() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
@@ -481,6 +516,27 @@ private struct PublishRegressionEvolutionEvaluator: EvolutionCandidateEvaluating
     }
 }
 
+private struct DuplicateBehaviorEvolutionEvaluator: EvolutionCandidateEvaluating {
+    func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary {
+        let candidateRank = Double(Int(request.candidate.candidateID.split(separator: "c").last ?? "0") ?? 0)
+        return FitnessSummary(
+            runID: request.config.runID,
+            generationIndex: request.candidate.generationIndex,
+            candidateID: request.candidate.candidateID,
+            taskID: request.config.taskID,
+            scalarFitness: candidateRank,
+            rewardAverage: 1,
+            taskPassRate: 1,
+            safetyViolationRate: 0,
+            holdTimeRatio: 1,
+            workerThroughput: Double(request.workerCount),
+            behaviorDescriptor: [
+                "stableBehavior": 1,
+            ]
+        )
+    }
+}
+
 @MainActor
 private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
     private(set) var seedRequests: [EvolutionSeedRequest] = []
@@ -503,7 +559,7 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
         return population(
             config: request.config,
             generationIndex: request.previousPopulation.generationIndex + 1,
-            parents: request.eliteCandidateIDs,
+            parents: request.parentCandidateIDs,
             mutationRate: request.mutationRate,
             mutationNoiseScale: request.mutationNoiseScale,
             commonRandomSeed: request.commonRandomSeed

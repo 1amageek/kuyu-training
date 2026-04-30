@@ -137,6 +137,7 @@ public struct EvolutionGatePolicy: Sendable {
         }
         if let minimumNoveltyScore {
             guard let noveltyScore = summary.noveltyScore,
+                  noveltyScore.isFinite,
                   noveltyScore >= minimumNoveltyScore else {
                 return false
             }
@@ -166,7 +167,9 @@ public struct EvolutionGatePolicy: Sendable {
         }
         if let minimumNoveltyScore {
             if let noveltyScore = summary.noveltyScore {
-                if noveltyScore < minimumNoveltyScore {
+                if !noveltyScore.isFinite {
+                    reasons.append("novelty-below-min:\(summary.candidateID):non-finite<\(minimumNoveltyScore)")
+                } else if noveltyScore < minimumNoveltyScore {
                     reasons.append("novelty-below-min:\(summary.candidateID):\(noveltyScore)<\(minimumNoveltyScore)")
                 }
             } else {

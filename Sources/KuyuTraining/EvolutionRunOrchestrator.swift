@@ -50,17 +50,20 @@ public struct EvolutionRunOrchestrator {
     public let evaluator: any EvolutionCandidateEvaluating
     public let artifactWriter: any EvolutionArtifactWriting
     public let parentSelectionPolicy: EvolutionParentSelectionPolicy
+    public let noveltyScoringPolicy: EvolutionNoveltyScoringPolicy
 
     public init(
         backend: any EvolutionaryTrainingBackend,
         evaluator: any EvolutionCandidateEvaluating,
         artifactWriter: any EvolutionArtifactWriting = EvolutionArtifactWriter(),
-        parentSelectionPolicy: EvolutionParentSelectionPolicy = EvolutionParentSelectionPolicy()
+        parentSelectionPolicy: EvolutionParentSelectionPolicy = EvolutionParentSelectionPolicy(),
+        noveltyScoringPolicy: EvolutionNoveltyScoringPolicy = EvolutionNoveltyScoringPolicy()
     ) {
         self.backend = backend
         self.evaluator = evaluator
         self.artifactWriter = artifactWriter
         self.parentSelectionPolicy = parentSelectionPolicy
+        self.noveltyScoringPolicy = noveltyScoringPolicy
     }
 
     public func run(
@@ -163,11 +166,15 @@ public struct EvolutionRunOrchestrator {
             allCandidates.append(contentsOf: currentPopulation.candidates)
             let generationFitness: [FitnessSummary]
             do {
-                generationFitness = try await evaluate(
+                let rawGenerationFitness = try await evaluate(
                     config: config,
                     population: currentPopulation,
                     generationArtifactDirectory: generationDirectory,
-                    onEvent: onEvent
+                    onEvent: nil
+                )
+                generationFitness = noveltyScoringPolicy.score(
+                    currentGeneration: rawGenerationFitness,
+                    archive: allFitness
                 )
             } catch {
                 return await finish(
@@ -180,6 +187,9 @@ public struct EvolutionRunOrchestrator {
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
+            }
+            for summary in generationFitness {
+                onEvent?(.candidateEvaluated(summary))
             }
             allFitness.append(contentsOf: generationFitness)
             if incumbentCandidateID == nil,
@@ -318,7 +328,6 @@ public struct EvolutionRunOrchestrator {
                 workerCount: config.workerCount
             ))
             records.append(summary)
-            onEvent?(.candidateEvaluated(summary))
         }
         return records
     }
@@ -350,7 +359,6 @@ public struct EvolutionRunOrchestrator {
                 }
                 for try await (index, summary) in group {
                     records[index] = summary
-                    onEvent?(.candidateEvaluated(summary))
                 }
             }
             nextIndex = batchEnd

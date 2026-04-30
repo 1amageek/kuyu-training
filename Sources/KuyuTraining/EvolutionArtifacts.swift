@@ -1,7 +1,7 @@
 import Foundation
 
 public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 3
+    public static let currentSchemaVersion = 4
     public static let currentContractVersion = 1
     public static let fileName = "evolution-contract.json"
 
@@ -42,9 +42,14 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
     public let checkpointID: String?
     public let checkpointURL: URL?
     public let scalarFitness: Double?
+    public let bestCandidateID: String?
+    public let bestCheckpointID: String?
+    public let bestCheckpointURL: URL?
+    public let bestFitness: Double?
     public let incumbentCandidateID: String?
     public let incumbentFitness: Double?
     public let bestVsIncumbentDelta: Double?
+    public let minimumImprovementOverIncumbent: Double?
     public let reasons: [String]
 
     public init(
@@ -55,9 +60,14 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
         checkpointID: String?,
         checkpointURL: URL?,
         scalarFitness: Double?,
+        bestCandidateID: String? = nil,
+        bestCheckpointID: String? = nil,
+        bestCheckpointURL: URL? = nil,
+        bestFitness: Double? = nil,
         incumbentCandidateID: String?,
         incumbentFitness: Double?,
         bestVsIncumbentDelta: Double?,
+        minimumImprovementOverIncumbent: Double? = nil,
         reasons: [String]
     ) {
         self.runID = runID
@@ -67,9 +77,14 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
         self.checkpointID = checkpointID
         self.checkpointURL = checkpointURL
         self.scalarFitness = scalarFitness
+        self.bestCandidateID = bestCandidateID
+        self.bestCheckpointID = bestCheckpointID
+        self.bestCheckpointURL = bestCheckpointURL
+        self.bestFitness = bestFitness
         self.incumbentCandidateID = incumbentCandidateID
         self.incumbentFitness = incumbentFitness
         self.bestVsIncumbentDelta = bestVsIncumbentDelta
+        self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
         self.reasons = reasons
     }
 }
@@ -225,18 +240,47 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
             eliteArchive.bestFitness,
             incumbentFitness
         ).map { best, incumbent in best - incumbent }
+        let minimumImprovementOverIncumbent = generations.last?.minimumImprovementOverIncumbent
+        let improvementAccepted: Bool
+        if let minimumImprovementOverIncumbent,
+           let incumbentFitness,
+           let bestFitness = eliteArchive.bestFitness {
+            improvementAccepted = bestFitness > incumbentFitness + minimumImprovementOverIncumbent
+        } else {
+            improvementAccepted = true
+        }
+        let accepted = manifest.terminalState == .completed
+            && bestCandidate != nil
+            && improvementAccepted
+        var reasons: [String] = []
+        if manifest.terminalState != .completed {
+            reasons.append(contentsOf: generations.last?.rejectionReasons ?? [])
+        }
+        if manifest.terminalState == .completed,
+           !improvementAccepted,
+           let minimumImprovementOverIncumbent,
+           let incumbentFitness,
+           let bestFitness = eliteArchive.bestFitness,
+           let bestCandidateID = eliteArchive.bestCandidateID {
+            reasons.append("incumbent-improvement-below-min:\(bestCandidateID):\(bestFitness)-\(incumbentFitness)<=\(minimumImprovementOverIncumbent)")
+        }
         return EvolutionAcceptedCheckpointDecision(
             runID: manifest.runID,
             terminalState: manifest.terminalState,
-            accepted: manifest.terminalState == .completed && bestCandidate != nil,
-            candidateID: bestCandidate?.candidateID,
-            checkpointID: bestCandidate?.checkpointID,
-            checkpointURL: bestCandidate?.checkpointURL,
-            scalarFitness: eliteArchive.bestFitness,
+            accepted: accepted,
+            candidateID: accepted ? bestCandidate?.candidateID : nil,
+            checkpointID: accepted ? bestCandidate?.checkpointID : nil,
+            checkpointURL: accepted ? bestCandidate?.checkpointURL : nil,
+            scalarFitness: accepted ? eliteArchive.bestFitness : nil,
+            bestCandidateID: bestCandidate?.candidateID,
+            bestCheckpointID: bestCandidate?.checkpointID,
+            bestCheckpointURL: bestCandidate?.checkpointURL,
+            bestFitness: eliteArchive.bestFitness,
             incumbentCandidateID: incumbentCandidate?.candidateID,
             incumbentFitness: incumbentFitness,
             bestVsIncumbentDelta: bestVsIncumbentDelta,
-            reasons: manifest.terminalState == .completed ? [] : generations.last?.rejectionReasons ?? []
+            minimumImprovementOverIncumbent: minimumImprovementOverIncumbent,
+            reasons: reasons
         )
     }
 }

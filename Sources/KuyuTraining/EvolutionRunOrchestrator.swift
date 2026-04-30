@@ -207,6 +207,10 @@ public struct EvolutionRunOrchestrator {
                 eliteCandidateIDs: gateReport.eliteCandidateIDs,
                 bestCandidateID: gateReport.bestCandidateID,
                 bestFitness: gateReport.bestFitness,
+                incumbentCandidateID: gateReport.incumbentCandidateID,
+                incumbentFitness: gateReport.incumbentFitness,
+                bestVsIncumbentDelta: gateReport.bestVsIncumbentDelta,
+                minimumImprovementOverIncumbent: gateReport.minimumImprovementOverIncumbent,
                 qualityDiversityCellCount: EvolutionQualityDiversityArchiveBuilder()
                     .build(runID: config.runID, fitness: allFitness)
                     .cells

@@ -339,8 +339,38 @@ public struct EvolutionRunArtifactValidator: Sendable {
         guard decision.terminalState == manifest.terminalState else {
             throw ValidationError.acceptedCheckpointMismatch("terminal-state")
         }
-        guard decision.accepted == (manifest.terminalState == .completed && eliteArchive.bestCandidateID != nil) else {
+        let improvementAccepted: Bool
+        if let minimumImprovement = decision.minimumImprovementOverIncumbent,
+           let incumbentFitness = decision.incumbentFitness,
+           let bestFitness = eliteArchive.bestFitness {
+            improvementAccepted = bestFitness > incumbentFitness + minimumImprovement
+        } else {
+            improvementAccepted = true
+        }
+        let expectedAccepted = manifest.terminalState == .completed
+            && eliteArchive.bestCandidateID != nil
+            && improvementAccepted
+        guard decision.accepted == expectedAccepted else {
             throw ValidationError.acceptedCheckpointMismatch("accepted")
+        }
+        guard decision.bestCandidateID == eliteArchive.bestCandidateID,
+              decision.bestFitness == eliteArchive.bestFitness else {
+            throw ValidationError.acceptedCheckpointMismatch("best-candidate")
+        }
+        if let bestCandidateID = decision.bestCandidateID {
+            guard let bestCandidate = candidates.first(where: { $0.candidateID == bestCandidateID }) else {
+                throw ValidationError.acceptedCheckpointCandidateMissing(bestCandidateID)
+            }
+            guard decision.bestCheckpointID == bestCandidate.checkpointID,
+                  decision.bestCheckpointURL == bestCandidate.checkpointURL else {
+                throw ValidationError.acceptedCheckpointMismatch("best-checkpoint")
+            }
+        } else {
+            guard decision.bestCheckpointID == nil,
+                  decision.bestCheckpointURL == nil,
+                  decision.bestFitness == nil else {
+                throw ValidationError.acceptedCheckpointMismatch("missing-best-candidate")
+            }
         }
         if decision.accepted {
             guard let candidateID = decision.candidateID else {
@@ -352,7 +382,8 @@ public struct EvolutionRunArtifactValidator: Sendable {
             guard eliteArchive.bestCandidateID == candidateID,
                   decision.checkpointID == candidate.checkpointID,
                   decision.checkpointURL == candidate.checkpointURL,
-                  decision.scalarFitness == eliteArchive.bestFitness else {
+                  decision.scalarFitness == eliteArchive.bestFitness,
+                  decision.bestCandidateID == candidateID else {
                 throw ValidationError.acceptedCheckpointMismatch(candidateID)
             }
         } else {
@@ -370,7 +401,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
         guard decision.incumbentFitness == expectedIncumbentFitness else {
             throw ValidationError.acceptedCheckpointMismatch("incumbent-fitness")
         }
-        let expectedDelta = zipOptional(decision.scalarFitness, decision.incumbentFitness).map { best, incumbent in
+        let expectedDelta = zipOptional(decision.bestFitness, decision.incumbentFitness).map { best, incumbent in
             best - incumbent
         }
         guard decision.bestVsIncumbentDelta == expectedDelta else {

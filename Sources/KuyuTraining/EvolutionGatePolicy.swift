@@ -90,7 +90,6 @@ public struct EvolutionGatePolicy: Sendable {
         let incumbentFitness = knownIncumbentFitness ?? incumbentCandidateID.flatMap { candidateID in
             fitness.first { $0.candidateID == candidateID }?.scalarFitness
         }
-        let bestPassing = passing.first
         let bestVsIncumbentDelta = zipOptional(best?.scalarFitness, incumbentFitness).map { best, incumbent in
             best - incumbent
         }
@@ -104,15 +103,6 @@ public struct EvolutionGatePolicy: Sendable {
         if passing.isEmpty, !fitness.isEmpty {
             reasons.append("no-candidate-passed-gate")
             reasons.append(contentsOf: validFitness.flatMap(candidateRejectionReasons))
-        }
-        if let minimumImprovementOverIncumbent,
-           let incumbentFitness,
-           let bestPassing {
-            let improved = bestPassing.candidateID != incumbentCandidateID
-                && bestPassing.scalarFitness > incumbentFitness + minimumImprovementOverIncumbent
-            if !improved {
-                reasons.append("incumbent-improvement-below-min:\(bestPassing.candidateID):\(bestPassing.scalarFitness)-\(incumbentFitness)<=\(minimumImprovementOverIncumbent)")
-            }
         }
         let eliteIDs = Array(passing.prefix(eliteCount).map(\.candidateID))
         return EvolutionGateReport(

@@ -73,6 +73,7 @@ import Testing
     #expect(artifacts.acceptedCheckpoint.accepted)
     #expect(artifacts.acceptedCheckpoint.candidateID == "g1-c3")
     #expect(artifacts.acceptedCheckpoint.checkpointURL?.path == "/tmp/checkpoint-g1-c3")
+    #expect(artifacts.acceptedCheckpoint.bestCandidateID == "g1-c3")
     #expect(artifacts.acceptedCheckpoint.bestVsIncumbentDelta == 13)
     #expect(artifacts.contract.requiredFiles.contains(EvolutionQualityDiversityArchive.fileName))
     #expect(artifacts.contract.requiredFiles.contains(EvolutionAcceptedCheckpointDecision.fileName))
@@ -125,7 +126,7 @@ import Testing
 }
 
 @MainActor
-@Test func evolutionRunOrchestratorRejectsWhenNoCandidateImprovesOnIncumbent() async throws {
+@Test func evolutionRunOrchestratorArchivesButDoesNotPublishWhenNoCandidateImprovesOnIncumbent() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
     let backend = FakeEvolutionBackend()
@@ -154,12 +155,16 @@ import Testing
         artifactDirectory: directory
     )
 
-    #expect(result.manifest.terminalState == .rejected)
-    #expect(result.generations.first?.accepted == false)
-    #expect(result.generations.first?.rejectionReasons.contains { $0.hasPrefix("incumbent-improvement-below-min:") } == true)
+    #expect(result.manifest.terminalState == .completed)
+    #expect(result.generations.first?.accepted == true)
+    #expect(result.generations.first?.rejectionReasons.isEmpty == true)
 
     let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
-    #expect(artifacts.generations.first?.rejectionReasons.contains { $0.hasPrefix("incumbent-improvement-below-min:") } == true)
+    #expect(artifacts.generations.first?.accepted == true)
+    #expect(artifacts.acceptedCheckpoint.accepted == false)
+    #expect(artifacts.acceptedCheckpoint.candidateID == nil)
+    #expect(artifacts.acceptedCheckpoint.bestCandidateID == "g0-c0")
+    #expect(artifacts.acceptedCheckpoint.reasons.contains { $0.hasPrefix("incumbent-improvement-below-min:") } == true)
 }
 
 @MainActor

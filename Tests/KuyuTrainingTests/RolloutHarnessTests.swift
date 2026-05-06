@@ -51,6 +51,29 @@ import KuyuScenarios
     #expect(parallel.allSatisfy { $0.truncated && !$0.done && $0.failureReason == nil })
 }
 
+@Test func parallelRolloutCollectorLimitsActiveWorkersToWorkerCount() async throws {
+    let definitions = try (0..<6).map { index in
+        try makeShortAttitudeScenario(id: "KUY-RL-WORKER-LIMIT/\(index)", seed: UInt64(500 + index))
+    }
+    let schedule = try SimulationSchedule.baseline(cutPeriodSteps: 1)
+    let runner = RolloutRunner(
+        schedule: schedule,
+        determinism: .tier1Baseline,
+        motorNerveRateLimitPerSecond: 100.0,
+        motorNerveSmoothingTimeConstant: nil
+    )
+    let probe = WorkerConcurrencyProbe()
+    let factory = SlowProbePolicyFactory(probe: probe)
+
+    let episodes = try await ParallelRolloutCollector(runner: runner, workerCount: 2)
+        .collect(definitions: definitions, policyFactory: factory)
+
+    #expect(episodes.count == definitions.count)
+    #expect(await probe.maximumActiveCount() <= 2)
+    #expect(Set(episodes.map(\.workerIndex)) == Set([0, 1]))
+    #expect(episodes.allSatisfy { $0.workerCount == 2 })
+}
+
 @Test func rolloutDatasetWriterIncludesRewardAndEpisodeMetadata() async throws {
     let definition = try makeShortAttitudeScenario(id: "KUY-RL-DATASET/1", seed: 201)
     let schedule = try SimulationSchedule.baseline(cutPeriodSteps: 1)
@@ -211,6 +234,51 @@ import KuyuScenarios
     let metadata = try JSONDecoder().decode(TrainingDatasetMetadata.self, from: Data(json.utf8))
     #expect(metadata.schemaVersion == 1)
     #expect(metadata.rewardDescriptor == nil)
+}
+
+private actor WorkerConcurrencyProbe {
+    private var activeCount = 0
+    private var maxActiveCount = 0
+
+    func enter() {
+        activeCount += 1
+        maxActiveCount = max(maxActiveCount, activeCount)
+    }
+
+    func leave() {
+        activeCount = max(0, activeCount - 1)
+    }
+
+    func maximumActiveCount() -> Int {
+        maxActiveCount
+    }
+}
+
+private struct SlowProbePolicyFactory: ReferenceQuadrotorPolicyFactory {
+    let policyID = "slowProbe"
+    let probe: WorkerConcurrencyProbe
+
+    func makePolicy(
+        definition: ReferenceQuadrotorScenarioDefinition,
+        workerIndex: Int
+    ) throws -> any ReferenceQuadrotorEnvironmentPolicy {
+        SlowProbePolicy(policyID: policyID, probe: probe)
+    }
+}
+
+private struct SlowProbePolicy: ReferenceQuadrotorEnvironmentPolicy {
+    let policyID: String
+    let probe: WorkerConcurrencyProbe
+
+    mutating func action(for observation: EnvironmentObservation) async throws -> EnvironmentAction {
+        await probe.enter()
+        try await Task.sleep(for: .milliseconds(2))
+        await probe.leave()
+        let drives = try (0..<4).map { index in
+            try DriveIntent(index: DriveIndex(UInt32(index)), activation: 0.5)
+        }
+        return .driveIntents(drives, corrections: [])
+    }
 }
 
 private func makeShortAttitudeScenario(id: String, seed: UInt64) throws -> ReferenceQuadrotorScenarioDefinition {

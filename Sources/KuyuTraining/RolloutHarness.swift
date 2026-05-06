@@ -367,46 +367,51 @@ public struct ParallelRolloutCollector: Sendable {
         definitions: [ReferenceQuadrotorScenarioDefinition],
         policyFactory: any ReferenceQuadrotorPolicyFactory
     ) async throws -> [RolloutEpisode] {
-        try await withThrowingTaskGroup(of: RolloutEpisode.self) { group in
-            for (index, definition) in definitions.enumerated() {
-                let workerIndex = index % workerCount
+        let shardCount = min(workerCount, max(definitions.count, 1))
+        return try await withThrowingTaskGroup(of: [RolloutEpisode].self) { group in
+            for workerIndex in 0..<shardCount {
+                let workerDefinitions = definitions.enumerated().compactMap { index, definition in
+                    index % shardCount == workerIndex ? definition : nil
+                }
+                guard !workerDefinitions.isEmpty else { continue }
                 let runner = runner
                 group.addTask {
-                    var episode = try await runner.runEpisode(
-                        definition: definition,
+                    let episodes = try await runner.run(
+                        definitions: workerDefinitions,
                         policyFactory: policyFactory,
                         workerIndex: workerIndex
                     )
-                    episode = RolloutEpisode(
-                        episodeId: episode.episodeId,
-                        scenarioId: episode.scenarioId,
-                        seed: episode.seed,
-                        workerIndex: episode.workerIndex,
-                        policyId: episode.policyId,
-                        configHash: episode.configHash,
-                        descriptorId: episode.descriptorId,
-                        rewardDescriptor: episode.rewardDescriptor,
-                        rewardSum: episode.rewardSum,
-                        done: episode.done,
-                        truncated: episode.truncated,
-                        terminalReason: episode.terminalReason,
-                        failureReason: episode.failureReason,
-                        failureTime: episode.failureTime,
-                        stepCount: episode.stepCount,
-                        workerCount: workerCount,
-                        maxSteps: episode.maxSteps,
-                        durationSeconds: episode.durationSeconds,
-                        cancelled: episode.cancelled,
-                        steps: episode.steps
-                    )
-                    return episode
+                    return episodes.map { episode in
+                        RolloutEpisode(
+                            episodeId: episode.episodeId,
+                            scenarioId: episode.scenarioId,
+                            seed: episode.seed,
+                            workerIndex: episode.workerIndex,
+                            policyId: episode.policyId,
+                            configHash: episode.configHash,
+                            descriptorId: episode.descriptorId,
+                            rewardDescriptor: episode.rewardDescriptor,
+                            rewardSum: episode.rewardSum,
+                            done: episode.done,
+                            truncated: episode.truncated,
+                            terminalReason: episode.terminalReason,
+                            failureReason: episode.failureReason,
+                            failureTime: episode.failureTime,
+                            stepCount: episode.stepCount,
+                            workerCount: workerCount,
+                            maxSteps: episode.maxSteps,
+                            durationSeconds: episode.durationSeconds,
+                            cancelled: episode.cancelled,
+                            steps: episode.steps
+                        )
+                    }
                 }
             }
 
             var episodes: [RolloutEpisode] = []
             episodes.reserveCapacity(definitions.count)
-            for try await episode in group {
-                episodes.append(episode)
+            for try await workerEpisodes in group {
+                episodes.append(contentsOf: workerEpisodes)
             }
             return episodes.sorted { lhs, rhs in
                 if lhs.scenarioId != rhs.scenarioId { return lhs.scenarioId < rhs.scenarioId }

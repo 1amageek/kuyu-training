@@ -73,6 +73,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
         case duplicateEvaluationTrace(String)
         case missingEvaluationTrace(String)
         case invalidEvaluationTrace(String)
+        case generationImprovementMismatch(Int)
     }
 
     public init() {}
@@ -255,6 +256,17 @@ public struct EvolutionRunArtifactValidator: Sendable {
                   summary.teacherDelta?.isFinite ?? true,
                   summary.workerThroughput?.isFinite ?? true else {
                 throw ValidationError.nonFiniteFitness(candidateID: candidate.candidateID)
+            }
+        }
+        for record in generations {
+            let expectedImproved: Bool
+            if let bestVsIncumbentDelta = record.bestVsIncumbentDelta {
+                expectedImproved = bestVsIncumbentDelta > (record.minimumImprovementOverIncumbent ?? 0)
+            } else {
+                expectedImproved = false
+            }
+            guard record.incumbentImproved == expectedImproved else {
+                throw ValidationError.generationImprovementMismatch(record.generationIndex)
             }
         }
         var lineageByCandidateID: [String: EvolutionLineageRecord] = [:]

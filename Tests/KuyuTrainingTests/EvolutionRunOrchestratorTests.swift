@@ -167,6 +167,7 @@ import Testing
 
     #expect(result.generations.first?.accepted == true)
     #expect(result.generations.first?.bestVsIncumbentDelta == 0)
+    #expect(result.generations.first?.incumbentImproved == false)
     #expect(backend.nextGenerationRequests.first?.mutationRate == 0.06)
     #expect(backend.nextGenerationRequests.first?.mutationNoiseScale == 0.003)
 }
@@ -357,10 +358,12 @@ import Testing
 
     #expect(result.manifest.terminalState == .completed)
     #expect(result.generations.first?.accepted == true)
+    #expect(result.generations.first?.incumbentImproved == false)
     #expect(result.generations.first?.rejectionReasons.isEmpty == true)
 
     let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
     #expect(artifacts.generations.first?.accepted == true)
+    #expect(artifacts.generations.first?.incumbentImproved == false)
     #expect(artifacts.acceptedCheckpoint.accepted == false)
     #expect(artifacts.acceptedCheckpoint.candidateID == nil)
     #expect(artifacts.acceptedCheckpoint.bestCandidateID == "g0-c0")

@@ -361,6 +361,7 @@ public struct PopulationGenerationRecord: Sendable, Codable, Equatable {
     public let incumbentFitness: Double?
     public let bestVsIncumbentDelta: Double?
     public let minimumImprovementOverIncumbent: Double?
+    public let incumbentImproved: Bool
     public let qualityDiversityCellCount: Int
     public let mutationRate: Double
     public let mutationNoiseScale: Double
@@ -380,6 +381,7 @@ public struct PopulationGenerationRecord: Sendable, Codable, Equatable {
         incumbentFitness: Double? = nil,
         bestVsIncumbentDelta: Double? = nil,
         minimumImprovementOverIncumbent: Double? = nil,
+        incumbentImproved: Bool? = nil,
         qualityDiversityCellCount: Int = 0,
         mutationRate: Double = 0,
         mutationNoiseScale: Double = 0,
@@ -398,6 +400,9 @@ public struct PopulationGenerationRecord: Sendable, Codable, Equatable {
         self.incumbentFitness = incumbentFitness
         self.bestVsIncumbentDelta = bestVsIncumbentDelta
         self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
+        self.incumbentImproved = incumbentImproved ?? bestVsIncumbentDelta.map {
+            $0 > (minimumImprovementOverIncumbent ?? 0)
+        } ?? false
         self.qualityDiversityCellCount = max(0, qualityDiversityCellCount)
         self.mutationRate = max(0, mutationRate)
         self.mutationNoiseScale = max(0, mutationNoiseScale)

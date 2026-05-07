@@ -230,6 +230,7 @@ public struct EvolutionRunOrchestrator {
                 incumbentFitness: gateReport.incumbentFitness,
                 bestVsIncumbentDelta: gateReport.bestVsIncumbentDelta,
                 minimumImprovementOverIncumbent: gateReport.minimumImprovementOverIncumbent,
+                incumbentImproved: incumbentImproved(gateReport: gateReport),
                 qualityDiversityCellCount: EvolutionQualityDiversityArchiveBuilder()
                     .build(runID: config.runID, fitness: allFitness)
                     .cells
@@ -532,6 +533,14 @@ public struct EvolutionRunOrchestrator {
         guard gateReport.accepted else { return false }
         guard let bestVsIncumbentDelta = gateReport.bestVsIncumbentDelta else {
             return true
+        }
+        let minimumImprovement = gateReport.minimumImprovementOverIncumbent ?? 0
+        return bestVsIncumbentDelta > minimumImprovement
+    }
+
+    private func incumbentImproved(gateReport: EvolutionGateReport) -> Bool {
+        guard let bestVsIncumbentDelta = gateReport.bestVsIncumbentDelta else {
+            return false
         }
         let minimumImprovement = gateReport.minimumImprovementOverIncumbent ?? 0
         return bestVsIncumbentDelta > minimumImprovement

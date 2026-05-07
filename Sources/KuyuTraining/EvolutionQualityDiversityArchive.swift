@@ -53,6 +53,7 @@ public struct EvolutionQualityDiversityArchiveBuilder: Sendable {
         descriptorKeys: [String] = [
             "taskPassRate",
             "holdTimeRatio",
+            "altitudeErrorRatio",
             "safetyViolationRate",
             "rewardAverage",
         ],
@@ -100,6 +101,7 @@ public struct EvolutionQualityDiversityArchiveBuilder: Sendable {
         var descriptor = summary.behaviorDescriptor
         descriptor["taskPassRate"] = summary.taskPassRate
         descriptor["holdTimeRatio"] = summary.holdTimeRatio ?? 0
+        descriptor["altitudeErrorRatio"] = summary.altitudeErrorRatio ?? 0
         descriptor["safetyViolationRate"] = summary.safetyViolationRate
         descriptor["rewardAverage"] = summary.rewardAverage
         return descriptor

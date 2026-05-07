@@ -249,6 +249,7 @@ public struct EvolutionRunArtifactValidator: Sendable {
                   summary.taskPassRate.isFinite,
                   summary.safetyViolationRate.isFinite,
                   summary.holdTimeRatio?.isFinite ?? true,
+                  summary.altitudeErrorRatio?.isFinite ?? true,
                   summary.energyPenalty?.isFinite ?? true,
                   summary.noveltyScore?.isFinite ?? true,
                   summary.teacherDelta?.isFinite ?? true,

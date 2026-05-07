@@ -45,6 +45,7 @@ public struct EvolutionGatePolicy: Sendable {
     public let minimumTaskPassRate: Double
     public let maximumSafetyViolationRate: Double
     public let minimumHoldTimeRatio: Double?
+    public let maximumAltitudeErrorRatio: Double?
     public let minimumRewardAverage: Double?
     public let minimumImprovementOverIncumbent: Double?
     public let minimumNoveltyScore: Double?
@@ -54,6 +55,7 @@ public struct EvolutionGatePolicy: Sendable {
         minimumTaskPassRate: Double = 1.0,
         maximumSafetyViolationRate: Double = 0.0,
         minimumHoldTimeRatio: Double? = nil,
+        maximumAltitudeErrorRatio: Double? = nil,
         minimumRewardAverage: Double? = nil,
         minimumImprovementOverIncumbent: Double? = nil,
         minimumNoveltyScore: Double? = nil
@@ -62,6 +64,7 @@ public struct EvolutionGatePolicy: Sendable {
         self.minimumTaskPassRate = minimumTaskPassRate
         self.maximumSafetyViolationRate = maximumSafetyViolationRate
         self.minimumHoldTimeRatio = minimumHoldTimeRatio
+        self.maximumAltitudeErrorRatio = maximumAltitudeErrorRatio
         self.minimumRewardAverage = minimumRewardAverage
         self.minimumImprovementOverIncumbent = minimumImprovementOverIncumbent
         self.minimumNoveltyScore = minimumNoveltyScore
@@ -132,6 +135,12 @@ public struct EvolutionGatePolicy: Sendable {
                 return false
             }
         }
+        if let maximumAltitudeErrorRatio {
+            guard let altitudeErrorRatio = summary.altitudeErrorRatio,
+                  altitudeErrorRatio <= maximumAltitudeErrorRatio else {
+                return false
+            }
+        }
         if let minimumRewardAverage {
             guard summary.rewardAverage >= minimumRewardAverage else { return false }
         }
@@ -160,6 +169,15 @@ public struct EvolutionGatePolicy: Sendable {
                 }
             } else {
                 reasons.append("hold-time-below-min:\(summary.candidateID):missing<\(minimumHoldTimeRatio)")
+            }
+        }
+        if let maximumAltitudeErrorRatio {
+            if let altitudeErrorRatio = summary.altitudeErrorRatio {
+                if altitudeErrorRatio > maximumAltitudeErrorRatio {
+                    reasons.append("altitude-error-above-max:\(summary.candidateID):\(altitudeErrorRatio)>\(maximumAltitudeErrorRatio)")
+                }
+            } else {
+                reasons.append("altitude-error-above-max:\(summary.candidateID):missing>\(maximumAltitudeErrorRatio)")
             }
         }
         if let minimumRewardAverage, summary.rewardAverage < minimumRewardAverage {

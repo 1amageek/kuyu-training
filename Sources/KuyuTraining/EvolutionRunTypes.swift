@@ -304,6 +304,7 @@ public struct FitnessSummary: Sendable, Codable, Equatable {
     public let taskPassRate: Double
     public let safetyViolationRate: Double
     public let holdTimeRatio: Double?
+    public let altitudeErrorRatio: Double?
     public let energyPenalty: Double?
     public let noveltyScore: Double?
     public let teacherDelta: Double?
@@ -321,6 +322,7 @@ public struct FitnessSummary: Sendable, Codable, Equatable {
         taskPassRate: Double,
         safetyViolationRate: Double,
         holdTimeRatio: Double? = nil,
+        altitudeErrorRatio: Double? = nil,
         energyPenalty: Double? = nil,
         noveltyScore: Double? = nil,
         teacherDelta: Double? = nil,
@@ -337,6 +339,7 @@ public struct FitnessSummary: Sendable, Codable, Equatable {
         self.taskPassRate = taskPassRate
         self.safetyViolationRate = safetyViolationRate
         self.holdTimeRatio = holdTimeRatio
+        self.altitudeErrorRatio = altitudeErrorRatio
         self.energyPenalty = energyPenalty
         self.noveltyScore = noveltyScore
         self.teacherDelta = teacherDelta

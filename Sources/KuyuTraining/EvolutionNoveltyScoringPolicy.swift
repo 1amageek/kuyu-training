@@ -35,6 +35,7 @@ public struct EvolutionNoveltyScoringPolicy: Sendable {
         var descriptor = summary.behaviorDescriptor.filter { $0.value.isFinite }
         descriptor["taskPassRate"] = summary.taskPassRate
         descriptor["holdTimeRatio"] = summary.holdTimeRatio ?? 0
+        descriptor["altitudeErrorRatio"] = summary.altitudeErrorRatio ?? 0
         descriptor["safetyViolationRate"] = summary.safetyViolationRate
         descriptor["rewardAverage"] = summary.rewardAverage
         return descriptor.filter { $0.value.isFinite }
@@ -61,6 +62,7 @@ public struct EvolutionNoveltyScoringPolicy: Sendable {
             taskPassRate: summary.taskPassRate,
             safetyViolationRate: summary.safetyViolationRate,
             holdTimeRatio: summary.holdTimeRatio,
+            altitudeErrorRatio: summary.altitudeErrorRatio,
             energyPenalty: summary.energyPenalty,
             noveltyScore: noveltyScore,
             teacherDelta: summary.teacherDelta,

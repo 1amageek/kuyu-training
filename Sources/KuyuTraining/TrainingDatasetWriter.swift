@@ -128,22 +128,14 @@ public struct TrainingDatasetWriter {
     }
 
     private func buildRecords(from log: SimulationLog) -> [TrainingDatasetRecord] {
-        var lastDriveIntents: [TrainingDriveIntent] = []
-        return log.events.map { event in
+        let filledDriveIntents = filledDriveIntents(for: log.events)
+        return log.events.enumerated().map { index, event in
             let sensors = event.sensorSamples.map { sample in
                 TrainingSensorSample(
                     channelIndex: sample.channelIndex,
                     value: sample.value,
                     timestamp: sample.timestamp
                 )
-            }
-            let currentDrives = driveIntents(from: event)
-            let drives: [TrainingDriveIntent]
-            if currentDrives.isEmpty {
-                drives = lastDriveIntents
-            } else {
-                drives = currentDrives
-                lastDriveIntents = currentDrives
             }
             let reflex = event.reflexCorrections.map { correction in
                 TrainingReflexCorrection(
@@ -156,14 +148,15 @@ public struct TrainingDatasetWriter {
             return TrainingDatasetRecord(
                 time: event.time.time,
                 sensors: sensors,
-                driveIntents: drives,
+                driveIntents: filledDriveIntents[index],
                 reflexCorrections: reflex
             )
         }
     }
 
     private func buildRecords(from episode: RolloutEpisode) -> [TrainingDatasetRecord] {
-        var lastDriveIntents: [TrainingDriveIntent] = []
+        let logs = episode.steps.map(\.log)
+        let filledDriveIntents = filledDriveIntents(for: logs)
         return episode.steps.enumerated().map { index, step in
             let event = step.log
             let sensors = event.sensorSamples.map { sample in
@@ -173,14 +166,6 @@ public struct TrainingDatasetWriter {
                     timestamp: sample.timestamp
                 )
             }
-            let currentDrives = driveIntents(from: event)
-            let drives: [TrainingDriveIntent]
-            if currentDrives.isEmpty {
-                drives = lastDriveIntents
-            } else {
-                drives = currentDrives
-                lastDriveIntents = currentDrives
-            }
             let reflex = event.reflexCorrections.map { correction in
                 TrainingReflexCorrection(
                     driveIndex: correction.driveIndex.rawValue,
@@ -192,7 +177,7 @@ public struct TrainingDatasetWriter {
             return TrainingDatasetRecord(
                 time: event.time.time,
                 sensors: sensors,
-                driveIntents: drives,
+                driveIntents: filledDriveIntents[index],
                 reflexCorrections: reflex,
                 physicsState: physicsPredictionState(for: index, in: episode.steps),
                 actualState: stateVector(from: step.observation.plantState),
@@ -205,6 +190,27 @@ public struct TrainingDatasetWriter {
                 policyId: episode.policyId
             )
         }
+    }
+
+    private func filledDriveIntents(for events: [WorldStepLog]) -> [[TrainingDriveIntent]] {
+        let rawDriveIntents = events.map { event in
+            driveIntents(from: event)
+        }
+
+        guard let firstNonEmptyIndex = rawDriveIntents.firstIndex(where: { !$0.isEmpty }) else {
+            return rawDriveIntents
+        }
+
+        var filled = rawDriveIntents
+        var lastDriveIntents = rawDriveIntents[firstNonEmptyIndex]
+        for index in filled.indices {
+            if filled[index].isEmpty {
+                filled[index] = lastDriveIntents
+            } else {
+                lastDriveIntents = filled[index]
+            }
+        }
+        return filled
     }
 
     private func maxChannelCount(_ records: [TrainingDatasetRecord]) -> Int {

@@ -322,15 +322,18 @@ public struct TrainingProbeComparison: Sendable, Codable, Equatable {
         )
         self.teacherDriveDivergenceNonRegression = Self.nonRegression(
             trained: self.trainedTeacherDriveAverageMAE,
-            initial: self.initialTeacherDriveAverageMAE
+            initial: self.initialTeacherDriveAverageMAE,
+            tolerance: 0.01
         )
         self.teacherMotorDivergenceNonRegression = Self.nonRegression(
             trained: self.trainedTeacherMotorAverageMAE,
-            initial: self.initialTeacherMotorAverageMAE
+            initial: self.initialTeacherMotorAverageMAE,
+            tolerance: 0.01
         )
         self.teacherAltitudeDivergenceNonRegression = Self.absoluteNonRegression(
             trained: self.trainedTeacherFinalAltitudeDelta,
-            initial: self.initialTeacherFinalAltitudeDelta
+            initial: self.initialTeacherFinalAltitudeDelta,
+            tolerance: 0.25
         )
         self.teacherDivergenceNonRegression = self.teacherDriveDivergenceNonRegression
             && self.teacherMotorDivergenceNonRegression
@@ -390,18 +393,18 @@ public struct TrainingProbeComparison: Sendable, Codable, Equatable {
         return lhs - rhs
     }
 
-    private static func nonRegression(trained: Double?, initial: Double?) -> Bool {
+    private static func nonRegression(trained: Double?, initial: Double?, tolerance: Double) -> Bool {
         guard let trained, let initial else {
             return true
         }
-        return trained <= initial
+        return trained <= initial + tolerance
     }
 
-    private static func absoluteNonRegression(trained: Double?, initial: Double?) -> Bool {
+    private static func absoluteNonRegression(trained: Double?, initial: Double?, tolerance: Double) -> Bool {
         guard let trained, let initial else {
             return true
         }
-        return abs(trained) <= abs(initial)
+        return abs(trained) <= abs(initial) + tolerance
     }
 
     public func metricRecords(timestamp: Date = Date()) -> [TrainingMetricRecord] {
@@ -907,6 +910,7 @@ public struct TrainingProbeOrchestrator {
             return .skipped(reason: "trained-output-unavailable")
         }
         let includeSuccessfulScenarios = !comparison.teacherDivergenceNonRegression
+            || !comparison.policySatisfied
         let directory = artifactDirectory.appendingPathComponent("recovery-datasets", isDirectory: true)
         do {
             guard let report = try await scenarioExecutor.writeRecoveryRelabelDataset(

@@ -233,6 +233,7 @@ import Testing
 
     #expect(result.manifest.terminalState == .rejected)
     #expect(result.fitness.allSatisfy { $0.noveltyScore == 0 })
+    #expect(result.fitness.allSatisfy { $0.altitudeErrorRatio == 0.75 })
     #expect(result.generations.first?.rejectionReasons.contains { $0.hasPrefix("novelty-below-min:g0-c") } == true)
 }
 
@@ -534,6 +535,7 @@ private struct DuplicateBehaviorEvolutionEvaluator: EvolutionCandidateEvaluating
             taskPassRate: 1,
             safetyViolationRate: 0,
             holdTimeRatio: 1,
+            altitudeErrorRatio: 0.75,
             workerThroughput: Double(request.workerCount),
             behaviorDescriptor: [
                 "stableBehavior": 1,

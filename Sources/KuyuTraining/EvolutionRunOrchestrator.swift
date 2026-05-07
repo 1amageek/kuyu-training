@@ -512,7 +512,7 @@ public struct EvolutionRunOrchestrator {
         guard config.adaptiveMutation.enabled else {
             return (currentMutationRate, currentMutationNoiseScale)
         }
-        let factor = gateReport.accepted
+        let factor = shouldDecayMutation(gateReport: gateReport)
             ? config.adaptiveMutation.decayFactor
             : config.adaptiveMutation.increaseFactor
         let mutationRate = clamp(
@@ -526,6 +526,15 @@ public struct EvolutionRunOrchestrator {
             max: config.adaptiveMutation.maximumNoiseScale
         )
         return (mutationRate, mutationNoiseScale)
+    }
+
+    private func shouldDecayMutation(gateReport: EvolutionGateReport) -> Bool {
+        guard gateReport.accepted else { return false }
+        guard let bestVsIncumbentDelta = gateReport.bestVsIncumbentDelta else {
+            return true
+        }
+        let minimumImprovement = gateReport.minimumImprovementOverIncumbent ?? 0
+        return bestVsIncumbentDelta > minimumImprovement
     }
 
     private func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {

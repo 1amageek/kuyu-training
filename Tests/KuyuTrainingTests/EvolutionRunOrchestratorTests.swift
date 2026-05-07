@@ -126,6 +126,52 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorDoesNotDecayMutationWhenAcceptedGenerationDoesNotBeatIncumbent() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = FakeEvolutionEvaluator(fixedFitness: 1)
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-adaptive-no-incumbent-improvement",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 2,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.04,
+            mutationNoiseScale: 0.002,
+            adaptiveMutation: EvolutionAdaptiveMutationConfig(
+                enabled: true,
+                increaseFactor: 1.5,
+                decayFactor: 0.5,
+                minimumMutationRate: 0.01,
+                maximumMutationRate: 0.2,
+                minimumNoiseScale: 0.0005,
+                maximumNoiseScale: 0.01
+            )
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0,
+            minimumImprovementOverIncumbent: 0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.generations.first?.accepted == true)
+    #expect(result.generations.first?.bestVsIncumbentDelta == 0)
+    #expect(backend.nextGenerationRequests.first?.mutationRate == 0.06)
+    #expect(backend.nextGenerationRequests.first?.mutationNoiseScale == 0.003)
+}
+
+@MainActor
 @Test func evolutionRunOrchestratorRejectsWhenNoCandidatePassesGate() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }

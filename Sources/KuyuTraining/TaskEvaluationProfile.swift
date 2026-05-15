@@ -97,11 +97,25 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
             return liftProfile(
                 task: "singleLift",
                 profileID: "singleLift-v1",
+                observationChannelCount: 8,
                 baseEvaluationSuiteIDs: [6],
                 policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil)
             )
         default:
             throw TaskEvaluationProfileError.unsupportedTask(task)
+        }
+    }
+
+    public static func profile(profileID: String) throws -> TaskEvaluationProfile {
+        switch profileID {
+        case "attitude", "attitude-v1":
+            return try profile(task: "attitude")
+        case "lift", "lift-v1":
+            return try profile(task: "lift")
+        case "singleLift", "singleLift-v1":
+            return try profile(task: "singleLift")
+        default:
+            throw TaskEvaluationProfileError.unsupportedTask(profileID)
         }
     }
 
@@ -128,6 +142,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
     private static func liftProfile(
         task: String,
         profileID: String,
+        observationChannelCount: Int = 64,
         baseEvaluationSuiteIDs: [Int] = [1],
         policyMotorNerveSettings: TaskMotorNerveSettings = TaskMotorNerveSettings(
             rateLimitPerSecond: 2,
@@ -137,7 +152,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         TaskEvaluationProfile(
             profileID: profileID,
             task: task,
-            observationChannelCount: 8,
+            observationChannelCount: observationChannelCount,
             baseEvaluationSuiteIDs: baseEvaluationSuiteIDs,
             regressionSuiteIDs: [6, 7, 8],
             baselineMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil),

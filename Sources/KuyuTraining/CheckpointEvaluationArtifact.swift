@@ -44,7 +44,6 @@ public struct CheckpointEvaluationRequest: Sendable, Equatable {
     }
 }
 
-@MainActor
 public protocol CheckpointEvaluating: Sendable {
     func evaluateCheckpoint(request: CheckpointEvaluationRequest) async throws -> CheckpointEvaluationArtifact
 }

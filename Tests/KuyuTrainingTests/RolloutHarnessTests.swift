@@ -74,6 +74,27 @@ import KuyuScenarios
     #expect(episodes.allSatisfy { $0.workerCount == 2 })
 }
 
+@Test func rolloutRunnerUsesWorkerScopedPolicyFactoryForEachWorker() async throws {
+    let definitions = try (0..<4).map { index in
+        try makeShortAttitudeScenario(id: "KUY-RL-WORKER-SCOPE/\(index)", seed: UInt64(700 + index))
+    }
+    let schedule = try SimulationSchedule.baseline(cutPeriodSteps: 1)
+    let runner = RolloutRunner(
+        schedule: schedule,
+        determinism: .tier1Baseline,
+        motorNerveRateLimitPerSecond: 100.0,
+        motorNerveSmoothingTimeConstant: nil
+    )
+    let factory = ScopedProbePolicyFactory()
+
+    let serial = try await runner.run(definitions: [definitions[0]], policyFactory: factory, workerIndex: 7)
+    #expect(serial.map(\.policyId) == ["scoped-worker-7"])
+
+    let parallel = try await ParallelRolloutCollector(runner: runner, workerCount: 2)
+        .collect(definitions: definitions, policyFactory: factory)
+    #expect(Set(parallel.map(\.policyId)) == Set(["scoped-worker-0", "scoped-worker-1"]))
+}
+
 @Test func rolloutDatasetWriterIncludesRewardAndEpisodeMetadata() async throws {
     let definition = try makeShortAttitudeScenario(id: "KUY-RL-DATASET/1", seed: 201)
     let schedule = try SimulationSchedule.baseline(cutPeriodSteps: 1)
@@ -274,6 +295,48 @@ private struct SlowProbePolicy: ReferenceQuadrotorEnvironmentPolicy {
         await probe.enter()
         try await Task.sleep(for: .milliseconds(2))
         await probe.leave()
+        let drives = try (0..<4).map { index in
+            try DriveIntent(index: DriveIndex(UInt32(index)), activation: 0.5)
+        }
+        return .driveIntents(drives, corrections: [])
+    }
+}
+
+private struct ScopedProbePolicyFactory: ReferenceQuadrotorWorkerScopedPolicyFactory {
+    let policyID = "scoped-root"
+
+    func makeWorkerPolicyFactory(workerIndex: Int) throws -> any ReferenceQuadrotorPolicyFactory {
+        ScopedProbeWorkerPolicyFactory(workerIndex: workerIndex)
+    }
+
+    func makePolicy(
+        definition: ReferenceQuadrotorScenarioDefinition,
+        workerIndex: Int
+    ) throws -> any ReferenceQuadrotorEnvironmentPolicy {
+        _ = definition
+        return ScopedProbePolicy(policyID: "unscoped-worker-\(workerIndex)")
+    }
+}
+
+private struct ScopedProbeWorkerPolicyFactory: ReferenceQuadrotorPolicyFactory {
+    let workerIndex: Int
+    var policyID: String { "scoped-worker-\(workerIndex)" }
+
+    func makePolicy(
+        definition: ReferenceQuadrotorScenarioDefinition,
+        workerIndex: Int
+    ) throws -> any ReferenceQuadrotorEnvironmentPolicy {
+        _ = definition
+        _ = workerIndex
+        return ScopedProbePolicy(policyID: policyID)
+    }
+}
+
+private struct ScopedProbePolicy: ReferenceQuadrotorEnvironmentPolicy {
+    let policyID: String
+
+    mutating func action(for observation: EnvironmentObservation) async throws -> EnvironmentAction {
+        _ = observation
         let drives = try (0..<4).map { index in
             try DriveIntent(index: DriveIndex(UInt32(index)), activation: 0.5)
         }

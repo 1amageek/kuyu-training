@@ -279,7 +279,7 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
            let incumbentFitness,
            let bestFitness = eliteArchive.bestFitness,
            let bestCandidateID = eliteArchive.bestCandidateID {
-            reasons.append("incumbent-improvement-below-min:\(bestCandidateID):\(bestFitness)-\(incumbentFitness)<=\(minimumImprovementOverIncumbent)")
+            reasons.append("incumbent-improvement-below-min:\(bestCandidateID):\(bestFitness)-\(incumbentFitness)<\(minimumImprovementOverIncumbent)")
         }
         return EvolutionAcceptedCheckpointDecision(
             runID: manifest.runID,

@@ -19,7 +19,10 @@ public struct KuyuProjectFactory: Sendable {
         sourceBundleURL: String = "model-bundles/source.manasbundle"
     ) throws -> KuyuProjectPackage {
         try KuyuProjectPackageWriter.validatePackageExtension(rootURL)
-        try LearningProjectTemplateValidator(requiresKnownTaskProfile: false).validate(template)
+        let requiresStrictTemplateValidation = template.isRunnableStarter
+        try LearningProjectTemplateValidator(
+            requiresKnownTaskProfile: requiresStrictTemplateValidation
+        ).validate(template)
 
         let timestamp = now()
         let experimentID = "default"
@@ -42,9 +45,9 @@ public struct KuyuProjectFactory: Sendable {
             modelBundleRefs: [sourceBundleID],
             storagePolicy: .runnableStarter,
             validationPolicy: KuyuProjectValidationPolicy(
-                requiresStrictTemplateValidation: template.taskProfileID != nil,
+                requiresStrictTemplateValidation: requiresStrictTemplateValidation,
                 requiresDescriptorHash: false,
-                requiresModelBundleCompatibility: template.taskProfileID != nil
+                requiresModelBundleCompatibility: template.isRunnableStarter
             )
         )
 

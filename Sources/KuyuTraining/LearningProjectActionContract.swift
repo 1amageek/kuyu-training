@@ -26,4 +26,14 @@ public struct LearningProjectActionContract: Codable, Sendable, Equatable {
         self.actuatorCount = actuatorCount
         self.isBounded = isBounded
     }
+
+    public static func referenceQuadrotorBodyRateControl() -> LearningProjectActionContract {
+        LearningProjectActionContract(
+            schemaID: "reference-quadrotor-body-rate-control-action-v1",
+            kind: .continuous,
+            driveCount: 4,
+            actuatorCount: 4,
+            isBounded: true
+        )
+    }
 }

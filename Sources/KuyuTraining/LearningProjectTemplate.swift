@@ -1,7 +1,24 @@
 import Foundation
 
+public enum LearningProjectTemplateExecutionLevel: String, Codable, Sendable, Equatable, CaseIterable {
+    case runnableStarter
+    case requiresExistingModel
+    case designOnly
+
+    public var displayName: String {
+        switch self {
+        case .runnableStarter:
+            return "Ready Now"
+        case .requiresExistingModel:
+            return "Requires Model"
+        case .designOnly:
+            return "Design Only"
+        }
+    }
+}
+
 public struct LearningProjectTemplate: Codable, Sendable, Equatable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public let schemaVersion: Int
     public let templateID: String
@@ -17,8 +34,33 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
     public let evaluationGate: LearningProjectEvaluationGate
     public let observation: LearningProjectObservationContract
     public let action: LearningProjectActionContract
+    public let policy: LearningProjectPolicyContract
     public let compute: LearningProjectComputeProfile
     public let tags: [String]
+
+    public var executionLevel: LearningProjectTemplateExecutionLevel {
+        switch modelBundlePolicy.sourceCheckpointPolicy {
+        case .createStarter:
+            return primaryRunnableTrainingStage == nil ? .designOnly : .runnableStarter
+        case .requireExisting, .optionalExisting:
+            return .requiresExistingModel
+        case .none:
+            return .designOnly
+        }
+    }
+
+    public var isRunnableStarter: Bool {
+        executionLevel == .runnableStarter
+    }
+
+    public var primaryRunnableTrainingStage: LearningProjectTrainingStage? {
+        do {
+            return try LearningProjectCurriculumStageResolver()
+                .nextRunnableStage(in: curriculum, completedStageIDs: [])
+        } catch {
+            return nil
+        }
+    }
 
     public init(
         schemaVersion: Int = LearningProjectTemplate.currentSchemaVersion,
@@ -35,6 +77,7 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
         evaluationGate: LearningProjectEvaluationGate,
         observation: LearningProjectObservationContract,
         action: LearningProjectActionContract,
+        policy: LearningProjectPolicyContract,
         compute: LearningProjectComputeProfile,
         tags: [String]
     ) {
@@ -52,6 +95,7 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
         self.evaluationGate = evaluationGate
         self.observation = observation
         self.action = action
+        self.policy = policy
         self.compute = compute
         self.tags = tags
     }

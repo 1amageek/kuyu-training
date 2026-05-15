@@ -118,6 +118,7 @@ public struct TrainingRunConfig: Sendable, Equatable {
 
 public enum TrainingRunEvent: Sendable, Equatable {
     case started(LearningRunManifest)
+    case log(TrainingRunLogEvent)
     case iterationStarted(Int)
     case suiteCompleted(iteration: Int, output: KuyAtt1RunOutput, score: Double)
     case datasetExported(iteration: Int, directory: String, count: Int)

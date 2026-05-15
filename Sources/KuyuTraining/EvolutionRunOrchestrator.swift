@@ -40,7 +40,6 @@ public struct EvolutionRunResult: Sendable, Equatable {
     }
 }
 
-@MainActor
 public struct EvolutionRunOrchestrator {
     public enum RunError: Error, Sendable, Equatable {
         case emptyPopulation(Int)
@@ -67,6 +66,32 @@ public struct EvolutionRunOrchestrator {
         self.artifactWriter = artifactWriter
         self.parentSelectionPolicy = parentSelectionPolicy
         self.noveltyScoringPolicy = noveltyScoringPolicy
+    }
+
+    public init<Backend: TypedTrainingBackend>(
+        typedBackend: Backend,
+        checkpoint: ModelBundleReference,
+        artifactWriter: any EvolutionArtifactWriting = EvolutionArtifactWriter(),
+        parentSelectionPolicy: EvolutionParentSelectionPolicy = EvolutionParentSelectionPolicy(),
+        noveltyScoringPolicy: EvolutionNoveltyScoringPolicy = EvolutionNoveltyScoringPolicy()
+    )
+    where
+        Backend.Candidate == GenomeCandidate,
+        Backend.Checkpoint == ModelBundleReference,
+        Backend.Observation == TrainingNoObservation,
+        Backend.Action == TrainingNoAction,
+        Backend.Fitness == Double
+    {
+        self.init(
+            backend: TypedEvolutionLegacyBackendAdapter(
+                backend: typedBackend,
+                checkpoint: checkpoint
+            ),
+            evaluator: TypedEvolutionLegacyEvaluatorAdapter(backend: typedBackend),
+            artifactWriter: artifactWriter,
+            parentSelectionPolicy: parentSelectionPolicy,
+            noveltyScoringPolicy: noveltyScoringPolicy
+        )
     }
 
     public func run(
@@ -100,6 +125,7 @@ public struct EvolutionRunOrchestrator {
         )
         onEvent?(.started(manifest))
         do {
+            try Task.checkCancellation()
             let seededPopulation = try await backend.seedPopulation(request: EvolutionSeedRequest(
                 config: config,
                 artifactDirectory: artifactDirectory,
@@ -113,6 +139,17 @@ public struct EvolutionRunOrchestrator {
                 config: config,
                 initialPopulation: seededPopulation,
                 gatePolicy: gatePolicy ?? EvolutionGatePolicy(eliteCount: config.eliteCount),
+                artifactDirectory: artifactDirectory,
+                onEvent: onEvent
+            )
+        } catch is CancellationError {
+            return await finish(
+                manifest: manifest,
+                state: .cancelled,
+                failureReason: "cancelled",
+                generations: [],
+                candidates: [],
+                fitness: [],
                 artifactDirectory: artifactDirectory,
                 onEvent: onEvent
             )
@@ -149,8 +186,22 @@ public struct EvolutionRunOrchestrator {
         var incumbentFitness: Double?
         var mutationRate = config.mutationRate
         var mutationNoiseScale = config.mutationNoiseScale
+        var earlyStoppingState = EvolutionEarlyStoppingState(config: config.earlyStopping)
 
         for generationIndex in 0..<config.generationCount {
+            if Task.isCancelled {
+                return await finish(
+                    manifest: manifest,
+                    state: .cancelled,
+                    failureReason: "cancelled",
+                    generations: allGenerations,
+                    candidates: allCandidates,
+                    fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
+                    artifactDirectory: artifactDirectory,
+                    onEvent: onEvent
+                )
+            }
             onEvent?(.generationStarted(generationIndex))
             guard !currentPopulation.candidates.isEmpty else {
                 return await finish(
@@ -174,18 +225,18 @@ public struct EvolutionRunOrchestrator {
                     config: config,
                     population: currentPopulation,
                     generationArtifactDirectory: generationDirectory,
-                    onEvent: nil
+                    onEvent: onEvent
                 )
                 generationFitness = noveltyScoringPolicy.score(
                     currentGeneration: evaluation.fitness,
                     archive: allFitness
                 )
                 allEvaluationTraces.append(contentsOf: evaluation.traces)
-            } catch {
+            } catch is CancellationError {
                 return await finish(
                     manifest: manifest,
-                    state: .failed,
-                    failureReason: "evolution-evaluation-failed: \(error)",
+                    state: .cancelled,
+                    failureReason: "cancelled",
                     generations: allGenerations,
                     candidates: allCandidates,
                     fitness: allFitness,
@@ -193,9 +244,30 @@ public struct EvolutionRunOrchestrator {
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
-            }
-            for summary in generationFitness {
-                onEvent?(.candidateEvaluated(summary))
+            } catch {
+                let failedFitness = evaluationFailureFitness(
+                    config: config,
+                    candidates: currentPopulation.candidates,
+                    error: error
+                )
+                let failedTraces = evaluationFailureTraces(
+                    config: config,
+                    candidates: currentPopulation.candidates
+                )
+                for summary in failedFitness {
+                    onEvent?(.candidateEvaluated(summary))
+                }
+                return await finish(
+                    manifest: manifest,
+                    state: .failed,
+                    failureReason: "evolution-evaluation-failed: \(error)",
+                    generations: allGenerations,
+                    candidates: allCandidates,
+                    fitness: allFitness + failedFitness,
+                    evaluationTraces: allEvaluationTraces + failedTraces,
+                    artifactDirectory: artifactDirectory,
+                    onEvent: onEvent
+                )
             }
             allFitness.append(contentsOf: generationFitness)
             if incumbentCandidateID == nil,
@@ -242,6 +314,21 @@ public struct EvolutionRunOrchestrator {
             )
             allGenerations.append(generationRecord)
             onEvent?(.generationCompleted(generationRecord))
+            if let stopReason = earlyStoppingState.record(fitness: generationFitness),
+               generationIndex < config.generationCount - 1 {
+                return await finish(
+                    manifest: manifest,
+                    state: bestAcceptedFitness == nil ? .rejected : .completed,
+                    failureReason: stopReason,
+                    generations: allGenerations,
+                    candidates: allCandidates,
+                    fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
+                    bestFitness: bestAcceptedFitness,
+                    artifactDirectory: artifactDirectory,
+                    onEvent: onEvent
+                )
+            }
             if generationIndex == config.generationCount - 1 {
                 break
             }
@@ -259,6 +346,7 @@ public struct EvolutionRunOrchestrator {
                 generationFitness: generationFitness
             )
             do {
+                try Task.checkCancellation()
                 currentPopulation = try await backend.produceNextGeneration(request: EvolutionGenerationRequest(
                     config: config,
                     previousPopulation: currentPopulation,
@@ -270,6 +358,18 @@ public struct EvolutionRunOrchestrator {
                     commonRandomSeed: commonRandomSeed(config: config, generationIndex: generationIndex + 1),
                     generationArtifactDirectory: generationDirectory
                 ))
+            } catch is CancellationError {
+                return await finish(
+                    manifest: manifest,
+                    state: .cancelled,
+                    failureReason: "cancelled",
+                    generations: allGenerations,
+                    candidates: allCandidates,
+                    fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
+                    artifactDirectory: artifactDirectory,
+                    onEvent: onEvent
+                )
             } catch {
                 return await finish(
                     manifest: manifest,
@@ -310,6 +410,16 @@ public struct EvolutionRunOrchestrator {
         generationArtifactDirectory: URL,
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)?
     ) async throws -> EvaluationBatch {
+        if let batchEvaluator = evaluator as? any EvolutionCandidateBatchEvaluating,
+           population.candidates.count > 1 {
+            return try await evaluateWithBatchEvaluator(
+                config: config,
+                population: population,
+                generationArtifactDirectory: generationArtifactDirectory,
+                onEvent: onEvent,
+                batchEvaluator: batchEvaluator
+            )
+        }
         if config.candidateEvaluationConcurrency <= 1 || population.candidates.count <= 1 {
             return try await evaluateSequentially(
                 config: config,
@@ -326,6 +436,62 @@ public struct EvolutionRunOrchestrator {
         )
     }
 
+    private func evaluateWithBatchEvaluator(
+        config: EvolutionRunConfig,
+        population: EvolutionPopulation,
+        generationArtifactDirectory: URL,
+        onEvent: (@Sendable (EvolutionRunEvent) -> Void)?,
+        batchEvaluator: any EvolutionCandidateBatchEvaluating
+    ) async throws -> EvaluationBatch {
+        var records: [FitnessSummary] = []
+        var traces: [EvolutionCandidateEvaluationTrace] = []
+        records.reserveCapacity(population.candidates.count)
+        traces.reserveCapacity(population.candidates.count)
+        let batchSize = max(1, min(config.candidateEvaluationConcurrency, population.candidates.count))
+        let recorder = EvolutionEvaluationTraceRecorder()
+        var nextIndex = 0
+        while nextIndex < population.candidates.count {
+            try Task.checkCancellation()
+            let batchEnd = min(nextIndex + batchSize, population.candidates.count)
+            let candidates = Array(population.candidates[nextIndex..<batchEnd])
+            var starts: [String: (startedAt: Date, activeEvaluationCountAtStart: Int)] = [:]
+            for candidate in candidates {
+                starts[candidate.candidateID] = await recorder.begin()
+            }
+            let summaries = try await batchEvaluator.evaluateCandidates(request: EvolutionCandidateBatchEvaluationRequest(
+                config: config,
+                candidates: candidates,
+                generationArtifactDirectory: generationArtifactDirectory,
+                workerCount: config.workerCount
+            ))
+            guard summaries.count == candidates.count else {
+                throw RunError.evaluationFailed(
+                    "batch-evaluation-count-mismatch expected=\(candidates.count) actual=\(summaries.count)"
+                )
+            }
+            for candidate in candidates {
+                guard let summary = summaries.first(where: { $0.candidateID == candidate.candidateID }) else {
+                    throw RunError.evaluationFailed("batch-evaluation-missing-candidate \(candidate.candidateID)")
+                }
+                onEvent?(.candidateEvaluated(summary))
+                let trace = await recorder.end(
+                    runID: config.runID,
+                    generationIndex: candidate.generationIndex,
+                    candidateID: candidate.candidateID,
+                    requestedConcurrency: batchSize,
+                    started: starts[candidate.candidateID] ?? (
+                        startedAt: Date(),
+                        activeEvaluationCountAtStart: 1
+                    )
+                )
+                records.append(summary)
+                traces.append(trace)
+            }
+            nextIndex = batchEnd
+        }
+        return EvaluationBatch(fitness: records, traces: traces)
+    }
+
     private func evaluateSequentially(
         config: EvolutionRunConfig,
         population: EvolutionPopulation,
@@ -338,6 +504,7 @@ public struct EvolutionRunOrchestrator {
         traces.reserveCapacity(population.candidates.count)
         let recorder = EvolutionEvaluationTraceRecorder()
         for candidate in population.candidates {
+            try Task.checkCancellation()
             let started = await recorder.begin()
             let summary = try await evaluator.evaluateCandidate(request: EvolutionCandidateEvaluationRequest(
                 config: config,
@@ -345,6 +512,7 @@ public struct EvolutionRunOrchestrator {
                 generationArtifactDirectory: generationArtifactDirectory,
                 workerCount: config.workerCount
             ))
+            onEvent?(.candidateEvaluated(summary))
             let trace = await recorder.end(
                 runID: config.runID,
                 generationIndex: candidate.generationIndex,
@@ -354,6 +522,7 @@ public struct EvolutionRunOrchestrator {
             )
             records.append(summary)
             traces.append(trace)
+            try Task.checkCancellation()
         }
         return EvaluationBatch(fitness: records, traces: traces)
     }
@@ -371,11 +540,13 @@ public struct EvolutionRunOrchestrator {
         let recorder = EvolutionEvaluationTraceRecorder()
         var nextIndex = 0
         while nextIndex < population.candidates.count {
+            try Task.checkCancellation()
             let batchEnd = min(nextIndex + concurrency, population.candidates.count)
             try await withThrowingTaskGroup(of: (Int, FitnessSummary, EvolutionCandidateEvaluationTrace).self) { group in
                 for index in nextIndex..<batchEnd {
                     let candidate = population.candidates[index]
                     group.addTask {
+                        try Task.checkCancellation()
                         let started = await recorder.begin()
                         let summary = try await evaluator.evaluateCandidate(request: EvolutionCandidateEvaluationRequest(
                             config: config,
@@ -383,6 +554,7 @@ public struct EvolutionRunOrchestrator {
                             generationArtifactDirectory: generationArtifactDirectory,
                             workerCount: config.workerCount
                         ))
+                        onEvent?(.candidateEvaluated(summary))
                         let trace = await recorder.end(
                             runID: config.runID,
                             generationIndex: candidate.generationIndex,
@@ -390,6 +562,7 @@ public struct EvolutionRunOrchestrator {
                             requestedConcurrency: concurrency,
                             started: started
                         )
+                        try Task.checkCancellation()
                         return (index, summary, trace)
                     }
                 }
@@ -546,8 +719,145 @@ public struct EvolutionRunOrchestrator {
         return bestVsIncumbentDelta > minimumImprovement
     }
 
+    private func evaluationFailureFitness(
+        config: EvolutionRunConfig,
+        candidates: [GenomeCandidate],
+        error: any Error
+    ) -> [FitnessSummary] {
+        let reason = "evaluation-failed:\(String(describing: error))"
+        let failedMetric = -1.0e12
+        return candidates.map { candidate in
+            FitnessSummary(
+                runID: config.runID,
+                generationIndex: candidate.generationIndex,
+                candidateID: candidate.candidateID,
+                taskID: config.taskID,
+                scalarFitness: failedMetric,
+                rewardAverage: failedMetric,
+                taskPassRate: 0,
+                safetyViolationRate: 1,
+                holdTimeRatio: 0,
+                altitudeErrorRatio: nil,
+                energyPenalty: nil,
+                noveltyScore: nil,
+                teacherDelta: nil,
+                workerThroughput: 0,
+                behaviorDescriptor: [
+                    "evaluation.failed": 1,
+                ],
+                failureReasons: [reason]
+            )
+        }
+    }
+
+    private func evaluationFailureTraces(
+        config: EvolutionRunConfig,
+        candidates: [GenomeCandidate]
+    ) -> [EvolutionCandidateEvaluationTrace] {
+        let completedAt = Date()
+        let requestedConcurrency = max(1, min(config.candidateEvaluationConcurrency, candidates.count))
+        return candidates.enumerated().map { offset, candidate in
+            EvolutionCandidateEvaluationTrace(
+                runID: config.runID,
+                generationIndex: candidate.generationIndex,
+                candidateID: candidate.candidateID,
+                requestedConcurrency: requestedConcurrency,
+                activeEvaluationCountAtStart: min(offset + 1, requestedConcurrency),
+                startedAt: completedAt,
+                completedAt: completedAt
+            )
+        }
+    }
+
     private func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {
         Swift.min(Swift.max(value, minimum), maximum)
+    }
+}
+
+private struct EvolutionEarlyStoppingState {
+    private let config: EvolutionEarlyStoppingConfig
+    private var bestFitness: Double?
+    private var bestTaskPassRate: Double?
+    private var bestHoldTimeRatio: Double?
+    private var stagnantGenerationCount = 0
+
+    init(config: EvolutionEarlyStoppingConfig) {
+        self.config = config
+    }
+
+    mutating func record(fitness: [FitnessSummary]) -> String? {
+        guard config.enabled, !fitness.isEmpty else {
+            return nil
+        }
+        let generationBestFitness = fitness.compactMap { summary in
+            summary.scalarFitness.isFinite ? summary.scalarFitness : nil
+        }.max()
+        let generationBestTaskPassRate = fitness.compactMap { summary in
+            summary.taskPassRate.isFinite ? summary.taskPassRate : nil
+        }.max()
+        let generationBestHoldTimeRatio = fitness.compactMap { summary in
+            summary.holdTimeRatio?.isFinite == true ? summary.holdTimeRatio : nil
+        }.max()
+
+        let improved = improved(
+            current: generationBestFitness,
+            best: bestFitness,
+            minimumDelta: config.minimumFitnessImprovement
+        ) || improved(
+            current: generationBestTaskPassRate,
+            best: bestTaskPassRate,
+            minimumDelta: config.minimumTaskPassRateImprovement
+        ) || improved(
+            current: generationBestHoldTimeRatio,
+            best: bestHoldTimeRatio,
+            minimumDelta: config.minimumHoldTimeRatioImprovement
+        )
+
+        updateBest(&bestFitness, with: generationBestFitness)
+        updateBest(&bestTaskPassRate, with: generationBestTaskPassRate)
+        updateBest(&bestHoldTimeRatio, with: generationBestHoldTimeRatio)
+
+        if improved {
+            stagnantGenerationCount = 0
+            return nil
+        }
+        stagnantGenerationCount += 1
+        guard stagnantGenerationCount >= config.patienceGenerations else {
+            return nil
+        }
+        return [
+            "early-stopped:plateau",
+            "stagnantGenerations=\(stagnantGenerationCount)",
+            "patience=\(config.patienceGenerations)",
+            bestFitness.map { "bestFitness=\($0)" },
+            bestTaskPassRate.map { "bestTaskPassRate=\($0)" },
+            bestHoldTimeRatio.map { "bestHoldTimeRatio=\($0)" },
+        ]
+        .compactMap { $0 }
+        .joined(separator: ":")
+    }
+
+    private func improved(current: Double?, best: Double?, minimumDelta: Double) -> Bool {
+        guard let current else {
+            return false
+        }
+        guard let best else {
+            return true
+        }
+        return current > best + minimumDelta
+    }
+
+    private func updateBest(_ best: inout Double?, with current: Double?) {
+        guard let current else {
+            return
+        }
+        guard let existing = best else {
+            best = current
+            return
+        }
+        if current > existing {
+            best = current
+        }
     }
 }
 

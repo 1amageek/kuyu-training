@@ -12,7 +12,7 @@ public struct LearningProjectTemplateCatalog: Sendable {
     }
 
     public static let defaultTemplates: [LearningProjectTemplate] = [
-        .droneLiftStarter,
+        .droneAutonomyStarter,
         .singlePropLiftRecovery,
         .droneHoverStabilization,
         .droneWaypointNavigation,
@@ -24,15 +24,15 @@ public struct LearningProjectTemplateCatalog: Sendable {
 }
 
 public extension LearningProjectTemplate {
-    static let droneLiftStarter: LearningProjectTemplate = {
-        let profile = knownTaskEvaluationProfile(task: "lift")
+    static let droneAutonomyStarter: LearningProjectTemplate = {
+        let liftProfile = knownTaskEvaluationProfile(task: "lift")
         return LearningProjectTemplate(
-            templateID: "aerial-drone-lift-starter-v1",
-            displayName: "Aerial Drone Lift Starter",
-            summary: "Reference aerial lift training template for starter checkpoints, genetic search, and strict task quality gates.",
+            templateID: "aerial-drone-autonomy-starter-v1",
+            displayName: "Drone Autonomy Starter",
+            summary: "Multi-stage drone curriculum for lift, hover, trajectory tracking, disturbance recovery, and final regression gates.",
             domain: .aerialDrone,
-            task: profile.task,
-            taskProfileID: profile.profileID,
+            task: "aerialAutonomy",
+            taskProfileID: nil,
             descriptor: LearningProjectDescriptorReference(
                 descriptorID: "reference-quadrotor",
                 source: .bundled,
@@ -55,31 +55,107 @@ public extension LearningProjectTemplate {
                 usesReinforcementFineTuning: true
             ),
             curriculum: LearningProjectCurriculum(
-                suiteIDs: profile.regressionSuiteIDs,
+                suiteIDs: [6],
                 seedCount: 2,
                 episodesPerSuite: 1,
-                populationSize: 8,
-                generationLimit: 5,
-                eliteCount: 1,
-                maxStepCount: nil
+                populationSize: 100,
+                generationLimit: 1_000,
+                convergenceGoal: convergenceGoal(maxGenerationBudget: 1_000, patienceGenerations: 50),
+                eliteCount: 10,
+                maxStepCount: nil,
+                trainingStages: [
+                    LearningProjectTrainingStage(
+                        stageID: "lift-foundation",
+                        kind: .reinforcement,
+                        displayName: "Lift Foundation",
+                        task: liftProfile.task,
+                        taskProfileID: liftProfile.profileID,
+                        suiteIDs: [6],
+                        seedCount: 2,
+                        episodesPerSuite: 1,
+                        generationLimit: 1_000,
+                        convergenceGoal: convergenceGoal(maxGenerationBudget: 1_000, patienceGenerations: 50),
+                        executionMode: .sequential,
+                        dependsOnStageIDs: [],
+                        capabilities: [.sensorIngestion, .dynamicsStabilization, .safeStop]
+                    ),
+                    LearningProjectTrainingStage(
+                        stageID: "hover-stabilization",
+                        kind: .reinforcement,
+                        displayName: "Hover Stabilization",
+                        task: "hoverStabilization",
+                        taskProfileID: nil,
+                        suiteIDs: [1],
+                        seedCount: 3,
+                        episodesPerSuite: 1,
+                        generationLimit: 1_500,
+                        convergenceGoal: convergenceGoal(maxGenerationBudget: 1_500, patienceGenerations: 25),
+                        executionMode: .sequential,
+                        dependsOnStageIDs: ["lift-foundation"],
+                        capabilities: [.stateEstimation, .dynamicsStabilization, .trajectoryTracking]
+                    ),
+                    LearningProjectTrainingStage(
+                        stageID: "trajectory-tracking",
+                        kind: .evolution,
+                        displayName: "Trajectory Tracking",
+                        task: "trajectoryTracking",
+                        taskProfileID: nil,
+                        suiteIDs: [1, 2],
+                        seedCount: 4,
+                        episodesPerSuite: 1,
+                        generationLimit: 2_000,
+                        convergenceGoal: convergenceGoal(maxGenerationBudget: 2_000, patienceGenerations: 30),
+                        executionMode: .parallel,
+                        dependsOnStageIDs: ["hover-stabilization"],
+                        capabilities: [.trajectoryTracking, .obstacleAvoidance, .missionExecution]
+                    ),
+                    LearningProjectTrainingStage(
+                        stageID: "disturbance-recovery",
+                        kind: .stress,
+                        displayName: "Disturbance Recovery",
+                        task: "disturbanceRecovery",
+                        taskProfileID: nil,
+                        suiteIDs: [6, 7, 8],
+                        seedCount: 4,
+                        episodesPerSuite: 1,
+                        generationLimit: 2_000,
+                        convergenceGoal: convergenceGoal(maxGenerationBudget: 2_000, patienceGenerations: 30),
+                        executionMode: .parallel,
+                        dependsOnStageIDs: ["hover-stabilization"],
+                        capabilities: [.faultDetection, .recoveryBehavior, .safeStop]
+                    ),
+                    LearningProjectTrainingStage(
+                        stageID: "full-regression",
+                        kind: .regression,
+                        displayName: "Full Regression Gate",
+                        task: "aerialRegression",
+                        taskProfileID: nil,
+                        suiteIDs: [6, 7, 8],
+                        seedCount: 4,
+                        episodesPerSuite: 1,
+                        generationLimit: 1,
+                        convergenceGoal: validationGateGoal(),
+                        executionMode: .sequential,
+                        dependsOnStageIDs: ["trajectory-tracking", "disturbance-recovery"],
+                        capabilities: [.dynamicsStabilization, .trajectoryTracking, .recoveryBehavior, .safeStop]
+                    )
+                ]
             ),
-            evaluationGate: .from(profile: profile),
-            observation: .referenceQuadrotorLift(),
-            action: LearningProjectActionContract(
-                schemaID: "reference-quadrotor-drive-v1",
-                kind: .continuous,
-                driveCount: 4,
-                actuatorCount: 4,
-                isBounded: true
-            ),
+            evaluationGate: .from(profile: liftProfile),
+            observation: .referenceQuadrotorTemporalCTBR(),
+            action: .referenceQuadrotorBodyRateControl(),
+            policy: .referenceQuadrotorTemporalCTBR(),
             compute: LearningProjectComputeProfile(
                 preset: .local,
-                workerCount: 2,
-                candidateEvaluationConcurrency: 2,
+                workerCount: 1,
+                candidateEvaluationConcurrency: 100,
                 requiresMetal: true,
+                targetAccelerator: .metal,
+                usesMachineOptimizedParallelism: true,
+                minimumPopulationSize: 100,
                 estimatedDiskBytes: nil
             ),
-            tags: ["aerial", "drone", "lift", "starter", "hybrid"]
+            tags: ["aerial", "drone", "autonomy", "starter", "hybrid", "multi-stage"]
         )
     }()
 
@@ -115,12 +191,45 @@ public extension LearningProjectTemplate {
             ),
             curriculum: LearningProjectCurriculum(
                 suiteIDs: profile.regressionSuiteIDs,
-                seedCount: 2,
+                seedCount: 3,
                 episodesPerSuite: 1,
-                populationSize: 8,
-                generationLimit: 5,
-                eliteCount: 1,
-                maxStepCount: nil
+                populationSize: 100,
+                generationLimit: 1_000,
+                convergenceGoal: convergenceGoal(maxGenerationBudget: 1_000, patienceGenerations: 50),
+                eliteCount: 10,
+                maxStepCount: nil,
+                trainingStages: [
+                    LearningProjectTrainingStage(
+                        stageID: "single-prop-lift-recovery",
+                        kind: .evolution,
+                        displayName: "Single Prop Lift Recovery",
+                        task: profile.task,
+                        taskProfileID: profile.profileID,
+                        suiteIDs: profile.regressionSuiteIDs,
+                        seedCount: 3,
+                        episodesPerSuite: 1,
+                        generationLimit: 1_000,
+                        convergenceGoal: convergenceGoal(maxGenerationBudget: 1_000, patienceGenerations: 50),
+                        executionMode: .sequential,
+                        dependsOnStageIDs: [],
+                        capabilities: [.sensorIngestion, .dynamicsStabilization, .recoveryBehavior, .safeStop]
+                    ),
+                    LearningProjectTrainingStage(
+                        stageID: "single-prop-regression",
+                        kind: .regression,
+                        displayName: "Single Prop Regression Gate",
+                        task: profile.task,
+                        taskProfileID: profile.profileID,
+                        suiteIDs: profile.regressionSuiteIDs,
+                        seedCount: 3,
+                        episodesPerSuite: 1,
+                        generationLimit: 1,
+                        convergenceGoal: validationGateGoal(),
+                        executionMode: .sequential,
+                        dependsOnStageIDs: ["single-prop-lift-recovery"],
+                        capabilities: [.dynamicsStabilization, .recoveryBehavior, .safeStop]
+                    )
+                ]
             ),
             evaluationGate: .from(profile: profile),
             observation: .referenceQuadrotorLift(),
@@ -131,11 +240,19 @@ public extension LearningProjectTemplate {
                 actuatorCount: 1,
                 isBounded: true
             ),
+            policy: .simpleFeedForward(
+                observationDimension: LearningProjectObservationContract.referenceQuadrotorLift().channelCount,
+                actionDimension: 1,
+                actionEncoding: .directMotor
+            ),
             compute: LearningProjectComputeProfile(
                 preset: .local,
-                workerCount: 2,
-                candidateEvaluationConcurrency: 2,
+                workerCount: 1,
+                candidateEvaluationConcurrency: 100,
                 requiresMetal: true,
+                targetAccelerator: .metal,
+                usesMachineOptimizedParallelism: true,
+                minimumPopulationSize: 100,
                 estimatedDiskBytes: nil
             ),
             tags: ["aerial", "drone", "single-prop", "recovery"]
@@ -157,7 +274,7 @@ public extension LearningProjectTemplate {
             robotClass: .groundVehicle
         ),
         modelBundlePolicy: LearningProjectModelBundlePolicy(
-            sourceCheckpointPolicy: .createStarter,
+            sourceCheckpointPolicy: .none,
             requiredBundleSchemaVersion: nil,
             requiresStrictPreflight: true,
             requiresTaskCompatibleDriveCount: true
@@ -172,11 +289,12 @@ public extension LearningProjectTemplate {
         ),
         curriculum: LearningProjectCurriculum(
             suiteIDs: [1],
-            seedCount: 2,
+            seedCount: 3,
             episodesPerSuite: 1,
-            populationSize: 8,
-            generationLimit: 5,
-            eliteCount: 1,
+            populationSize: 100,
+            generationLimit: 1_000,
+            convergenceGoal: convergenceGoal(maxGenerationBudget: 1_000, patienceGenerations: 50),
+            eliteCount: 10,
             maxStepCount: nil
         ),
         evaluationGate: LearningProjectEvaluationGate(
@@ -212,13 +330,12 @@ public extension LearningProjectTemplate {
             actuatorCount: 2,
             isBounded: true
         ),
-        compute: LearningProjectComputeProfile(
-            preset: .local,
-            workerCount: 2,
-            candidateEvaluationConcurrency: 2,
-            requiresMetal: true,
-            estimatedDiskBytes: nil
+        policy: .simpleFeedForward(
+            observationDimension: 6,
+            actionDimension: 2,
+            actionEncoding: .directMotor
         ),
+        compute: localCompute(workerCount: 1, candidateEvaluationConcurrency: 100),
         tags: ["ground", "robot", "navigation", "generic"]
     )
 
@@ -237,7 +354,7 @@ public extension LearningProjectTemplate {
             robotClass: .aerialVehicle
         ),
         modelBundlePolicy: LearningProjectModelBundlePolicy(
-            sourceCheckpointPolicy: .createStarter,
+            sourceCheckpointPolicy: .none,
             requiredBundleSchemaVersion: nil,
             requiresStrictPreflight: true,
             requiresTaskCompatibleDriveCount: true
@@ -254,20 +371,16 @@ public extension LearningProjectTemplate {
             suiteIDs: [1],
             seedCount: 3,
             episodesPerSuite: 1,
-            populationSize: 12,
-            generationLimit: 5,
-            eliteCount: 2,
+                populationSize: 100,
+                generationLimit: 1_500,
+                convergenceGoal: convergenceGoal(maxGenerationBudget: 1_500, patienceGenerations: 60),
+                eliteCount: 10,
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
-        observation: aerialNavigationObservation(),
-        action: LearningProjectActionContract(
-            schemaID: "multirotor-drive-v1",
-            kind: .continuous,
-            driveCount: 4,
-            actuatorCount: 4,
-            isBounded: true
-        ),
+        observation: .referenceQuadrotorTemporalCTBR(),
+        action: .referenceQuadrotorBodyRateControl(),
+        policy: .referenceQuadrotorTemporalCTBR(),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["aerial", "drone", "hover", "stabilization", "hybrid"]
     )
@@ -304,20 +417,16 @@ public extension LearningProjectTemplate {
             suiteIDs: [1, 2],
             seedCount: 4,
             episodesPerSuite: 1,
-            populationSize: 16,
-            generationLimit: 8,
-            eliteCount: 2,
+            populationSize: 100,
+            generationLimit: 2_000,
+            convergenceGoal: convergenceGoal(maxGenerationBudget: 2_000, patienceGenerations: 70),
+            eliteCount: 10,
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
-        observation: aerialNavigationObservation(),
-        action: LearningProjectActionContract(
-            schemaID: "multirotor-drive-v1",
-            kind: .continuous,
-            driveCount: 4,
-            actuatorCount: 4,
-            isBounded: true
-        ),
+        observation: .referenceQuadrotorTemporalCTBR(),
+        action: .referenceQuadrotorBodyRateControl(),
+        policy: .referenceQuadrotorTemporalCTBR(),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["aerial", "drone", "waypoint", "navigation", "hybrid"]
     )
@@ -337,7 +446,7 @@ public extension LearningProjectTemplate {
             robotClass: .leggedRobot
         ),
         modelBundlePolicy: LearningProjectModelBundlePolicy(
-            sourceCheckpointPolicy: .createStarter,
+            sourceCheckpointPolicy: .none,
             requiredBundleSchemaVersion: nil,
             requiresStrictPreflight: true,
             requiresTaskCompatibleDriveCount: true
@@ -354,9 +463,10 @@ public extension LearningProjectTemplate {
             suiteIDs: [1, 2],
             seedCount: 4,
             episodesPerSuite: 1,
-            populationSize: 16,
-            generationLimit: 8,
-            eliteCount: 2,
+            populationSize: 100,
+            generationLimit: 2_000,
+            convergenceGoal: convergenceGoal(maxGenerationBudget: 2_000, patienceGenerations: 70),
+            eliteCount: 10,
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
@@ -381,6 +491,11 @@ public extension LearningProjectTemplate {
             actuatorCount: 12,
             isBounded: true
         ),
+        policy: .simpleFeedForward(
+            observationDimension: 8,
+            actionDimension: 12,
+            actionEncoding: .jointTargets
+        ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["ground", "legged", "locomotion", "balance", "hybrid"]
     )
@@ -400,7 +515,7 @@ public extension LearningProjectTemplate {
             robotClass: .manipulator
         ),
         modelBundlePolicy: LearningProjectModelBundlePolicy(
-            sourceCheckpointPolicy: .createStarter,
+            sourceCheckpointPolicy: .none,
             requiredBundleSchemaVersion: nil,
             requiresStrictPreflight: true,
             requiresTaskCompatibleDriveCount: true
@@ -417,9 +532,10 @@ public extension LearningProjectTemplate {
             suiteIDs: [1],
             seedCount: 3,
             episodesPerSuite: 1,
-            populationSize: 12,
-            generationLimit: 6,
-            eliteCount: 2,
+            populationSize: 100,
+            generationLimit: 1_500,
+            convergenceGoal: convergenceGoal(maxGenerationBudget: 1_500, patienceGenerations: 60),
+            eliteCount: 10,
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
@@ -444,6 +560,11 @@ public extension LearningProjectTemplate {
             actuatorCount: 7,
             isBounded: true
         ),
+        policy: .simpleFeedForward(
+            observationDimension: 8,
+            actionDimension: 7,
+            actionEncoding: .jointTargets
+        ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["manipulator", "pick", "place", "grasp", "hybrid"]
     )
@@ -463,7 +584,7 @@ public extension LearningProjectTemplate {
             robotClass: .groundVehicle
         ),
         modelBundlePolicy: LearningProjectModelBundlePolicy(
-            sourceCheckpointPolicy: .createStarter,
+            sourceCheckpointPolicy: .none,
             requiredBundleSchemaVersion: nil,
             requiresStrictPreflight: true,
             requiresTaskCompatibleDriveCount: true
@@ -480,9 +601,10 @@ public extension LearningProjectTemplate {
             suiteIDs: [1, 2],
             seedCount: 4,
             episodesPerSuite: 1,
-            populationSize: 16,
-            generationLimit: 8,
-            eliteCount: 2,
+            populationSize: 100,
+            generationLimit: 2_000,
+            convergenceGoal: convergenceGoal(maxGenerationBudget: 2_000, patienceGenerations: 70),
+            eliteCount: 10,
             maxStepCount: nil
         ),
         evaluationGate: LearningProjectEvaluationGate(
@@ -523,6 +645,11 @@ public extension LearningProjectTemplate {
             actuatorCount: 3,
             isBounded: true
         ),
+        policy: .simpleFeedForward(
+            observationDimension: 8,
+            actionDimension: 3,
+            actionEncoding: .vehicleSteerThrottleBrake
+        ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["automotive", "lane-keeping", "safety", "hybrid"]
     )
@@ -539,11 +666,15 @@ public extension LearningProjectTemplate {
         workerCount: Int,
         candidateEvaluationConcurrency: Int
     ) -> LearningProjectComputeProfile {
-        LearningProjectComputeProfile(
+        let concurrency = max(100, candidateEvaluationConcurrency)
+        return LearningProjectComputeProfile(
             preset: .local,
-            workerCount: workerCount,
-            candidateEvaluationConcurrency: candidateEvaluationConcurrency,
+            workerCount: 1,
+            candidateEvaluationConcurrency: concurrency,
             requiresMetal: true,
+            targetAccelerator: .metal,
+            usesMachineOptimizedParallelism: true,
+            minimumPopulationSize: concurrency,
             estimatedDiskBytes: nil
         )
     }
@@ -564,6 +695,37 @@ public extension LearningProjectTemplate {
                 .telemetryComplete,
                 .artifactLineageComplete
             ]
+        )
+    }
+
+    private static func convergenceGoal(
+        maxGenerationBudget: Int,
+        patienceGenerations: Int
+    ) -> LearningProjectConvergenceGoal {
+        LearningProjectConvergenceGoal(
+            kind: .convergence,
+            targetTaskPassRate: 1,
+            targetHoldTimeRatio: 1,
+            maximumSafetyViolationRate: 0,
+            minimumFitnessImprovement: 0.001,
+            minimumTaskPassRateImprovement: 0.001,
+            minimumHoldTimeRatioImprovement: 0.001,
+            patienceGenerations: patienceGenerations,
+            maxGenerationBudget: maxGenerationBudget
+        )
+    }
+
+    private static func validationGateGoal() -> LearningProjectConvergenceGoal {
+        LearningProjectConvergenceGoal(
+            kind: .validationGate,
+            targetTaskPassRate: 1,
+            targetHoldTimeRatio: 1,
+            maximumSafetyViolationRate: 0,
+            minimumFitnessImprovement: 0,
+            minimumTaskPassRateImprovement: 0,
+            minimumHoldTimeRatioImprovement: 0,
+            patienceGenerations: 1,
+            maxGenerationBudget: 1
         )
     }
 

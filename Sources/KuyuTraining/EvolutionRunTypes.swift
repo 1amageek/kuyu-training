@@ -155,6 +155,8 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
     public let mutationRate: Double
     public let mutationNoiseScale: Double
     public let adaptiveMutation: EvolutionAdaptiveMutationConfig
+    public let earlyStopping: EvolutionEarlyStoppingConfig
+    public let worldExecutionRequirement: VectorizedWorldExecutionRequirement
     public let parentCheckpointID: String?
     public let parentCheckpointURL: URL?
 
@@ -178,6 +180,8 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
         mutationRate: Double,
         mutationNoiseScale: Double = 0.01,
         adaptiveMutation: EvolutionAdaptiveMutationConfig = EvolutionAdaptiveMutationConfig(),
+        earlyStopping: EvolutionEarlyStoppingConfig = EvolutionEarlyStoppingConfig(),
+        worldExecutionRequirement: VectorizedWorldExecutionRequirement = .acceleratorSharedWorld,
         parentCheckpointID: String? = nil,
         parentCheckpointURL: URL? = nil
     ) {
@@ -200,8 +204,32 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
         self.mutationRate = mutationRate
         self.mutationNoiseScale = max(0, mutationNoiseScale)
         self.adaptiveMutation = adaptiveMutation
+        self.earlyStopping = earlyStopping
+        self.worldExecutionRequirement = worldExecutionRequirement
         self.parentCheckpointID = parentCheckpointID
         self.parentCheckpointURL = parentCheckpointURL
+    }
+}
+
+public struct EvolutionEarlyStoppingConfig: Sendable, Codable, Equatable {
+    public let enabled: Bool
+    public let patienceGenerations: Int
+    public let minimumFitnessImprovement: Double
+    public let minimumTaskPassRateImprovement: Double
+    public let minimumHoldTimeRatioImprovement: Double
+
+    public init(
+        enabled: Bool = true,
+        patienceGenerations: Int = 20,
+        minimumFitnessImprovement: Double = 0.001,
+        minimumTaskPassRateImprovement: Double = 0.001,
+        minimumHoldTimeRatioImprovement: Double = 0.001
+    ) {
+        self.enabled = enabled
+        self.patienceGenerations = max(1, patienceGenerations)
+        self.minimumFitnessImprovement = max(0, minimumFitnessImprovement)
+        self.minimumTaskPassRateImprovement = max(0, minimumTaskPassRateImprovement)
+        self.minimumHoldTimeRatioImprovement = max(0, minimumHoldTimeRatioImprovement)
     }
 }
 

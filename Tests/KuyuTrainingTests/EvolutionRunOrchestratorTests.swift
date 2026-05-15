@@ -1,6 +1,56 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import KuyuTraining
+
+@MainActor
+@Test func evolutionRunOrchestratorStopsEarlyWhenFitnessAndTaskQualityPlateau() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = FakeEvolutionEvaluator(taskPassRate: 0, fixedFitness: 1)
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-early-stop-plateau",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 8,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.08,
+            earlyStopping: EvolutionEarlyStoppingConfig(
+                enabled: true,
+                patienceGenerations: 2,
+                minimumFitnessImprovement: 0.001,
+                minimumTaskPassRateImprovement: 0.001,
+                minimumHoldTimeRatioImprovement: 0.001
+            )
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .rejected)
+    #expect(result.manifest.generationCount == 8)
+    #expect(result.generations.count == 3)
+    #expect(result.fitness.count == 9)
+    #expect(result.manifest.failureReason?.hasPrefix("early-stopped:plateau") == true)
+    #expect(backend.nextGenerationRequests.count == 2)
+
+    let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
+    #expect(artifacts.manifest.failureReason?.hasPrefix("early-stopped:plateau") == true)
+    #expect(artifacts.generations.count == 3)
+    #expect(artifacts.fitness.count == 9)
+}
 
 @MainActor
 @Test func evolutionRunOrchestratorWritesAutonomousEvolutionArtifacts() async throws {
@@ -123,6 +173,114 @@ import Testing
     #expect(result.manifest.terminalState == .completed)
     #expect(await probe.maximumActiveCount() > 1)
     #expect(result.evaluationTraces.contains { $0.activeEvaluationCountAtStart > 1 })
+}
+
+@MainActor
+@Test func evolutionRunOrchestratorUsesBatchEvaluatorWhenAvailable() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = FakeBatchEvolutionEvaluator()
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-batch-evaluation",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 7,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 2,
+            candidateEvaluationConcurrency: 3,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .completed)
+    #expect(result.fitness.map(\.candidateID) == [
+        "g0-c0",
+        "g0-c1",
+        "g0-c2",
+        "g0-c3",
+        "g0-c4",
+        "g0-c5",
+        "g0-c6"
+    ])
+    #expect(evaluator.singleCandidateRequestCount == 0)
+    #expect(evaluator.batchCandidateIDs == [
+        ["g0-c0", "g0-c1", "g0-c2"],
+        ["g0-c3", "g0-c4", "g0-c5"],
+        ["g0-c6"]
+    ])
+    #expect(result.evaluationTraces.allSatisfy { $0.requestedConcurrency == 3 })
+}
+
+@MainActor
+@Test func evolutionRunOrchestratorStreamsCandidateEventsBeforeGenerationCompletion() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = SlowEvolutionEvaluator(probe: EvaluationConcurrencyProbe())
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+    let events = Mutex<[String]>([])
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-streaming-events",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 4,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 2,
+            candidateEvaluationConcurrency: 4,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0
+        ),
+        artifactDirectory: directory,
+        onEvent: { event in
+            switch event {
+            case let .generationStarted(index):
+                events.withLock { $0.append("generation-started:\(index)") }
+            case let .candidateEvaluated(summary):
+                events.withLock { $0.append("candidate:\(summary.candidateID)") }
+            case let .generationCompleted(record):
+                events.withLock { $0.append("generation-completed:\(record.generationIndex)") }
+            default:
+                break
+            }
+        }
+    )
+
+    #expect(result.manifest.terminalState == .completed)
+    let recordedEvents = events.withLock { $0 }
+    let candidateEventCount = recordedEvents.filter { $0.hasPrefix("candidate:") }.count
+    #expect(candidateEventCount == 4)
+
+    guard let firstCandidateIndex = recordedEvents.firstIndex(where: { $0.hasPrefix("candidate:") }) else {
+        Issue.record("Expected at least one candidate event")
+        return
+    }
+    guard let generationCompletedIndex = recordedEvents.firstIndex(of: "generation-completed:0") else {
+        Issue.record("Expected generation completed event")
+        return
+    }
+    #expect(firstCandidateIndex < generationCompletedIndex)
 }
 
 @MainActor
@@ -533,6 +691,52 @@ private struct SlowEvolutionEvaluator: EvolutionCandidateEvaluating {
             safetyViolationRate: 0,
             holdTimeRatio: 1,
             workerThroughput: Double(request.workerCount)
+        )
+    }
+}
+
+@MainActor
+private final class FakeBatchEvolutionEvaluator: EvolutionCandidateBatchEvaluating {
+    private(set) var singleCandidateRequestCount = 0
+    private(set) var batchCandidateIDs: [[String]] = []
+
+    func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary {
+        singleCandidateRequestCount += 1
+        return summary(
+            config: request.config,
+            candidate: request.candidate,
+            workerCount: request.workerCount
+        )
+    }
+
+    func evaluateCandidates(request: EvolutionCandidateBatchEvaluationRequest) async throws -> [FitnessSummary] {
+        batchCandidateIDs.append(request.candidates.map(\.candidateID))
+        return request.candidates.map { candidate in
+            summary(
+                config: request.config,
+                candidate: candidate,
+                workerCount: request.workerCount
+            )
+        }
+    }
+
+    private func summary(
+        config: EvolutionRunConfig,
+        candidate: GenomeCandidate,
+        workerCount: Int
+    ) -> FitnessSummary {
+        let candidateRank = Double(Int(candidate.candidateID.split(separator: "c").last ?? "0") ?? 0)
+        return FitnessSummary(
+            runID: config.runID,
+            generationIndex: candidate.generationIndex,
+            candidateID: candidate.candidateID,
+            taskID: config.taskID,
+            scalarFitness: candidateRank,
+            rewardAverage: candidateRank,
+            taskPassRate: 1,
+            safetyViolationRate: 0,
+            holdTimeRatio: 1,
+            workerThroughput: Double(workerCount)
         )
     }
 }

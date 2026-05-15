@@ -62,7 +62,6 @@ where Runner.Scenario == ReferenceQuadrotorScenarioDefinition {
     }
 
     /// Run a single pipeline iteration: generate scenarios, execute, evaluate, collect data.
-    @MainActor
     public mutating func runIteration(
         cutFactory: (ReferenceQuadrotorScenarioDefinition) throws -> Runner.Cut,
         motorNerveFactory: ((ReferenceQuadrotorScenarioDefinition) throws -> Runner.Nerve?)? = nil,

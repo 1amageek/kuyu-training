@@ -6,7 +6,7 @@ import Testing
 
     #expect(profile.profileID == "lift-v1")
     #expect(profile.task == "lift")
-    #expect(profile.observationChannelCount == 8)
+    #expect(profile.observationChannelCount == 64)
     #expect(profile.baseEvaluationSuiteIDs == [1])
     #expect(profile.regressionSuiteIDs == [6, 7, 8])
     #expect(profile.minimumRewardAverage == 0)

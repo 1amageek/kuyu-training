@@ -13,14 +13,17 @@ import Testing
 
     let package = try factory.makeRunnableStarterProject(
         rootURL: rootURL,
-        name: "Drone Lift",
-        template: .droneLiftStarter
+        name: "Drone Autonomy",
+        template: .droneAutonomyStarter
     )
 
     #expect(package.manifest.projectID == "proj-fixed")
-    #expect(package.manifest.defaultTemplateID == "aerial-drone-lift-starter-v1")
+    #expect(package.manifest.defaultTemplateID == "aerial-drone-autonomy-starter-v1")
     #expect(package.defaultExperiment.experimentID == "default")
     #expect(package.sourceBundleReference.requiredCompatibility.driveCount == 4)
+    #expect(package.selectedTemplate.isRunnableStarter)
+    #expect(package.selectedTemplate.curriculum.trainingStages.count >= 5)
+    #expect(package.manifest.validationPolicy.requiresStrictTemplateValidation)
     #expect(package.manifest.validationPolicy.requiresModelBundleCompatibility)
 }
 
@@ -53,8 +56,8 @@ import Testing
         idGenerator: { "roundtrip" }
     ).makeRunnableStarterProject(
         rootURL: rootURL,
-        name: "Drone Lift",
-        template: .droneLiftStarter
+        name: "Drone Autonomy",
+        template: .droneAutonomyStarter
     )
 
     try KuyuProjectPackageWriter().write(package)
@@ -90,7 +93,7 @@ import Testing
         _ = try KuyuProjectFactory().makeRunnableStarterProject(
             rootURL: rootURL,
             name: "Invalid",
-            template: .droneLiftStarter
+            template: .droneAutonomyStarter
         )
         Issue.record("Expected invalid package extension to throw.")
     } catch KuyuProjectPackageError.invalidPackageExtension(let path) {
@@ -106,8 +109,8 @@ import Testing
         .appendingPathExtension("kuyu")
     let package = try KuyuProjectFactory().makeRunnableStarterProject(
         rootURL: rootURL,
-        name: "Drone Lift",
-        template: .droneLiftStarter
+        name: "Drone Autonomy",
+        template: .droneAutonomyStarter
     )
     let manifest = KuyuProjectManifest(
         projectID: package.manifest.projectID,
@@ -141,7 +144,7 @@ import Testing
     } catch KuyuProjectPackageError.mismatchedReference(let file, let field, let expected, let actual) {
         #expect(file == "project.json")
         #expect(field == "defaultTemplateID")
-        #expect(expected == "aerial-drone-lift-starter-v1")
+        #expect(expected == "aerial-drone-autonomy-starter-v1")
         #expect(actual == "wrong-template")
     } catch {
         Issue.record("Unexpected error: \(error)")

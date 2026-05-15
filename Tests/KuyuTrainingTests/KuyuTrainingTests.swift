@@ -444,7 +444,7 @@ struct TrainingDatasetWriterTests {
             .map { line in
                 try JSONDecoder().decode(TrainingDatasetRecord.self, from: Data(line.utf8))
             }
-        #expect(records.map { $0.driveIntents.first?.value } == [nil, 0.8, 0.8, 0.6])
+        #expect(records.map { $0.driveIntents.first?.value } == [0.8, 0.8, 0.8, 0.6])
     }
 
     @Test func emptyLogProducesEmptyRecords() throws {

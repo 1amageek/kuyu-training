@@ -11,6 +11,19 @@ public protocol ReferenceQuadrotorPolicyFactory: Sendable {
     ) throws -> any ReferenceQuadrotorEnvironmentPolicy
 }
 
+public protocol ReferenceQuadrotorWorkerScopedPolicyFactory: ReferenceQuadrotorPolicyFactory {
+    func makeWorkerPolicyFactory(workerIndex: Int) throws -> any ReferenceQuadrotorPolicyFactory
+}
+
+public extension ReferenceQuadrotorPolicyFactory {
+    func workerScopedFactory(workerIndex: Int) throws -> any ReferenceQuadrotorPolicyFactory {
+        if let scopedFactory = self as? any ReferenceQuadrotorWorkerScopedPolicyFactory {
+            return try scopedFactory.makeWorkerPolicyFactory(workerIndex: workerIndex)
+        }
+        return self
+    }
+}
+
 public struct KuyAtt1BaselinePolicyFactory: ReferenceQuadrotorPolicyFactory {
     public let policyID: String
     public let parameters: ReferenceQuadrotorParameters
@@ -219,12 +232,13 @@ public struct RolloutRunner: Sendable {
         policyFactory: any ReferenceQuadrotorPolicyFactory,
         workerIndex: Int = 0
     ) async throws -> [RolloutEpisode] {
+        let workerPolicyFactory = try policyFactory.workerScopedFactory(workerIndex: workerIndex)
         var episodes: [RolloutEpisode] = []
         episodes.reserveCapacity(definitions.count)
         for definition in definitions {
             let episode = try await runEpisode(
                 definition: definition,
-                policyFactory: policyFactory,
+                policyFactory: workerPolicyFactory,
                 workerIndex: workerIndex
             )
             episodes.append(episode)

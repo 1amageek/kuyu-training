@@ -56,7 +56,6 @@ public struct EvolutionGenerationRequest: Sendable, Equatable {
     }
 }
 
-@MainActor
 public protocol EvolutionaryTrainingBackend: Sendable {
     func seedPopulation(request: EvolutionSeedRequest) async throws -> EvolutionPopulation
     func produceNextGeneration(request: EvolutionGenerationRequest) async throws -> EvolutionPopulation
@@ -83,4 +82,27 @@ public struct EvolutionCandidateEvaluationRequest: Sendable, Equatable {
 
 public protocol EvolutionCandidateEvaluating: Sendable {
     func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary
+}
+
+public struct EvolutionCandidateBatchEvaluationRequest: Sendable, Equatable {
+    public let config: EvolutionRunConfig
+    public let candidates: [GenomeCandidate]
+    public let generationArtifactDirectory: URL
+    public let workerCount: Int
+
+    public init(
+        config: EvolutionRunConfig,
+        candidates: [GenomeCandidate],
+        generationArtifactDirectory: URL,
+        workerCount: Int
+    ) {
+        self.config = config
+        self.candidates = candidates
+        self.generationArtifactDirectory = generationArtifactDirectory
+        self.workerCount = max(1, workerCount)
+    }
+}
+
+public protocol EvolutionCandidateBatchEvaluating: EvolutionCandidateEvaluating {
+    func evaluateCandidates(request: EvolutionCandidateBatchEvaluationRequest) async throws -> [FitnessSummary]
 }

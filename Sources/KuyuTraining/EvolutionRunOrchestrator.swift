@@ -198,6 +198,7 @@ public struct EvolutionRunOrchestrator {
                     candidates: allCandidates,
                     fitness: allFitness,
                     evaluationTraces: allEvaluationTraces,
+                    bestFitness: bestAcceptedFitness,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
@@ -233,14 +234,23 @@ public struct EvolutionRunOrchestrator {
                 )
                 allEvaluationTraces.append(contentsOf: evaluation.traces)
             } catch is CancellationError {
+                let cancelledFitness = evaluationCancellationFitness(
+                    config: config,
+                    candidates: currentPopulation.candidates
+                )
+                let cancelledTraces = evaluationCancellationTraces(
+                    config: config,
+                    candidates: currentPopulation.candidates
+                )
                 return await finish(
                     manifest: manifest,
                     state: .cancelled,
                     failureReason: "cancelled",
                     generations: allGenerations,
                     candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
+                    fitness: allFitness + cancelledFitness,
+                    evaluationTraces: allEvaluationTraces + cancelledTraces,
+                    bestFitness: bestAcceptedFitness,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
@@ -367,6 +377,7 @@ public struct EvolutionRunOrchestrator {
                     candidates: allCandidates,
                     fitness: allFitness,
                     evaluationTraces: allEvaluationTraces,
+                    bestFitness: bestAcceptedFitness,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
@@ -763,6 +774,54 @@ public struct EvolutionRunOrchestrator {
                 candidateID: candidate.candidateID,
                 requestedConcurrency: requestedConcurrency,
                 activeEvaluationCountAtStart: min(offset + 1, requestedConcurrency),
+                startedAt: completedAt,
+                completedAt: completedAt
+            )
+        }
+    }
+
+    private func evaluationCancellationFitness(
+        config: EvolutionRunConfig,
+        candidates: [GenomeCandidate]
+    ) -> [FitnessSummary] {
+        let cancelledMetric = -1.0e12
+        return candidates.map { candidate in
+            FitnessSummary(
+                runID: config.runID,
+                generationIndex: candidate.generationIndex,
+                candidateID: candidate.candidateID,
+                taskID: config.taskID,
+                scalarFitness: cancelledMetric,
+                rewardAverage: cancelledMetric,
+                taskPassRate: 0,
+                safetyViolationRate: 1,
+                holdTimeRatio: 0,
+                altitudeErrorRatio: nil,
+                energyPenalty: nil,
+                noveltyScore: nil,
+                teacherDelta: nil,
+                workerThroughput: 0,
+                behaviorDescriptor: [
+                    "evaluation.cancelled": 1,
+                ],
+                failureReasons: ["evaluation-cancelled"]
+            )
+        }
+    }
+
+    private func evaluationCancellationTraces(
+        config: EvolutionRunConfig,
+        candidates: [GenomeCandidate]
+    ) -> [EvolutionCandidateEvaluationTrace] {
+        let completedAt = Date()
+        let requestedConcurrency = max(1, min(config.candidateEvaluationConcurrency, candidates.count))
+        return candidates.map { candidate in
+            EvolutionCandidateEvaluationTrace(
+                runID: config.runID,
+                generationIndex: candidate.generationIndex,
+                candidateID: candidate.candidateID,
+                requestedConcurrency: requestedConcurrency,
+                activeEvaluationCountAtStart: 1,
                 startedAt: completedAt,
                 completedAt: completedAt
             )

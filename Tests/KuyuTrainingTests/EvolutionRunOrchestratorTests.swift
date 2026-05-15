@@ -284,6 +284,57 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorWritesValidArtifactsWhenBatchEvaluationIsCancelledMidRun() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let backend = FakeEvolutionBackend()
+    let evaluator = CancellingBatchEvolutionEvaluator(cancelAtGeneration: 1)
+    let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-cancelled-mid-batch",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 4,
+            eliteCount: 1,
+            workerCount: 1,
+            candidateEvaluationConcurrency: 3,
+            mutationRate: 0.08
+        ),
+        gatePolicy: EvolutionGatePolicy(
+            eliteCount: 1,
+            minimumTaskPassRate: 1.0,
+            maximumSafetyViolationRate: 0,
+            minimumHoldTimeRatio: 1.0
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .cancelled)
+    #expect(result.generations.count == 1)
+    #expect(result.candidates.count == 6)
+    #expect(result.fitness.count == 6)
+    #expect(result.evaluationTraces.count == 6)
+    #expect(result.eliteArchive.bestCandidateID == "g0-c2")
+    #expect(result.fitness.filter { $0.generationIndex == 1 }.allSatisfy {
+        $0.failureReasons == ["evaluation-cancelled"]
+            && $0.behaviorDescriptor["evaluation.cancelled"] == 1
+    })
+
+    let artifacts = try EvolutionRunArtifactValidator().loadAndValidate(from: directory)
+    #expect(artifacts.manifest.terminalState == .cancelled)
+    #expect(artifacts.candidates.count == 6)
+    #expect(artifacts.fitness.count == 6)
+    #expect(artifacts.evaluationTraces.count == 6)
+    #expect(artifacts.eliteArchive.bestCandidateID == "g0-c2")
+    #expect(artifacts.acceptedCheckpoint.accepted == false)
+    #expect(artifacts.acceptedCheckpoint.bestCandidateID == "g0-c2")
+}
+
+@MainActor
 @Test func evolutionRunOrchestratorDoesNotDecayMutationWhenAcceptedGenerationDoesNotBeatIncumbent() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
@@ -664,6 +715,50 @@ private actor EvaluationConcurrencyProbe {
 
     func maximumActiveCount() -> Int {
         maximumActive
+    }
+}
+
+@MainActor
+private final class CancellingBatchEvolutionEvaluator: EvolutionCandidateBatchEvaluating {
+    let cancelAtGeneration: Int
+
+    init(cancelAtGeneration: Int) {
+        self.cancelAtGeneration = cancelAtGeneration
+    }
+
+    func evaluateCandidate(request: EvolutionCandidateEvaluationRequest) async throws -> FitnessSummary {
+        summary(config: request.config, candidate: request.candidate, workerCount: request.workerCount)
+    }
+
+    func evaluateCandidates(request: EvolutionCandidateBatchEvaluationRequest) async throws -> [FitnessSummary] {
+        if request.candidates.contains(where: { $0.generationIndex == cancelAtGeneration }) {
+            throw CancellationError()
+        }
+        return request.candidates.map { candidate in
+            summary(config: request.config, candidate: candidate, workerCount: request.workerCount)
+        }
+    }
+
+    private func summary(
+        config: EvolutionRunConfig,
+        candidate: GenomeCandidate,
+        workerCount: Int
+    ) -> FitnessSummary {
+        let candidateRank = Double(Int(candidate.candidateID.split(separator: "c").last ?? "0") ?? 0)
+        let generationOffset = Double(candidate.generationIndex) * 10
+        let fitness = generationOffset + candidateRank
+        return FitnessSummary(
+            runID: config.runID,
+            generationIndex: candidate.generationIndex,
+            candidateID: candidate.candidateID,
+            taskID: config.taskID,
+            scalarFitness: fitness,
+            rewardAverage: fitness,
+            taskPassRate: 1,
+            safetyViolationRate: 0,
+            holdTimeRatio: 1,
+            workerThroughput: Double(workerCount)
+        )
     }
 }
 

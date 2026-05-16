@@ -5,7 +5,6 @@ public enum VectorizedWorldExecutionMode: String, Sendable, Codable, Equatable, 
 
 public enum VectorizedWorldExecutionRequirement: String, Sendable, Codable, Equatable, CaseIterable {
     case acceleratorSharedWorld
-    case allowIsolatedWorldFallback
 }
 
 public struct VectorizedTrainingBatchSpec: Sendable, Codable, Equatable {

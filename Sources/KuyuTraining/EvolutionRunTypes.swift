@@ -6,6 +6,9 @@ public enum EvolutionRunTerminalState: String, Sendable, Codable, Equatable {
     case failed
     case rejected
     case cancelled
+    /// Cooperatively stopped at a generation boundary with a durable resume
+    /// checkpoint on disk. Distinct from `cancelled`: `paused` is resumable.
+    case paused
 }
 
 public enum EvolutionSearchStrategy: String, Sendable, Codable, Equatable {

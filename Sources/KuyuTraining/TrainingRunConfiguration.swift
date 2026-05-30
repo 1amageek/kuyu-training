@@ -200,17 +200,31 @@ public struct TrainingArtifactPolicy: Sendable, Codable, Equatable {
     public let allowsNonEmptyArtifactRoot: Bool
     public let requiresInitialParentPass: Bool
     public let reinforcementTrainingArtifactDirectory: URL?
+    /// Resume each seed's evolution in place from its last committed generation
+    /// checkpoint instead of re-seeding from generation 0.
+    public let resumeInPlace: Bool
+    /// Explicit generation to roll back to when resuming. nil = highest committed.
+    public let resumeFromGeneration: Int?
+    /// File whose presence requests a cooperative graceful stop at the next
+    /// generation boundary (resumable).
+    public let stopSentinelPath: String?
 
     public init(
         retention: TrainingArtifactRetentionKind = .compact,
         allowsNonEmptyArtifactRoot: Bool = false,
         requiresInitialParentPass: Bool = true,
-        reinforcementTrainingArtifactDirectory: URL? = nil
+        reinforcementTrainingArtifactDirectory: URL? = nil,
+        resumeInPlace: Bool = false,
+        resumeFromGeneration: Int? = nil,
+        stopSentinelPath: String? = nil
     ) {
         self.retention = retention
         self.allowsNonEmptyArtifactRoot = allowsNonEmptyArtifactRoot
         self.requiresInitialParentPass = requiresInitialParentPass
         self.reinforcementTrainingArtifactDirectory = reinforcementTrainingArtifactDirectory
+        self.resumeInPlace = resumeInPlace
+        self.resumeFromGeneration = resumeFromGeneration
+        self.stopSentinelPath = stopSentinelPath
     }
 }
 

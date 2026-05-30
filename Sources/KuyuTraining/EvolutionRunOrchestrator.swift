@@ -98,6 +98,8 @@ public struct EvolutionRunOrchestrator {
         config: EvolutionRunConfig,
         gatePolicy: EvolutionGatePolicy? = nil,
         artifactDirectory: URL,
+        resumeFrom: EvolutionResumeState? = nil,
+        stopRequested: @escaping @Sendable () -> Bool = { false },
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)? = nil
     ) async -> EvolutionRunResult {
         let manifest = EvolutionRunManifest(
@@ -124,22 +126,34 @@ public struct EvolutionRunOrchestrator {
             terminalState: .running
         )
         onEvent?(.started(manifest))
+        let checkpointStore = EvolutionResumeCheckpointStore()
         do {
             try Task.checkCancellation()
-            let seededPopulation = try await backend.seedPopulation(request: EvolutionSeedRequest(
-                config: config,
-                artifactDirectory: artifactDirectory,
-                mutationRate: config.mutationRate,
-                mutationNoiseScale: config.mutationNoiseScale,
-                commonRandomSeed: commonRandomSeed(config: config, generationIndex: 0)
-            ))
-            onEvent?(.populationSeeded(seededPopulation))
+            let initialPopulation: EvolutionPopulation
+            if let resumeFrom {
+                // Resume in place: skip re-seeding; the population to evaluate at
+                // startGenerationIndex was produced before the interruption.
+                initialPopulation = resumeFrom.currentPopulation
+            } else {
+                let seededPopulation = try await backend.seedPopulation(request: EvolutionSeedRequest(
+                    config: config,
+                    artifactDirectory: artifactDirectory,
+                    mutationRate: config.mutationRate,
+                    mutationNoiseScale: config.mutationNoiseScale,
+                    commonRandomSeed: commonRandomSeed(config: config, generationIndex: 0)
+                ))
+                onEvent?(.populationSeeded(seededPopulation))
+                initialPopulation = seededPopulation
+            }
             return await runGenerations(
                 manifest: manifest,
                 config: config,
-                initialPopulation: seededPopulation,
+                initialPopulation: initialPopulation,
                 gatePolicy: gatePolicy ?? EvolutionGatePolicy(eliteCount: config.eliteCount),
                 artifactDirectory: artifactDirectory,
+                resume: resumeFrom,
+                checkpointStore: checkpointStore,
+                stopRequested: stopRequested,
                 onEvent: onEvent
             )
         } catch is CancellationError {
@@ -173,27 +187,49 @@ public struct EvolutionRunOrchestrator {
         initialPopulation: EvolutionPopulation,
         gatePolicy: EvolutionGatePolicy,
         artifactDirectory: URL,
+        resume: EvolutionResumeState?,
+        checkpointStore: EvolutionResumeCheckpointStore,
+        stopRequested: @Sendable () -> Bool,
         onEvent: (@Sendable (EvolutionRunEvent) -> Void)?
     ) async -> EvolutionRunResult {
-        var currentPopulation = initialPopulation
-        var allGenerations: [PopulationGenerationRecord] = []
-        var allCandidates: [GenomeCandidate] = []
-        var allFitness: [FitnessSummary] = []
-        var allEvaluationTraces: [EvolutionCandidateEvaluationTrace] = []
-        var bestAcceptedFitness: FitnessSummary?
+        var currentPopulation = resume?.currentPopulation ?? initialPopulation
+        var allGenerations = resume?.generations ?? []
+        var allCandidates = resume?.candidates ?? []
+        var allFitness = resume?.fitness ?? []
+        var allEvaluationTraces = resume?.evaluationTraces ?? []
+        var bestAcceptedFitness = resume?.bestAcceptedFitness ?? nil
         var finalGateReport: EvolutionGateReport?
-        var incumbentCandidateID: String?
-        var incumbentFitness: Double?
-        var mutationRate = config.mutationRate
-        var mutationNoiseScale = config.mutationNoiseScale
-        var earlyStoppingState = EvolutionEarlyStoppingState(config: config.earlyStopping)
+        var incumbentCandidateID = resume?.incumbentCandidateID ?? nil
+        var incumbentFitness = resume?.incumbentFitness ?? nil
+        var mutationRate = resume?.mutationRate ?? config.mutationRate
+        var mutationNoiseScale = resume?.mutationNoiseScale ?? config.mutationNoiseScale
+        var earlyStoppingState = resume.map {
+            EvolutionEarlyStoppingState(config: config.earlyStopping, snapshot: $0.earlyStopping)
+        } ?? EvolutionEarlyStoppingState(config: config.earlyStopping)
+        let startGenerationIndex = resume?.startGenerationIndex ?? 0
 
-        for generationIndex in 0..<config.generationCount {
+        for generationIndex in startGenerationIndex..<config.generationCount {
             if Task.isCancelled {
                 return await finish(
                     manifest: manifest,
                     state: .cancelled,
                     failureReason: "cancelled",
+                    generations: allGenerations,
+                    candidates: allCandidates,
+                    fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
+                    bestFitness: bestAcceptedFitness,
+                    artifactDirectory: artifactDirectory,
+                    onEvent: onEvent
+                )
+            }
+            if stopRequested() {
+                // Cooperative graceful stop: the previous generation's checkpoint
+                // is already durable, so this run is resumable from there.
+                return await finish(
+                    manifest: manifest,
+                    state: .paused,
+                    failureReason: "paused-at-generation-\(generationIndex)",
                     generations: allGenerations,
                     candidates: allCandidates,
                     fitness: allFitness,
@@ -219,8 +255,12 @@ public struct EvolutionRunOrchestrator {
             let generationDirectory = artifactDirectory
                 .appendingPathComponent("generations", isDirectory: true)
                 .appendingPathComponent("generation-\(generationIndex)", isDirectory: true)
+            // Population evaluated this generation, captured before
+            // produceNextGeneration reassigns currentPopulation, for the checkpoint.
+            let evaluatedPopulation = currentPopulation
             allCandidates.append(contentsOf: currentPopulation.candidates)
             let generationFitness: [FitnessSummary]
+            var generationTraces: [EvolutionCandidateEvaluationTrace] = []
             do {
                 let evaluation = try await evaluate(
                     config: config,
@@ -232,6 +272,7 @@ public struct EvolutionRunOrchestrator {
                     currentGeneration: evaluation.fitness,
                     archive: allFitness
                 )
+                generationTraces = evaluation.traces
                 allEvaluationTraces.append(contentsOf: evaluation.traces)
             } catch is CancellationError {
                 let cancelledFitness = evaluationCancellationFitness(
@@ -390,6 +431,43 @@ public struct EvolutionRunOrchestrator {
                     candidates: allCandidates,
                     fitness: allFitness,
                     evaluationTraces: allEvaluationTraces,
+                    artifactDirectory: artifactDirectory,
+                    onEvent: onEvent
+                )
+            }
+            // Commit point: generation `generationIndex` is fully evaluated and the
+            // next population is produced. Persisting atomically here makes the run
+            // resumable from generationIndex+1 after any interruption.
+            do {
+                try checkpointStore.write(
+                    EvolutionGenerationCheckpoint(
+                        runID: config.runID,
+                        configHash: config.configHash,
+                        lastCommittedGeneration: generationIndex,
+                        generationRecord: generationRecord,
+                        generationCandidates: evaluatedPopulation.candidates,
+                        generationFitness: generationFitness,
+                        generationTraces: generationTraces,
+                        nextPopulation: currentPopulation,
+                        mutationRate: mutationRate,
+                        mutationNoiseScale: mutationNoiseScale,
+                        earlyStopping: earlyStoppingState.snapshot,
+                        incumbentCandidateID: incumbentCandidateID,
+                        incumbentFitness: incumbentFitness,
+                        bestAcceptedFitness: bestAcceptedFitness
+                    ),
+                    to: artifactDirectory
+                )
+            } catch {
+                return await finish(
+                    manifest: manifest,
+                    state: .failed,
+                    failureReason: "resume-checkpoint-write-failed: \(error)",
+                    generations: allGenerations,
+                    candidates: allCandidates,
+                    fitness: allFitness,
+                    evaluationTraces: allEvaluationTraces,
+                    bestFitness: bestAcceptedFitness,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent
                 )
@@ -833,7 +911,7 @@ public struct EvolutionRunOrchestrator {
     }
 }
 
-private struct EvolutionEarlyStoppingState {
+struct EvolutionEarlyStoppingState {
     private let config: EvolutionEarlyStoppingConfig
     private var bestFitness: Double?
     private var bestTaskPassRate: Double?
@@ -842,6 +920,23 @@ private struct EvolutionEarlyStoppingState {
 
     init(config: EvolutionEarlyStoppingConfig) {
         self.config = config
+    }
+
+    init(config: EvolutionEarlyStoppingConfig, snapshot: EvolutionEarlyStoppingSnapshot) {
+        self.config = config
+        self.bestFitness = snapshot.bestFitness
+        self.bestTaskPassRate = snapshot.bestTaskPassRate
+        self.bestHoldTimeRatio = snapshot.bestHoldTimeRatio
+        self.stagnantGenerationCount = snapshot.stagnantGenerationCount
+    }
+
+    var snapshot: EvolutionEarlyStoppingSnapshot {
+        EvolutionEarlyStoppingSnapshot(
+            bestFitness: bestFitness,
+            bestTaskPassRate: bestTaskPassRate,
+            bestHoldTimeRatio: bestHoldTimeRatio,
+            stagnantGenerationCount: stagnantGenerationCount
+        )
     }
 
     mutating func record(fitness: [FitnessSummary]) -> String? {

@@ -5,6 +5,10 @@ import Foundation
 /// continue an interrupted run from `startGenerationIndex` without re-seeding or
 /// recomputing committed generations.
 public struct EvolutionResumeState: Sendable, Equatable {
+    /// Run identifier of the interrupted run. The resumed run must reuse it so the
+    /// restored records and the newly produced records share one runID (the
+    /// artifact validator rejects a mixed-runID generations/candidates/fitness set).
+    public let runID: String
     /// First generation to (re)run. Equals `lastCommittedGeneration + 1`.
     public let startGenerationIndex: Int
     /// Population to evaluate at `startGenerationIndex` (produced before the
@@ -26,6 +30,7 @@ public struct EvolutionResumeState: Sendable, Equatable {
     public let bestAcceptedFitness: FitnessSummary?
 
     public init(
+        runID: String,
         startGenerationIndex: Int,
         currentPopulation: EvolutionPopulation,
         generations: [PopulationGenerationRecord],
@@ -39,6 +44,7 @@ public struct EvolutionResumeState: Sendable, Equatable {
         incumbentFitness: Double?,
         bestAcceptedFitness: FitnessSummary?
     ) {
+        self.runID = runID
         self.startGenerationIndex = max(0, startGenerationIndex)
         self.currentPopulation = currentPopulation
         self.generations = generations

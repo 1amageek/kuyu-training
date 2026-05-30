@@ -188,6 +188,7 @@ public struct EvolutionResumeCheckpointStore: Sendable {
             throw StoreError.missingGenerationCheckpoint(generation: upToGeneration)
         }
         return EvolutionResumeState(
+            runID: latest.runID,
             startGenerationIndex: latest.lastCommittedGeneration + 1,
             currentPopulation: latest.nextPopulation,
             generations: generations,

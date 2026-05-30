@@ -127,6 +127,21 @@ public struct EvolutionRunOrchestrator {
         )
         onEvent?(.started(manifest))
         let checkpointStore = EvolutionResumeCheckpointStore()
+        if let resumeFrom, resumeFrom.runID != config.runID {
+            // Fail-closed: resuming under a different runID would write a mixed-runID
+            // artifact set that the validator rejects. The caller must pass a config
+            // whose runID matches the checkpoint.
+            return await finish(
+                manifest: manifest,
+                state: .failed,
+                failureReason: "resume-run-id-mismatch: config=\(config.runID) checkpoint=\(resumeFrom.runID)",
+                generations: [],
+                candidates: [],
+                fitness: [],
+                artifactDirectory: artifactDirectory,
+                onEvent: onEvent
+            )
+        }
         do {
             try Task.checkCancellation()
             let initialPopulation: EvolutionPopulation

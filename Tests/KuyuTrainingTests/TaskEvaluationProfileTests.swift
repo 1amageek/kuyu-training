@@ -36,7 +36,7 @@ import Testing
     let profile = try TaskEvaluationProfile.profile(task: "attitude")
 
     #expect(profile.profileID == "attitude-v1")
-    #expect(profile.observationChannelCount == 6)
+    #expect(profile.observationChannelCount == 16)
     #expect(profile.minimumRewardAverage == nil)
     #expect(profile.minimumHoldTimeRatio == nil)
     #expect(profile.maximumAltitudeErrorRatio == nil)

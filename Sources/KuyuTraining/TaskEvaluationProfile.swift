@@ -78,7 +78,13 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
             return TaskEvaluationProfile(
                 profileID: "attitude-v1",
                 task: "attitude",
-                observationChannelCount: 6,
+                // 16-channel privileged body-rate observation (euler angles +
+                // angular velocity + velocity + target delta + previous action),
+                // built by ReferenceQuadrotorBodyRateObservationEncoder. This is the
+                // task-appropriate attitude observation and is consistent with the
+                // lift actor (also a privileged encoded observation); raw IMU (6) was
+                // not zero-padded "starvation" but simply a weaker signal.
+                observationChannelCount: 16,
                 baseEvaluationSuiteIDs: [1],
                 regressionSuiteIDs: [6, 7, 8],
                 baselineMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil),

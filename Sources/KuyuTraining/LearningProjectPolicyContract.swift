@@ -201,15 +201,27 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
         self.safetyFilter = safetyFilter
     }
 
-    public static func referenceQuadrotorTemporalCTBR() -> LearningProjectPolicyContract {
+    /// Reference quadrotor temporal-CTBR contract.
+    ///
+    /// `observationDimension` / `historyLength` are parameterized so a starter can
+    /// be sized to the task's real channel contract instead of zero-padding a
+    /// narrow observation into a wide policy. The defaults (64 / 32) are the lift
+    /// privileged-observation profile; attitude is body-rate reactive and uses its
+    /// 6 IMU channels with `historyLength == 1` (matching
+    /// `TaskEvaluationProfile.attitude` and the regression evaluator, which derive
+    /// `historyLength = observationChannelCount >= 64 ? 32 : 1`).
+    public static func referenceQuadrotorTemporalCTBR(
+        observationDimension: Int = 64,
+        historyLength: Int = 32
+    ) -> LearningProjectPolicyContract {
         LearningProjectPolicyContract(
             architecture: .temporalGRUActorCritic,
             actionEncoding: .ctbr,
             actionDistribution: .gaussian,
             actionDimension: 4,
             temporalWindow: LearningProjectTemporalWindowContract(
-                historyLength: 32,
-                observationDimension: 64,
+                historyLength: historyLength,
+                observationDimension: observationDimension,
                 previousActionDimension: 4,
                 targetTrajectoryPointCount: 4
             ),

@@ -15,14 +15,14 @@ import KuyuScenarios
     let snapshot = PolicySnapshot(
         policyId: "manasMLX",
         snapshotId: "snapshot-a",
-        modelDescriptorId: "robot-a",
+        robotManifestId: "robot-a",
         modelPath: "/tmp/model",
         configHash: "hash-a"
     )
 
     #expect(snapshot.policyId == "manasMLX")
     #expect(snapshot.snapshotId == "snapshot-a")
-    #expect(snapshot.modelDescriptorId == "robot-a")
+    #expect(snapshot.robotManifestId == "robot-a")
     #expect(snapshot.configHash == "hash-a")
 }
 

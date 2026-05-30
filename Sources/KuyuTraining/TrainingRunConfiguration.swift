@@ -174,20 +174,20 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
 }
 
 public struct TrainingControlSettings: Sendable, Codable, Equatable {
-    public let modelDescriptorPath: String
+    public let robotManifestPath: String
     public let kp: Double
     public let kd: Double
     public let yawDamping: Double
     public let hoverScale: Double
 
     public init(
-        modelDescriptorPath: String = "",
+        robotManifestPath: String = "",
         kp: Double = 0.35,
         kd: Double = 0.08,
         yawDamping: Double = 0.04,
         hoverScale: Double = 1
     ) {
-        self.modelDescriptorPath = modelDescriptorPath
+        self.robotManifestPath = robotManifestPath
         self.kp = kp.isFinite ? kp : 0.35
         self.kd = kd.isFinite ? kd : 0.08
         self.yawDamping = yawDamping.isFinite ? yawDamping : 0.04

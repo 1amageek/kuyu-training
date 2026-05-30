@@ -11,7 +11,8 @@ public struct TrainingDatasetExporter {
         entries: [ScenarioLogEntry],
         to directory: URL,
         observationByScenarioKey: [ScenarioKey: TrainingObservationMetadata] = [:],
-        provenanceByScenarioKey: [ScenarioKey: TrainingProvenanceManifest] = [:]
+        provenanceByScenarioKey: [ScenarioKey: TrainingProvenanceManifest] = [:],
+        policyId: String? = nil
     ) throws -> [ScenarioKey: URL] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let writer = TrainingDatasetWriter()
@@ -23,7 +24,8 @@ public struct TrainingDatasetExporter {
                 log: entry.log,
                 to: subdir,
                 observation: observationByScenarioKey[entry.key],
-                provenance: provenanceByScenarioKey[entry.key]
+                provenance: provenanceByScenarioKey[entry.key],
+                policyId: policyId
             )
             outputs[entry.key] = url
         }

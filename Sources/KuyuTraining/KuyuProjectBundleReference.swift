@@ -8,18 +8,18 @@ public enum KuyuProjectBundleRole: String, Codable, Sendable, Equatable, CaseIte
 }
 
 public struct KuyuProjectBundleCompatibility: Codable, Sendable, Equatable {
-    public let descriptorID: String
+    public let robotManifestID: String
     public let observationSchemaID: String
     public let actionSchemaID: String
     public let driveCount: Int?
 
     public init(
-        descriptorID: String,
+        robotManifestID: String,
         observationSchemaID: String,
         actionSchemaID: String,
         driveCount: Int?
     ) {
-        self.descriptorID = descriptorID
+        self.robotManifestID = robotManifestID
         self.observationSchemaID = observationSchemaID
         self.actionSchemaID = actionSchemaID
         self.driveCount = driveCount

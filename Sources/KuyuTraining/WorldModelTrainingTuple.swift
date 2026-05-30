@@ -17,7 +17,7 @@ public struct WorldModelTrainingTuple: Sendable, Codable, Equatable {
     public let continueValue: Double
     public let done: Bool
     public let truncated: Bool
-    public let descriptorId: String?
+    public let robotManifestID: String?
     public let scenarioId: String
     public let seed: UInt64
 
@@ -32,7 +32,7 @@ public struct WorldModelTrainingTuple: Sendable, Codable, Equatable {
         continueValue: Double,
         done: Bool,
         truncated: Bool,
-        descriptorId: String?,
+        robotManifestID: String?,
         scenarioId: String,
         seed: UInt64
     ) throws {
@@ -50,7 +50,7 @@ public struct WorldModelTrainingTuple: Sendable, Codable, Equatable {
         self.continueValue = continueValue
         self.done = done
         self.truncated = truncated
-        self.descriptorId = descriptorId
+        self.robotManifestID = robotManifestID
         self.scenarioId = scenarioId
         self.seed = seed
     }
@@ -79,7 +79,7 @@ public struct WorldModelTupleBuilder: Sendable {
                 continueValue: terminal ? 0.0 : 1.0,
                 done: next.done,
                 truncated: next.truncated,
-                descriptorId: episode.descriptorId,
+                robotManifestID: episode.robotManifestID,
                 scenarioId: episode.scenarioId,
                 seed: episode.seed
             ))

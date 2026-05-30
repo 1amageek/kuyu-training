@@ -36,11 +36,11 @@ public struct KuyuProjectPackageWriter: Sendable {
                 .appendingPathComponent("experiment.json")
         )
         try writeJSON(
-            package.descriptorReference,
+            package.robotManifestReference,
             to: package.rootURL
-                .appendingPathComponent("descriptors", isDirectory: true)
+                .appendingPathComponent("robot-manifests", isDirectory: true)
                 .appendingPathComponent("default", isDirectory: true)
-                .appendingPathComponent("descriptor-ref.json")
+                .appendingPathComponent("robot-manifest-ref.json")
         )
         try writeJSON(
             package.environmentReference,
@@ -67,7 +67,7 @@ public struct KuyuProjectPackageWriter: Sendable {
         let directories = [
             "templates",
             "experiments/default",
-            "descriptors/default",
+            "robot-manifests/default",
             "environments/default",
             "model-bundles",
             "runs",

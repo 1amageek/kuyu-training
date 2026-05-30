@@ -38,7 +38,7 @@ public struct KuyuProjectFactory: Sendable {
             defaultTemplateID: template.templateID,
             defaultExperimentID: experimentID,
             domains: [template.domain],
-            descriptorRefs: [template.descriptor.descriptorID],
+            robotManifestRefs: [template.robotManifest.robotManifestID],
             environmentRefs: [environmentID],
             experimentRefs: [experimentID],
             runRefs: [],
@@ -46,7 +46,7 @@ public struct KuyuProjectFactory: Sendable {
             storagePolicy: .runnableStarter,
             validationPolicy: KuyuProjectValidationPolicy(
                 requiresStrictTemplateValidation: requiresStrictTemplateValidation,
-                requiresDescriptorHash: false,
+                requiresRobotManifestHash: false,
                 requiresModelBundleCompatibility: template.isRunnableStarter
             )
         )
@@ -82,7 +82,7 @@ public struct KuyuProjectFactory: Sendable {
             url: sourceBundleURL,
             contentHash: nil,
             requiredCompatibility: KuyuProjectBundleCompatibility(
-                descriptorID: template.descriptor.descriptorID,
+                robotManifestID: template.robotManifest.robotManifestID,
                 observationSchemaID: template.observation.schemaID,
                 actionSchemaID: template.action.schemaID,
                 driveCount: template.action.driveCount
@@ -94,7 +94,7 @@ public struct KuyuProjectFactory: Sendable {
             manifest: manifest,
             selectedTemplate: template,
             defaultExperiment: experiment,
-            descriptorReference: template.descriptor,
+            robotManifestReference: template.robotManifest,
             environmentReference: environment,
             sourceBundleReference: sourceBundle
         )

@@ -76,7 +76,7 @@ public struct RolloutEpisode: Sendable, Codable, Equatable {
     public let workerIndex: Int
     public let policyId: String
     public let configHash: String
-    public let descriptorId: String?
+    public let robotManifestID: String?
     public let rewardDescriptor: RewardDescriptor?
     public let rewardSum: Double
     public let done: Bool
@@ -98,7 +98,7 @@ public struct RolloutEpisode: Sendable, Codable, Equatable {
         workerIndex: Int,
         policyId: String,
         configHash: String,
-        descriptorId: String?,
+        robotManifestID: String?,
         rewardDescriptor: RewardDescriptor? = nil,
         rewardSum: Double,
         done: Bool,
@@ -119,7 +119,7 @@ public struct RolloutEpisode: Sendable, Codable, Equatable {
         self.workerIndex = workerIndex
         self.policyId = policyId
         self.configHash = configHash
-        self.descriptorId = descriptorId
+        self.robotManifestID = robotManifestID
         self.rewardDescriptor = rewardDescriptor
         self.rewardSum = rewardSum
         self.done = done
@@ -193,8 +193,8 @@ public struct RolloutRunner: Sendable {
     public var noise: IMU6NoiseConfig
     public var worldEnvironment: WorldEnvironment
     public var hoverThrustScale: Double
-    public var loadedDescriptor: LoadedRobotDescriptor?
-    public var descriptorId: String?
+    public var loadedRobot: LoadedKuyuRobot?
+    public var robotManifestID: String?
     public var motorNerveRateLimitPerSecond: Double
     public var motorNerveSmoothingTimeConstant: Double?
     public var limits: Limits
@@ -207,8 +207,8 @@ public struct RolloutRunner: Sendable {
         noise: IMU6NoiseConfig = .zero,
         worldEnvironment: WorldEnvironment = .standard,
         hoverThrustScale: Double = 1.0,
-        loadedDescriptor: LoadedRobotDescriptor? = nil,
-        descriptorId: String? = nil,
+        loadedRobot: LoadedKuyuRobot? = nil,
+        robotManifestID: String? = nil,
         motorNerveRateLimitPerSecond: Double = 2.0,
         motorNerveSmoothingTimeConstant: Double? = 0.08,
         limits: Limits = Limits()
@@ -220,8 +220,8 @@ public struct RolloutRunner: Sendable {
         self.noise = noise
         self.worldEnvironment = worldEnvironment
         self.hoverThrustScale = hoverThrustScale
-        self.loadedDescriptor = loadedDescriptor
-        self.descriptorId = descriptorId ?? loadedDescriptor?.descriptor.robot.robotID
+        self.loadedRobot = loadedRobot
+        self.robotManifestID = robotManifestID ?? loadedRobot?.manifest.robotID
         self.motorNerveRateLimitPerSecond = motorNerveRateLimitPerSecond
         self.motorNerveSmoothingTimeConstant = motorNerveSmoothingTimeConstant
         self.limits = limits
@@ -252,9 +252,9 @@ public struct RolloutRunner: Sendable {
         workerIndex: Int = 0
     ) async throws -> RolloutEpisode {
         var environment: ReferenceQuadrotorRLEnvironment
-        if let loadedDescriptor {
+        if let loadedRobot {
             environment = try ReferenceQuadrotorRLEnvironment(
-                loadedDescriptor: loadedDescriptor,
+                loadedRobot: loadedRobot,
                 schedule: schedule,
                 determinism: determinism,
                 noise: noise,
@@ -272,7 +272,7 @@ public struct RolloutRunner: Sendable {
                 noise: noise,
                 worldEnvironment: worldEnvironment,
                 hoverThrustScale: hoverThrustScale,
-                descriptorId: descriptorId,
+                robotManifestID: robotManifestID,
                 motorNerveRateLimitPerSecond: motorNerveRateLimitPerSecond,
                 motorNerveSmoothingTimeConstant: motorNerveSmoothingTimeConstant
             )
@@ -337,7 +337,7 @@ public struct RolloutRunner: Sendable {
             workerIndex: workerIndex,
             policyId: policyFactory.policyID,
             configHash: info.configHash,
-            descriptorId: descriptorId,
+            robotManifestID: robotManifestID,
             rewardDescriptor: info.rewardDescriptor,
             rewardSum: info.rewardSum,
             done: final.done,
@@ -403,7 +403,7 @@ public struct ParallelRolloutCollector: Sendable {
                             workerIndex: episode.workerIndex,
                             policyId: episode.policyId,
                             configHash: episode.configHash,
-                            descriptorId: episode.descriptorId,
+                            robotManifestID: episode.robotManifestID,
                             rewardDescriptor: episode.rewardDescriptor,
                             rewardSum: episode.rewardSum,
                             done: episode.done,

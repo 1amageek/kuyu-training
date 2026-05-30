@@ -5,7 +5,7 @@ public struct KuyuProjectPackage: Sendable, Equatable {
     public let manifest: KuyuProjectManifest
     public let selectedTemplate: LearningProjectTemplate
     public let defaultExperiment: KuyuProjectExperiment
-    public let descriptorReference: LearningProjectDescriptorReference
+    public let robotManifestReference: LearningProjectRobotManifestReference
     public let environmentReference: KuyuProjectEnvironmentReference
     public let sourceBundleReference: KuyuProjectBundleReference
 
@@ -14,7 +14,7 @@ public struct KuyuProjectPackage: Sendable, Equatable {
         manifest: KuyuProjectManifest,
         selectedTemplate: LearningProjectTemplate,
         defaultExperiment: KuyuProjectExperiment,
-        descriptorReference: LearningProjectDescriptorReference,
+        robotManifestReference: LearningProjectRobotManifestReference,
         environmentReference: KuyuProjectEnvironmentReference,
         sourceBundleReference: KuyuProjectBundleReference
     ) {
@@ -22,7 +22,7 @@ public struct KuyuProjectPackage: Sendable, Equatable {
         self.manifest = manifest
         self.selectedTemplate = selectedTemplate
         self.defaultExperiment = defaultExperiment
-        self.descriptorReference = descriptorReference
+        self.robotManifestReference = robotManifestReference
         self.environmentReference = environmentReference
         self.sourceBundleReference = sourceBundleReference
     }

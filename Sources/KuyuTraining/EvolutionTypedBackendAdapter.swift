@@ -108,7 +108,7 @@ public struct EvolutionTypedBackendAdapter: TypedTrainingBackend {
             kind: request.destination.kind,
             url: checkpointURL,
             contentHash: request.destination.contentHash,
-            descriptorID: request.destination.descriptorID,
+            robotManifestID: request.destination.robotManifestID,
             observationSchemaID: request.destination.observationSchemaID,
             actionSchemaID: request.destination.actionSchemaID
         )

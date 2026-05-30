@@ -30,12 +30,12 @@ public struct KuyuProjectPackageLoader: Sendable {
                 .appendingPathComponent("default", isDirectory: true)
                 .appendingPathComponent("experiment.json")
         )
-        let descriptor = try read(
-            LearningProjectDescriptorReference.self,
+        let robotManifest = try read(
+            LearningProjectRobotManifestReference.self,
             from: rootURL
-                .appendingPathComponent("descriptors", isDirectory: true)
+                .appendingPathComponent("robot-manifests", isDirectory: true)
                 .appendingPathComponent("default", isDirectory: true)
-                .appendingPathComponent("descriptor-ref.json")
+                .appendingPathComponent("robot-manifest-ref.json")
         )
         let environment = try read(
             KuyuProjectEnvironmentReference.self,
@@ -56,7 +56,7 @@ public struct KuyuProjectPackageLoader: Sendable {
             manifest: manifest,
             selectedTemplate: template,
             defaultExperiment: experiment,
-            descriptorReference: descriptor,
+            robotManifestReference: robotManifest,
             environmentReference: environment,
             sourceBundleReference: sourceBundle
         )

@@ -122,7 +122,11 @@ private func resumeTemporaryDirectory() throws -> URL {
 }
 
 private func cleanup(_ url: URL) {
-    try? FileManager.default.removeItem(at: url)
+    do {
+        try FileManager.default.removeItem(at: url)
+    } catch {
+        Issue.record("failed to remove temporary directory \(url.path): \(error)")
+    }
 }
 
 private func sortedCandidates(_ candidates: [GenomeCandidate]) -> [GenomeCandidate] {

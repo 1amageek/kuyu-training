@@ -105,6 +105,62 @@ public struct AttitudeRecoveryRelabeler: Sendable {
         )
     }
 
+    /// Relabels a full rollout episode (which carries per-step reward + plant
+    /// state) with the teacher action, preserving everything except each step's
+    /// drive intents. Unlike `relabel(entries:)`, which operates on `ScenarioLog`
+    /// entries that have no reward, this keeps the `EnvironmentStep` reward/state
+    /// so the written dataset is loadable by the CTBR rollout loader (which
+    /// requires per-record reward + actualState). Used by the CTBR DAgger loop:
+    /// roll the policy, relabel its visited states with the teacher, behavior-clone
+    /// on the aggregate.
+    public func relabelEpisode(
+        _ episode: RolloutEpisode,
+        definition: ReferenceQuadrotorScenarioDefinition,
+        parameters: ReferenceQuadrotorParameters,
+        gains: ImuRateDampingCutGains,
+        config: AttitudeRecoveryRelabelConfig = AttitudeRecoveryRelabelConfig()
+    ) throws -> RolloutEpisode {
+        var teacher = try makeTeacherCut(
+            definition: definition,
+            parameters: parameters,
+            gains: gains,
+            mode: config.baselineMode
+        )
+        let relabeledSteps = try episode.steps.map { step -> EnvironmentStep in
+            let relabeledLog = try relabel(event: step.log, teacher: &teacher)
+            return try EnvironmentStep(
+                observation: step.observation,
+                reward: step.reward,
+                done: step.done,
+                truncated: step.truncated,
+                info: step.info,
+                log: relabeledLog
+            )
+        }
+        return RolloutEpisode(
+            episodeId: episode.episodeId,
+            scenarioId: episode.scenarioId,
+            seed: episode.seed,
+            workerIndex: episode.workerIndex,
+            policyId: "teacherRelabel",
+            configHash: episode.configHash,
+            robotManifestID: episode.robotManifestID,
+            rewardDescriptor: episode.rewardDescriptor,
+            rewardSum: episode.rewardSum,
+            done: episode.done,
+            truncated: episode.truncated,
+            terminalReason: episode.terminalReason,
+            failureReason: episode.failureReason,
+            failureTime: episode.failureTime,
+            stepCount: episode.stepCount,
+            workerCount: episode.workerCount,
+            maxSteps: episode.maxSteps,
+            durationSeconds: episode.durationSeconds,
+            cancelled: episode.cancelled,
+            steps: relabeledSteps
+        )
+    }
+
     public func write(
         result: AttitudeRecoveryRelabelResult,
         to directory: URL
@@ -116,7 +172,16 @@ public struct AttitudeRecoveryRelabeler: Sendable {
             to: directory.appendingPathComponent("recovery-relabel-report.json"),
             options: [.atomic]
         )
-        return try TrainingDatasetExporter().write(entries: result.entries, to: directory)
+        // The relabeled actions are the teacher's, not the rolled-out policy's, so
+        // stamp the dataset's provenance as a teacher relabel. The CTBR dataset
+        // loader gates on a "teacher"/"ctbr" policyId; without this the relabeled
+        // dataset would be rejected as nonCTBRDataset even though its driveIntents
+        // are the normalized teacher activation it expects.
+        return try TrainingDatasetExporter().write(
+            entries: result.entries,
+            to: directory,
+            policyId: "teacherRelabel"
+        )
     }
 
     private func relabel(

@@ -3,18 +3,18 @@ import Foundation
 public struct SnapshotIdentity: Sendable, Codable, Equatable, Hashable {
     public let policyID: String
     public let snapshotID: String
-    public let descriptorID: String?
+    public let robotManifestID: String?
     public let configHash: String?
 
     public init(
         policyID: String,
         snapshotID: String,
-        descriptorID: String? = nil,
+        robotManifestID: String? = nil,
         configHash: String? = nil
     ) {
         self.policyID = policyID
         self.snapshotID = snapshotID
-        self.descriptorID = descriptorID
+        self.robotManifestID = robotManifestID
         self.configHash = configHash
     }
 }

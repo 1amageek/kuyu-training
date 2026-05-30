@@ -83,8 +83,8 @@ import Testing
     let manifest = LearningRunManifest(
         runID: "run-artifact",
         mode: .supervised,
-        descriptorID: "quad",
-        descriptorHash: "descriptor-hash",
+        robotManifestID: "quad",
+        robotManifestHash: "robot-manifest-hash",
         configHash: "config-hash",
         suiteID: "Single Lift",
         seedSet: [1, 2],
@@ -983,8 +983,8 @@ import Testing
     let manifest = LearningRunManifest(
         runID: "run-snapshot",
         mode: .supervised,
-        descriptorID: "robot-a",
-        descriptorHash: nil,
+        robotManifestID: "robot-a",
+        robotManifestHash: nil,
         configHash: "config-a",
         suiteID: "Single Lift",
         seedSet: [1],
@@ -997,7 +997,7 @@ import Testing
         snapshotID: "snapshot-a",
         checkpointID: "checkpoint-a",
         checkpointURL: URL(fileURLWithPath: "/tmp/checkpoint-a"),
-        descriptorID: manifest.descriptorID,
+        robotManifestID: manifest.robotManifestID,
         configHash: manifest.configHash,
         createdAt: Date(timeIntervalSince1970: 2)
     ))
@@ -1005,7 +1005,7 @@ import Testing
     let snapshot = try await backend.makeSnapshot(for: manifest)
 
     #expect(snapshot.snapshotID == "snapshot-a")
-    #expect(snapshot.descriptorID == "robot-a")
+    #expect(snapshot.robotManifestID == "robot-a")
     #expect(snapshot.configHash == "config-a")
 }
 
@@ -1015,7 +1015,7 @@ import Testing
             identity: SnapshotIdentity(
                 policyID: "manasMLX",
                 snapshotID: "snapshot-worker-0",
-                descriptorID: "robot-a",
+                robotManifestID: "robot-a",
                 configHash: "config-a"
             ),
             workerIndex: 0,
@@ -1231,11 +1231,29 @@ private func trainingContractRunRequest() throws -> SimulationRunRequest {
         cutPeriodSteps: 1,
         noise: .zero,
         determinism: try DeterminismConfig(tier: .tier0, tier1Tolerance: nil),
-        modelDescriptorPath: "quad-test",
+        robotManifestPath: try trainingContractRobotManifestPath(),
         overrideParameters: nil,
         useAux: false,
         useQualityGating: true
     )
+}
+
+private func trainingContractRobotManifestPath() throws -> String {
+    let manifest = KuyuRobotManifest(
+        schemaVersion: "1.0",
+        robotID: "quad-test",
+        name: "Quad Test",
+        category: "quadrotor",
+        bodyModel: ModelReference(path: "quad-test.kuyubody.json"),
+        embodimentContract: ModelReference(path: "quad-test.embodiment.json")
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(manifest)
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("kuyu-training-contract-quad-test.kuyurobot.json")
+    try data.write(to: url, options: .atomic)
+    return url.path
 }
 
 private func trainingContractRunOutput(passed: Bool) throws -> KuyAtt1RunOutput {

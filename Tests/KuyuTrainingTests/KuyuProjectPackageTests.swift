@@ -120,7 +120,7 @@ import Testing
         defaultTemplateID: "wrong-template",
         defaultExperimentID: package.manifest.defaultExperimentID,
         domains: package.manifest.domains,
-        descriptorRefs: package.manifest.descriptorRefs,
+        robotManifestRefs: package.manifest.robotManifestRefs,
         environmentRefs: package.manifest.environmentRefs,
         experimentRefs: package.manifest.experimentRefs,
         runRefs: package.manifest.runRefs,
@@ -133,7 +133,7 @@ import Testing
         manifest: manifest,
         selectedTemplate: package.selectedTemplate,
         defaultExperiment: package.defaultExperiment,
-        descriptorReference: package.descriptorReference,
+        robotManifestReference: package.robotManifestReference,
         environmentReference: package.environmentReference,
         sourceBundleReference: package.sourceBundleReference
     )

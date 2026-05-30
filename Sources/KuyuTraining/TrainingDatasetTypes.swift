@@ -76,7 +76,7 @@ public struct TrainingObservationMetadata: Sendable, Codable, Equatable {
 public struct TrainingProvenanceManifest: Sendable, Codable, Equatable {
     public let codeHash: String
     public let configHash: String
-    public let descriptorHash: String
+    public let robotManifestHash: String
     public let suiteVersion: String
     public let plannerProfileID: String?
     public let curriculumPolicyID: String?
@@ -84,14 +84,14 @@ public struct TrainingProvenanceManifest: Sendable, Codable, Equatable {
     public init(
         codeHash: String,
         configHash: String,
-        descriptorHash: String,
+        robotManifestHash: String,
         suiteVersion: String,
         plannerProfileID: String? = nil,
         curriculumPolicyID: String? = nil
     ) {
         self.codeHash = codeHash
         self.configHash = configHash
-        self.descriptorHash = descriptorHash
+        self.robotManifestHash = robotManifestHash
         self.suiteVersion = suiteVersion
         self.plannerProfileID = plannerProfileID
         self.curriculumPolicyID = curriculumPolicyID
@@ -99,7 +99,7 @@ public struct TrainingProvenanceManifest: Sendable, Codable, Equatable {
 }
 
 public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
 
     public let schemaVersion: Int
     public let scenarioId: String
@@ -299,7 +299,7 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
 }
 
 public struct TrainingDataset: Sendable, Equatable {
-    public static let supportedSchemaVersions: Set<Int> = [1, 2]
+    public static let supportedSchemaVersions: Set<Int> = [TrainingDatasetMetadata.currentSchemaVersion]
 
     public enum LoadError: Error, Equatable {
         case unsupportedSchemaVersion(found: Int, supported: [Int])

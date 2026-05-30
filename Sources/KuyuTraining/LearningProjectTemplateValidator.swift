@@ -9,7 +9,7 @@ public struct LearningProjectTemplateValidator: Sendable {
 
     public func validate(_ template: LearningProjectTemplate) throws {
         try validateIdentity(template)
-        try validateDescriptor(template.descriptor)
+        try validateRobotManifest(template.robotManifest)
         try validateTaskProfile(template)
         try validateObservation(template.observation)
         try validateAction(template.action)
@@ -38,14 +38,14 @@ public struct LearningProjectTemplateValidator: Sendable {
         }
     }
 
-    private func validateDescriptor(_ descriptor: LearningProjectDescriptorReference) throws {
-        if descriptor.descriptorID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw LearningProjectTemplateValidationError.emptyDescriptorID
+    private func validateRobotManifest(_ robotManifest: LearningProjectRobotManifestReference) throws {
+        if robotManifest.robotManifestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw LearningProjectTemplateValidationError.emptyRobotManifestID
         }
-        switch descriptor.source {
+        switch robotManifest.source {
         case .filePath, .remote:
-            if descriptor.path?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
-                throw LearningProjectTemplateValidationError.descriptorPathRequired(source: descriptor.source)
+            if robotManifest.path?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                throw LearningProjectTemplateValidationError.robotManifestPathRequired(source: robotManifest.source)
             }
         case .bundled, .generated:
             break
@@ -454,10 +454,17 @@ public struct LearningProjectTemplateValidator: Sendable {
                 )
             }
         }
+        let primaryRunnableStage = template.primaryRunnableTrainingStage
         if template.modelBundlePolicy.sourceCheckpointPolicy == .createStarter {
-            guard template.primaryRunnableTrainingStage != nil else {
+            guard primaryRunnableStage != nil else {
                 throw LearningProjectTemplateValidationError.invalidCurriculum(reason: "starter-missing-runnable-stage")
             }
+        }
+        if primaryRunnableStage == nil,
+           template.modelBundlePolicy.sourceCheckpointPolicy != .none {
+            throw LearningProjectTemplateValidationError.invalidCurriculum(
+                reason: "non-runnable-template-must-not-request-model-bundle"
+            )
         }
         if template.isRunnableStarter {
             guard template.compute.requiresMetal,

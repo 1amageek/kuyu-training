@@ -13,9 +13,9 @@ public struct LearningProjectTemplateCatalog: Sendable {
 
     public static let defaultTemplates: [LearningProjectTemplate] = [
         .droneAutonomyStarter,
-        .singlePropLiftRecovery,
         .droneHoverStabilization,
         .droneWaypointNavigation,
+        .singlePropLiftRecovery,
         .groundRobotPointNavigation,
         .leggedRobotLocomotion,
         .manipulatorPickAndPlace,
@@ -33,8 +33,8 @@ public extension LearningProjectTemplate {
             domain: .aerialDrone,
             task: "aerialAutonomy",
             taskProfileID: nil,
-            descriptor: LearningProjectDescriptorReference(
-                descriptorID: "reference-quadrotor",
+            robotManifest: LearningProjectRobotManifestReference(
+                robotManifestID: "reference-quadrotor",
                 source: .bundled,
                 path: nil,
                 contentHash: nil,
@@ -163,13 +163,13 @@ public extension LearningProjectTemplate {
         let profile = knownTaskEvaluationProfile(task: "singleLift")
         return LearningProjectTemplate(
             templateID: "aerial-single-prop-lift-recovery-v1",
-            displayName: "Single Prop Lift Recovery",
-            summary: "Aerial recovery template for one-drive lift behavior and task-specific quality gates.",
+            displayName: "Single Prop Lift Diagnostic",
+            summary: "Runnable one-drive diagnostic fixture for lift recovery, artifact gates, and task-specific quality validation.",
             domain: .aerialDrone,
             task: profile.task,
             taskProfileID: profile.profileID,
-            descriptor: LearningProjectDescriptorReference(
-                descriptorID: "reference-single-prop",
+            robotManifest: LearningProjectRobotManifestReference(
+                robotManifestID: "reference-single-prop",
                 source: .bundled,
                 path: nil,
                 contentHash: nil,
@@ -202,7 +202,7 @@ public extension LearningProjectTemplate {
                     LearningProjectTrainingStage(
                         stageID: "single-prop-lift-recovery",
                         kind: .evolution,
-                        displayName: "Single Prop Lift Recovery",
+                        displayName: "Single Prop Lift Diagnostic",
                         task: profile.task,
                         taskProfileID: profile.profileID,
                         suiteIDs: profile.regressionSuiteIDs,
@@ -255,19 +255,19 @@ public extension LearningProjectTemplate {
                 minimumPopulationSize: 100,
                 estimatedDiskBytes: nil
             ),
-            tags: ["aerial", "drone", "single-prop", "recovery"]
+            tags: ["aerial", "drone", "single-prop", "diagnostic", "recovery"]
         )
     }()
 
     static let groundRobotPointNavigation = LearningProjectTemplate(
         templateID: "ground-robot-point-navigation-v1",
-        displayName: "Ground Robot Point Navigation",
-        summary: "Generic ground robot navigation template for future descriptor-driven tasks.",
+        displayName: "Ground Robot Navigation Blueprint",
+        summary: "Design blueprint for robot-manifest-driven ground robot navigation, safety gates, and future runtime task profiles.",
         domain: .groundRobot,
         task: "pointNavigation",
         taskProfileID: nil,
-        descriptor: LearningProjectDescriptorReference(
-            descriptorID: "generated-ground-robot",
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: "generated-ground-robot",
             source: .generated,
             path: nil,
             contentHash: nil,
@@ -336,18 +336,18 @@ public extension LearningProjectTemplate {
             actionEncoding: .directMotor
         ),
         compute: localCompute(workerCount: 1, candidateEvaluationConcurrency: 100),
-        tags: ["ground", "robot", "navigation", "generic"]
+        tags: ["ground", "robot", "navigation", "blueprint", "generic"]
     )
 
     static let droneHoverStabilization = LearningProjectTemplate(
         templateID: "aerial-drone-hover-stabilization-v1",
-        displayName: "Aerial Drone Hover Stabilization",
-        summary: "Generic aerial hover template for stabilizing altitude, attitude, and bounded motor output before navigation tasks.",
+        displayName: "Drone Hover Stabilization Blueprint",
+        summary: "Design blueprint for CTBR hover stabilization after the corresponding task profile and runtime stage are available.",
         domain: .aerialDrone,
         task: "hoverStabilization",
         taskProfileID: nil,
-        descriptor: LearningProjectDescriptorReference(
-            descriptorID: "generated-multirotor",
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: "generated-multirotor",
             source: .generated,
             path: nil,
             contentHash: nil,
@@ -382,25 +382,25 @@ public extension LearningProjectTemplate {
         action: .referenceQuadrotorBodyRateControl(),
         policy: .referenceQuadrotorTemporalCTBR(),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
-        tags: ["aerial", "drone", "hover", "stabilization", "hybrid"]
+        tags: ["aerial", "drone", "hover", "stabilization", "blueprint", "hybrid"]
     )
 
     static let droneWaypointNavigation = LearningProjectTemplate(
         templateID: "aerial-drone-waypoint-navigation-v1",
-        displayName: "Aerial Drone Waypoint Navigation",
-        summary: "Generic aerial waypoint template for target tracking after hover stability has been validated.",
+        displayName: "Drone Waypoint Navigation Blueprint",
+        summary: "Design blueprint for CTBR waypoint tracking after hover stability and navigation task profiles are implemented.",
         domain: .aerialDrone,
         task: "waypointNavigation",
         taskProfileID: nil,
-        descriptor: LearningProjectDescriptorReference(
-            descriptorID: "generated-multirotor-navigation",
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: "generated-multirotor-navigation",
             source: .generated,
             path: nil,
             contentHash: nil,
             robotClass: .aerialVehicle
         ),
         modelBundlePolicy: LearningProjectModelBundlePolicy(
-            sourceCheckpointPolicy: .optionalExisting,
+            sourceCheckpointPolicy: .none,
             requiredBundleSchemaVersion: nil,
             requiresStrictPreflight: true,
             requiresTaskCompatibleDriveCount: true
@@ -428,18 +428,18 @@ public extension LearningProjectTemplate {
         action: .referenceQuadrotorBodyRateControl(),
         policy: .referenceQuadrotorTemporalCTBR(),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
-        tags: ["aerial", "drone", "waypoint", "navigation", "hybrid"]
+        tags: ["aerial", "drone", "waypoint", "navigation", "blueprint", "hybrid"]
     )
 
     static let leggedRobotLocomotion = LearningProjectTemplate(
         templateID: "legged-robot-locomotion-v1",
-        displayName: "Legged Robot Locomotion",
-        summary: "Generic legged locomotion template for gait stabilization, balance, and terrain stress evaluation.",
+        displayName: "Legged Robot Locomotion Blueprint",
+        summary: "Design blueprint for gait stabilization, balance, terrain stress evaluation, and future locomotion task profiles.",
         domain: .groundRobot,
         task: "leggedLocomotion",
         taskProfileID: nil,
-        descriptor: LearningProjectDescriptorReference(
-            descriptorID: "generated-legged-robot",
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: "generated-legged-robot",
             source: .generated,
             path: nil,
             contentHash: nil,
@@ -497,18 +497,18 @@ public extension LearningProjectTemplate {
             actionEncoding: .jointTargets
         ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
-        tags: ["ground", "legged", "locomotion", "balance", "hybrid"]
+        tags: ["ground", "legged", "locomotion", "balance", "blueprint", "hybrid"]
     )
 
     static let manipulatorPickAndPlace = LearningProjectTemplate(
         templateID: "manipulator-pick-and-place-v1",
-        displayName: "Manipulator Pick And Place",
-        summary: "Generic manipulation template for reaching, grasping, lifting, and placing with bounded joint commands.",
+        displayName: "Manipulator Pick-and-Place Blueprint",
+        summary: "Design blueprint for reaching, grasping, lifting, placing, and future manipulation task profiles.",
         domain: .manipulator,
         task: "pickAndPlace",
         taskProfileID: nil,
-        descriptor: LearningProjectDescriptorReference(
-            descriptorID: "generated-manipulator",
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: "generated-manipulator",
             source: .generated,
             path: nil,
             contentHash: nil,
@@ -566,18 +566,18 @@ public extension LearningProjectTemplate {
             actionEncoding: .jointTargets
         ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
-        tags: ["manipulator", "pick", "place", "grasp", "hybrid"]
+        tags: ["manipulator", "pick", "place", "grasp", "blueprint", "hybrid"]
     )
 
     static let automotiveLaneKeeping = LearningProjectTemplate(
         templateID: "automotive-lane-keeping-v1",
-        displayName: "Automotive Lane Keeping",
-        summary: "Generic vehicle template for lane keeping, speed tracking, and safety envelope validation.",
+        displayName: "Automotive Lane Keeping Blueprint",
+        summary: "Design blueprint for lane keeping, speed tracking, safety envelope validation, and future vehicle task profiles.",
         domain: .automotive,
         task: "laneKeeping",
         taskProfileID: nil,
-        descriptor: LearningProjectDescriptorReference(
-            descriptorID: "generated-road-vehicle",
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: "generated-road-vehicle",
             source: .generated,
             path: nil,
             contentHash: nil,
@@ -651,7 +651,7 @@ public extension LearningProjectTemplate {
             actionEncoding: .vehicleSteerThrottleBrake
         ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
-        tags: ["automotive", "lane-keeping", "safety", "hybrid"]
+        tags: ["automotive", "lane-keeping", "safety", "blueprint", "hybrid"]
     )
 
     private static func knownTaskEvaluationProfile(task: String) -> TaskEvaluationProfile {

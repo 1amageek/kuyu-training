@@ -1,6 +1,6 @@
 import Foundation
 
-public enum LearningProjectDescriptorSource: String, Codable, Sendable, Equatable, CaseIterable {
+public enum LearningProjectRobotManifestSource: String, Codable, Sendable, Equatable, CaseIterable {
     case bundled
     case filePath
     case remote
@@ -16,21 +16,21 @@ public enum LearningProjectRobotClass: String, Codable, Sendable, Equatable, Cas
     case genericRobot
 }
 
-public struct LearningProjectDescriptorReference: Codable, Sendable, Equatable {
-    public let descriptorID: String
-    public let source: LearningProjectDescriptorSource
+public struct LearningProjectRobotManifestReference: Codable, Sendable, Equatable {
+    public let robotManifestID: String
+    public let source: LearningProjectRobotManifestSource
     public let path: String?
     public let contentHash: String?
     public let robotClass: LearningProjectRobotClass
 
     public init(
-        descriptorID: String,
-        source: LearningProjectDescriptorSource,
+        robotManifestID: String,
+        source: LearningProjectRobotManifestSource,
         path: String?,
         contentHash: String?,
         robotClass: LearningProjectRobotClass
     ) {
-        self.descriptorID = descriptorID
+        self.robotManifestID = robotManifestID
         self.source = source
         self.path = path
         self.contentHash = contentHash

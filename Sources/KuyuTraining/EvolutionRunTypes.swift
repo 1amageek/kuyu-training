@@ -33,8 +33,8 @@ public enum EvolutionWorldModelUsage: String, Sendable, Codable, Equatable {
 public struct EvolutionRunManifest: Sendable, Codable, Equatable {
     public let runID: String
     public let taskID: String
-    public let descriptorID: String?
-    public let descriptorHash: String?
+    public let robotManifestID: String?
+    public let robotManifestHash: String?
     public let configHash: String
     public let policyID: String
     public let populationSize: Int
@@ -58,8 +58,8 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
     public init(
         runID: String,
         taskID: String,
-        descriptorID: String? = nil,
-        descriptorHash: String? = nil,
+        robotManifestID: String? = nil,
+        robotManifestHash: String? = nil,
         configHash: String,
         policyID: String,
         populationSize: Int,
@@ -82,8 +82,8 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
     ) {
         self.runID = runID
         self.taskID = taskID
-        self.descriptorID = descriptorID
-        self.descriptorHash = descriptorHash
+        self.robotManifestID = robotManifestID
+        self.robotManifestHash = robotManifestHash
         self.configHash = configHash
         self.policyID = policyID
         self.populationSize = max(1, populationSize)
@@ -113,8 +113,8 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
         EvolutionRunManifest(
             runID: runID,
             taskID: taskID,
-            descriptorID: descriptorID,
-            descriptorHash: descriptorHash,
+            robotManifestID: robotManifestID,
+            robotManifestHash: robotManifestHash,
             configHash: configHash,
             policyID: policyID,
             populationSize: populationSize,
@@ -141,8 +141,8 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
 public struct EvolutionRunConfig: Sendable, Codable, Equatable {
     public let runID: String
     public let taskID: String
-    public let descriptorID: String?
-    public let descriptorHash: String?
+    public let robotManifestID: String?
+    public let robotManifestHash: String?
     public let configHash: String
     public let policyID: String
     public let populationSize: Int
@@ -166,8 +166,8 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
     public init(
         runID: String = UUID().uuidString,
         taskID: String,
-        descriptorID: String? = nil,
-        descriptorHash: String? = nil,
+        robotManifestID: String? = nil,
+        robotManifestHash: String? = nil,
         configHash: String,
         policyID: String,
         populationSize: Int,
@@ -190,8 +190,8 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
     ) {
         self.runID = runID
         self.taskID = taskID
-        self.descriptorID = descriptorID
-        self.descriptorHash = descriptorHash
+        self.robotManifestID = robotManifestID
+        self.robotManifestHash = robotManifestHash
         self.configHash = configHash
         self.policyID = policyID
         self.populationSize = max(1, populationSize)

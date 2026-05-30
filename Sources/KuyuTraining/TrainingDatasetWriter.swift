@@ -14,7 +14,8 @@ public struct TrainingDatasetWriter {
         log: SimulationLog,
         to directory: URL,
         observation: TrainingObservationMetadata? = nil,
-        provenance: TrainingProvenanceManifest? = nil
+        provenance: TrainingProvenanceManifest? = nil,
+        policyId: String? = nil
     ) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -30,6 +31,7 @@ public struct TrainingDatasetWriter {
             recordCount: records.count,
             failureReason: log.failureReason?.rawValue,
             failureTime: log.failureTime,
+            policyId: policyId,
             observation: observation,
             provenance: provenance
         )

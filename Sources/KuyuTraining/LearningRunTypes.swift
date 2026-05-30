@@ -17,8 +17,8 @@ public enum LearningRunTerminalState: String, Sendable, Codable, Equatable {
 public struct LearningRunManifest: Sendable, Codable, Equatable {
     public let runID: String
     public let mode: LearningRunMode
-    public let descriptorID: String?
-    public let descriptorHash: String?
+    public let robotManifestID: String?
+    public let robotManifestHash: String?
     public let configHash: String
     public let suiteID: String
     public let seedSet: [UInt64]
@@ -34,8 +34,8 @@ public struct LearningRunManifest: Sendable, Codable, Equatable {
     public init(
         runID: String,
         mode: LearningRunMode,
-        descriptorID: String? = nil,
-        descriptorHash: String? = nil,
+        robotManifestID: String? = nil,
+        robotManifestHash: String? = nil,
         configHash: String,
         suiteID: String,
         seedSet: [UInt64],
@@ -50,8 +50,8 @@ public struct LearningRunManifest: Sendable, Codable, Equatable {
     ) {
         self.runID = runID
         self.mode = mode
-        self.descriptorID = descriptorID
-        self.descriptorHash = descriptorHash
+        self.robotManifestID = robotManifestID
+        self.robotManifestHash = robotManifestHash
         self.configHash = configHash
         self.suiteID = suiteID
         self.seedSet = seedSet
@@ -74,8 +74,8 @@ public struct LearningRunManifest: Sendable, Codable, Equatable {
         LearningRunManifest(
             runID: runID,
             mode: mode,
-            descriptorID: descriptorID,
-            descriptorHash: descriptorHash,
+            robotManifestID: robotManifestID,
+            robotManifestHash: robotManifestHash,
             configHash: configHash,
             suiteID: suiteID,
             seedSet: seedSet,

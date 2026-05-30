@@ -2,13 +2,13 @@ import Foundation
 import KuyuPhysics
 
 public extension TrainingObservationMetadata {
-    init(observation: RobotDescriptor.Observation) {
+    init(observation: ObservationContract) {
         let mappedClock: TrainingObservationClockMetadata?
         if let clock = observation.clock {
             mappedClock = TrainingObservationClockMetadata(
                 timebase: clock.timebase,
                 epoch: clock.epoch,
-                maxSkewMs: clock.maxSkewMs,
+                maxSkewMs: clock.maxSkewSeconds * 1000.0,
                 syncPolicy: clock.syncPolicy.rawValue
             )
         } else {

@@ -8,7 +8,7 @@ public struct KuyuProjectPackageValidator: Sendable {
         try validateManifest(package.manifest)
         try validateTemplate(package.selectedTemplate, policy: package.manifest.validationPolicy)
         try validateExperiment(package.defaultExperiment, manifest: package.manifest, template: package.selectedTemplate)
-        try validateDescriptor(package.descriptorReference, manifest: package.manifest, template: package.selectedTemplate)
+        try validateRobotManifest(package.robotManifestReference, manifest: package.manifest, template: package.selectedTemplate)
         try validateEnvironment(package.environmentReference, manifest: package.manifest, template: package.selectedTemplate)
         try validateBundle(package.sourceBundleReference, manifest: package.manifest, template: package.selectedTemplate)
     }
@@ -60,13 +60,18 @@ public struct KuyuProjectPackageValidator: Sendable {
         try requireMatch(experiment.task, template.task, file: "experiments/default/experiment.json", field: "task")
     }
 
-    private func validateDescriptor(
-        _ descriptor: LearningProjectDescriptorReference,
+    private func validateRobotManifest(
+        _ robotManifest: LearningProjectRobotManifestReference,
         manifest: KuyuProjectManifest,
         template: LearningProjectTemplate
     ) throws {
-        try requireContains(manifest.descriptorRefs, descriptor.descriptorID, file: "project.json")
-        try requireMatch(descriptor.descriptorID, template.descriptor.descriptorID, file: "descriptors/default/descriptor-ref.json", field: "descriptorID")
+        try requireContains(manifest.robotManifestRefs, robotManifest.robotManifestID, file: "project.json")
+        try requireMatch(
+            robotManifest.robotManifestID,
+            template.robotManifest.robotManifestID,
+            file: "robot-manifests/default/robot-manifest-ref.json",
+            field: "robotManifestID"
+        )
     }
 
     private func validateEnvironment(
@@ -91,9 +96,24 @@ public struct KuyuProjectPackageValidator: Sendable {
             )
         }
         try requireContains(manifest.modelBundleRefs, bundle.bundleID, file: "project.json")
-        try requireMatch(bundle.requiredCompatibility.descriptorID, template.descriptor.descriptorID, file: "model-bundles/source.bundle-ref.json", field: "descriptorID")
-        try requireMatch(bundle.requiredCompatibility.observationSchemaID, template.observation.schemaID, file: "model-bundles/source.bundle-ref.json", field: "observationSchemaID")
-        try requireMatch(bundle.requiredCompatibility.actionSchemaID, template.action.schemaID, file: "model-bundles/source.bundle-ref.json", field: "actionSchemaID")
+        try requireMatch(
+            bundle.requiredCompatibility.robotManifestID,
+            template.robotManifest.robotManifestID,
+            file: "model-bundles/source.bundle-ref.json",
+            field: "robotManifestID"
+        )
+        try requireMatch(
+            bundle.requiredCompatibility.observationSchemaID,
+            template.observation.schemaID,
+            file: "model-bundles/source.bundle-ref.json",
+            field: "observationSchemaID"
+        )
+        try requireMatch(
+            bundle.requiredCompatibility.actionSchemaID,
+            template.action.schemaID,
+            file: "model-bundles/source.bundle-ref.json",
+            field: "actionSchemaID"
+        )
     }
 
     private func requireNonEmpty(_ value: String, file: String, field: String) throws {

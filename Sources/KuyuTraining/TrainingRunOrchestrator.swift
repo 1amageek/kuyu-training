@@ -1,5 +1,6 @@
 import Foundation
 import KuyuCore
+import KuyuPhysics
 import KuyuScenarios
 
 public struct TrainingBackendRequest: Sendable, Equatable {
@@ -191,12 +192,44 @@ public struct TrainingRunOrchestrator {
         onEvent: (@Sendable (TrainingRunEvent) -> Void)? = nil
     ) async -> TrainingRunResult {
         let startedAt = Date()
+        let robotIdentity: RobotManifestIdentity?
+        do {
+            robotIdentity = try RobotManifestIdentityResolver.resolve(path: runRequest.robotManifestPath)
+        } catch {
+            let manifest = LearningRunManifest(
+                runID: config.runID,
+                mode: config.mode,
+                configHash: requestHash(runRequest, robotIdentity: nil),
+                suiteID: runRequest.taskMode.rawValue,
+                seedSet: [],
+                policyID: config.policyID,
+                parentCheckpointID: config.parentCheckpointID,
+                outputCheckpointID: nil,
+                workerCount: config.workerCount,
+                startedAt: startedAt,
+                terminalState: .failed,
+                failureReason: "robotManifestIdentityFailed: \(error)"
+            )
+            onEvent?(.started(manifest))
+            return await finish(
+                manifest: manifest,
+                metrics: [],
+                bestCheckpointID: nil,
+                bestCheckpointURL: nil,
+                finalCheckpointID: nil,
+                finalCheckpointURL: nil,
+                artifactDirectory: artifactDirectory,
+                state: .failed,
+                failureReason: manifest.failureReason,
+                onEvent: onEvent
+            )
+        }
         var manifest = LearningRunManifest(
             runID: config.runID,
             mode: config.mode,
-            descriptorID: descriptorID(from: runRequest),
-            descriptorHash: descriptorHash(from: runRequest),
-            configHash: requestHash(runRequest),
+            robotManifestID: robotIdentity?.robotID,
+            robotManifestHash: robotIdentity?.sha256,
+            configHash: requestHash(runRequest, robotIdentity: robotIdentity),
             suiteID: runRequest.taskMode.rawValue,
             seedSet: [],
             policyID: config.policyID,
@@ -240,8 +273,8 @@ public struct TrainingRunOrchestrator {
                 manifest = LearningRunManifest(
                     runID: manifest.runID,
                     mode: manifest.mode,
-                    descriptorID: manifest.descriptorID,
-                    descriptorHash: manifest.descriptorHash,
+                    robotManifestID: manifest.robotManifestID,
+                    robotManifestHash: manifest.robotManifestHash,
                     configHash: output.logs.first?.log.configHash ?? manifest.configHash,
                     suiteID: manifest.suiteID,
                     seedSet: output.logs.map { $0.key.seed.rawValue },
@@ -311,7 +344,7 @@ public struct TrainingRunOrchestrator {
                             snapshotID: "\(config.runID)-iter-\(iteration)",
                             checkpointID: trainingResult.candidateCheckpointID,
                             checkpointURL: candidateURL,
-                            descriptorID: manifest.descriptorID,
+                            robotManifestID: manifest.robotManifestID,
                             configHash: manifest.configHash
                         )
                     }
@@ -689,22 +722,13 @@ public struct TrainingRunOrchestrator {
         return score
     }
 
-    private func requestHash(_ request: SimulationRunRequest) -> String {
+    private func requestHash(_ request: SimulationRunRequest, robotIdentity: RobotManifestIdentity?) -> String {
         [
             request.controller.rawValue,
             request.taskMode.rawValue,
             "\(request.cutPeriodSteps)",
             request.determinism.tier.rawValue,
-            request.modelDescriptorPath,
+            robotIdentity?.sha256 ?? request.robotManifestPath,
         ].joined(separator: "|")
-    }
-
-    private func descriptorID(from request: SimulationRunRequest) -> String? {
-        let trimmed = request.modelDescriptorPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func descriptorHash(from request: SimulationRunRequest) -> String? {
-        descriptorID(from: request)
     }
 }

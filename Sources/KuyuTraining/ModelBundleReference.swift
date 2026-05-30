@@ -13,7 +13,7 @@ public struct ModelBundleReference: Sendable, Codable, Equatable {
     public let kind: ModelBundleReferenceKind
     public let url: URL
     public let contentHash: String?
-    public let descriptorID: String?
+    public let robotManifestID: String?
     public let observationSchemaID: String?
     public let actionSchemaID: String?
 
@@ -22,7 +22,7 @@ public struct ModelBundleReference: Sendable, Codable, Equatable {
         kind: ModelBundleReferenceKind,
         url: URL,
         contentHash: String? = nil,
-        descriptorID: String? = nil,
+        robotManifestID: String? = nil,
         observationSchemaID: String? = nil,
         actionSchemaID: String? = nil
     ) {
@@ -30,7 +30,7 @@ public struct ModelBundleReference: Sendable, Codable, Equatable {
         self.kind = kind
         self.url = url
         self.contentHash = contentHash
-        self.descriptorID = descriptorID
+        self.robotManifestID = robotManifestID
         self.observationSchemaID = observationSchemaID
         self.actionSchemaID = actionSchemaID
     }

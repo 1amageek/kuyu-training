@@ -4,7 +4,15 @@ public enum VectorizedWorldExecutionMode: String, Sendable, Codable, Equatable, 
 }
 
 public enum VectorizedWorldExecutionRequirement: String, Sendable, Codable, Equatable, CaseIterable {
+    /// Require the accelerator shared-world (GPU tensor) path. Evaluation fails
+    /// fast if any scenario is not tensor-world capable. Use for GPU-capable
+    /// tasks where accelerated batched physics is a hard performance contract.
     case acceleratorSharedWorld
+    /// Prefer the accelerator shared-world path, but fall back to isolated CPU
+    /// worlds (full physics, swap/HF stress) when any scenario is not
+    /// tensor-world capable. Use for full-physics tasks such as attitude and the
+    /// A1 swap/HF-stress suites that the tensor world cannot model.
+    case preferAcceleratorSharedWorld
 }
 
 public struct VectorizedTrainingBatchSpec: Sendable, Codable, Equatable {

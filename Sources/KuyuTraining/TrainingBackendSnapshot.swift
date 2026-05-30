@@ -4,7 +4,8 @@ public struct TrainingBackendSnapshot: Sendable, Codable, Equatable {
     public let snapshotID: String
     public let checkpointID: String?
     public let checkpointURL: URL?
-    public let descriptorID: String?
+    public let robotManifestID: String?
+    public let robotManifestHash: String?
     public let configHash: String?
     public let createdAt: Date
 
@@ -12,14 +13,16 @@ public struct TrainingBackendSnapshot: Sendable, Codable, Equatable {
         snapshotID: String,
         checkpointID: String? = nil,
         checkpointURL: URL? = nil,
-        descriptorID: String? = nil,
+        robotManifestID: String? = nil,
+        robotManifestHash: String? = nil,
         configHash: String? = nil,
         createdAt: Date = Date()
     ) {
         self.snapshotID = snapshotID
         self.checkpointID = checkpointID
         self.checkpointURL = checkpointURL
-        self.descriptorID = descriptorID
+        self.robotManifestID = robotManifestID
+        self.robotManifestHash = robotManifestHash
         self.configHash = configHash
         self.createdAt = createdAt
     }

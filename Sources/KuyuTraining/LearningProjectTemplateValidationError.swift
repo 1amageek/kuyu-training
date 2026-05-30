@@ -5,8 +5,8 @@ public enum LearningProjectTemplateValidationError: Error, Sendable, Equatable, 
     case emptyTemplateID
     case emptyDisplayName
     case emptyTask
-    case emptyDescriptorID
-    case descriptorPathRequired(source: LearningProjectDescriptorSource)
+    case emptyRobotManifestID
+    case robotManifestPathRequired(source: LearningProjectRobotManifestSource)
     case invalidTaskProfile(expected: String, actual: String?)
     case unsupportedTaskProfile(task: String)
     case invalidObservationChannelCount(expected: Int, actual: Int)
@@ -29,10 +29,10 @@ public enum LearningProjectTemplateValidationError: Error, Sendable, Equatable, 
             return "empty-display-name"
         case .emptyTask:
             return "empty-task"
-        case .emptyDescriptorID:
-            return "empty-descriptor-id"
-        case let .descriptorPathRequired(source):
-            return "descriptor-path-required source=\(source.rawValue)"
+        case .emptyRobotManifestID:
+            return "empty-robot-manifest-id"
+        case let .robotManifestPathRequired(source):
+            return "robot-manifest-path-required source=\(source.rawValue)"
         case let .invalidTaskProfile(expected, actual):
             return "invalid-task-profile expected=\(expected) actual=\(actual ?? "nil")"
         case let .unsupportedTaskProfile(task):

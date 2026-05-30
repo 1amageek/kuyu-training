@@ -18,7 +18,7 @@ import Testing
 
     #expect(levelsByID["aerial-drone-autonomy-starter-v1"] == .runnableStarter)
     #expect(levelsByID["aerial-single-prop-lift-recovery-v1"] == .runnableStarter)
-    #expect(levelsByID["aerial-drone-waypoint-navigation-v1"] == .requiresExistingModel)
+    #expect(levelsByID["aerial-drone-waypoint-navigation-v1"] == .designOnly)
     #expect(levelsByID["ground-robot-point-navigation-v1"] == .designOnly)
     #expect(levelsByID["aerial-drone-hover-stabilization-v1"] == .designOnly)
     #expect(levelsByID["legged-robot-locomotion-v1"] == .designOnly)
@@ -111,6 +111,7 @@ import Testing
 
     #expect(template.executionLevel == .runnableStarter)
     #expect(template.isRunnableStarter)
+    #expect(template.displayName == "Single Prop Lift Diagnostic")
     #expect(template.primaryRunnableTrainingStage?.stageID == "single-prop-lift-recovery")
     #expect(template.primaryRunnableTrainingStage?.kind == .evolution)
     #expect(template.primaryRunnableTrainingStage?.task == "singleLift")
@@ -118,6 +119,54 @@ import Testing
     #expect(template.primaryRunnableTrainingStage?.convergenceGoal.kind == .convergence)
     #expect(template.primaryRunnableTrainingStage?.generationLimit ?? 0 >= 1_000)
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "single-prop-regression" && $0.kind == .regression })
+}
+
+@Test func nonRunnableTemplatesDoNotRequestModelBundles() throws {
+    let validator = LearningProjectTemplateValidator(requiresKnownTaskProfile: false)
+
+    for template in LearningProjectTemplateCatalog().templates where template.primaryRunnableTrainingStage == nil {
+        try validator.validate(template)
+        #expect(template.executionLevel == .designOnly)
+        #expect(template.modelBundlePolicy.sourceCheckpointPolicy == .none)
+        #expect(template.tags.contains("blueprint"))
+        #expect(template.displayName.contains("Blueprint"))
+    }
+}
+
+@Test func learningProjectTemplateRejectsModelBundlePolicyWithoutRunnableStage() throws {
+    let base = LearningProjectTemplate.droneWaypointNavigation
+    let template = LearningProjectTemplate(
+        templateID: base.templateID,
+        displayName: base.displayName,
+        summary: base.summary,
+        domain: base.domain,
+        task: base.task,
+        taskProfileID: base.taskProfileID,
+        robotManifest: base.robotManifest,
+        modelBundlePolicy: LearningProjectModelBundlePolicy(
+            sourceCheckpointPolicy: .optionalExisting,
+            requiredBundleSchemaVersion: base.modelBundlePolicy.requiredBundleSchemaVersion,
+            requiresStrictPreflight: base.modelBundlePolicy.requiresStrictPreflight,
+            requiresTaskCompatibleDriveCount: base.modelBundlePolicy.requiresTaskCompatibleDriveCount
+        ),
+        trainingStrategy: base.trainingStrategy,
+        curriculum: base.curriculum,
+        evaluationGate: base.evaluationGate,
+        observation: base.observation,
+        action: base.action,
+        policy: base.policy,
+        compute: base.compute,
+        tags: base.tags
+    )
+
+    do {
+        try LearningProjectTemplateValidator(requiresKnownTaskProfile: false).validate(template)
+        Issue.record("Expected non-runnable template with model bundle policy to throw.")
+    } catch LearningProjectTemplateValidationError.invalidCurriculum(let reason) {
+        #expect(reason == "non-runnable-template-must-not-request-model-bundle")
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @Test func learningProjectTemplatesUseConvergenceAsDefaultCompletionGoal() throws {
@@ -153,7 +202,7 @@ import Testing
         domain: base.domain,
         task: base.task,
         taskProfileID: base.taskProfileID,
-        descriptor: base.descriptor,
+        robotManifest: base.robotManifest,
         modelBundlePolicy: base.modelBundlePolicy,
         trainingStrategy: base.trainingStrategy,
         curriculum: base.curriculum,
@@ -192,7 +241,7 @@ import Testing
 
     #expect(template.domain == .groundRobot)
     #expect(template.taskProfileID == nil)
-    #expect(template.descriptor.robotClass == .groundVehicle)
+    #expect(template.robotManifest.robotClass == .groundVehicle)
 }
 
 @Test func learningProjectTemplateRejectsUnknownTaskWhenKnownProfileIsRequired() throws {
@@ -218,7 +267,7 @@ import Testing
         domain: base.domain,
         task: base.task,
         taskProfileID: "wrong-profile",
-        descriptor: base.descriptor,
+        robotManifest: base.robotManifest,
         modelBundlePolicy: base.modelBundlePolicy,
         trainingStrategy: base.trainingStrategy,
         curriculum: base.curriculum,
@@ -250,7 +299,7 @@ import Testing
         domain: base.domain,
         task: base.task,
         taskProfileID: base.taskProfileID,
-        descriptor: base.descriptor,
+        robotManifest: base.robotManifest,
         modelBundlePolicy: base.modelBundlePolicy,
         trainingStrategy: base.trainingStrategy,
         curriculum: base.curriculum,
@@ -286,7 +335,7 @@ import Testing
         domain: base.domain,
         task: base.task,
         taskProfileID: base.taskProfileID,
-        descriptor: base.descriptor,
+        robotManifest: base.robotManifest,
         modelBundlePolicy: base.modelBundlePolicy,
         trainingStrategy: base.trainingStrategy,
         curriculum: base.curriculum,

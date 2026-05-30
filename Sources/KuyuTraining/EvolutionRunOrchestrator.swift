@@ -105,8 +105,8 @@ public struct EvolutionRunOrchestrator {
         let manifest = EvolutionRunManifest(
             runID: config.runID,
             taskID: config.taskID,
-            descriptorID: config.descriptorID,
-            descriptorHash: config.descriptorHash,
+            robotManifestID: config.robotManifestID,
+            robotManifestHash: config.robotManifestHash,
             configHash: config.configHash,
             policyID: config.policyID,
             populationSize: config.populationSize,

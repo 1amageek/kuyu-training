@@ -11,7 +11,7 @@ public struct KuyuProjectManifest: Codable, Sendable, Equatable {
     public let defaultTemplateID: String
     public let defaultExperimentID: String
     public let domains: [AutonomousOperationDomain]
-    public let descriptorRefs: [String]
+    public let robotManifestRefs: [String]
     public let environmentRefs: [String]
     public let experimentRefs: [String]
     public let runRefs: [String]
@@ -28,7 +28,7 @@ public struct KuyuProjectManifest: Codable, Sendable, Equatable {
         defaultTemplateID: String,
         defaultExperimentID: String,
         domains: [AutonomousOperationDomain],
-        descriptorRefs: [String],
+        robotManifestRefs: [String],
         environmentRefs: [String],
         experimentRefs: [String],
         runRefs: [String],
@@ -44,7 +44,7 @@ public struct KuyuProjectManifest: Codable, Sendable, Equatable {
         self.defaultTemplateID = defaultTemplateID
         self.defaultExperimentID = defaultExperimentID
         self.domains = domains
-        self.descriptorRefs = descriptorRefs
+        self.robotManifestRefs = robotManifestRefs
         self.environmentRefs = environmentRefs
         self.experimentRefs = experimentRefs
         self.runRefs = runRefs

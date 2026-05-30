@@ -700,6 +700,77 @@ import Testing
     }
 }
 
+@MainActor
+@Test func typedTrainingBackendAdapterBridgesLegacyEvolutionBackend() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let config = EvolutionRunConfig(
+        runID: "typed-adapter",
+        taskID: "lift",
+        configHash: "config-hash",
+        policyID: "manasMLX",
+        populationSize: 3,
+        generationCount: 1,
+        eliteCount: 1,
+        workerCount: 1,
+        mutationRate: 0.08,
+        mutationNoiseScale: 0.04
+    )
+    let backend = FakeEvolutionBackend()
+    let evaluator = FakeEvolutionEvaluator()
+    // Drive the generic TypedTrainingBackend contract end-to-end through the real
+    // legacy→typed adapter, proving the typed layer is functional and connected to the
+    // production backend protocols (not orphan scaffolding).
+    let typed = EvolutionTypedBackendAdapter(config: config, backend: backend, evaluator: evaluator)
+
+    let source = ModelBundleReference(bundleID: "source", kind: .source, url: URL(fileURLWithPath: "/tmp/source.manasbundle"))
+    let checkpoint = try await typed.loadCheckpoint(source)
+    #expect(checkpoint == source)
+
+    let candidates = try await typed.seedPopulation(
+        from: checkpoint,
+        request: PopulationSeedRequest(runID: config.runID, populationSize: 3, seed: 42, artifactRoot: directory)
+    )
+    #expect(candidates.count == 3)
+    #expect(backend.seedRequests.count == 1)
+
+    let firstCandidate = try #require(candidates.first)
+    let context = TrainingEvaluationContext<TrainingNoObservation, TrainingNoAction>(
+        runID: config.runID,
+        taskProfileID: "lift",
+        artifactRoot: directory,
+        seed: 42,
+        workerCount: 1
+    )
+    let evaluation = try await typed.evaluate(firstCandidate, in: context)
+    #expect(evaluation.candidateID == firstCandidate.candidateID)
+    #expect(evaluation.fitness.isFinite)
+    #expect(evaluator.requests.count == 1)
+
+    let offspring = try await typed.reproduce(ReproductionRequest(
+        runID: config.runID,
+        generation: 1,
+        parents: [firstCandidate],
+        targetPopulationSize: 3,
+        mutationRate: 0.04,
+        mutationNoiseScale: 0.02,
+        seed: 7,
+        artifactRoot: directory
+    ))
+    #expect(offspring.count == 3)
+    #expect(backend.nextGenerationRequests.count == 1)
+
+    let destination = ModelBundleReference(bundleID: "accepted", kind: .accepted, url: URL(fileURLWithPath: "/tmp/accepted.manasbundle"))
+    let published = try await typed.publish(firstCandidate, request: CheckpointPublicationRequest(
+        runID: config.runID,
+        candidateID: firstCandidate.candidateID,
+        destination: destination,
+        artifactRoot: directory
+    ))
+    #expect(published.kind == .accepted)
+    #expect(published.url == firstCandidate.checkpointURL)
+}
+
 private actor EvaluationConcurrencyProbe {
     private var activeCount = 0
     private var maximumActive = 0

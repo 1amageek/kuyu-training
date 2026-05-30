@@ -27,7 +27,7 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
     public let domain: AutonomousOperationDomain
     public let task: String
     public let taskProfileID: String?
-    public let descriptor: LearningProjectDescriptorReference
+    public let robotManifest: LearningProjectRobotManifestReference
     public let modelBundlePolicy: LearningProjectModelBundlePolicy
     public let trainingStrategy: LearningProjectTrainingStrategy
     public let curriculum: LearningProjectCurriculum
@@ -43,7 +43,7 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
         case .createStarter:
             return primaryRunnableTrainingStage == nil ? .designOnly : .runnableStarter
         case .requireExisting, .optionalExisting:
-            return .requiresExistingModel
+            return primaryRunnableTrainingStage == nil ? .designOnly : .requiresExistingModel
         case .none:
             return .designOnly
         }
@@ -70,7 +70,7 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
         domain: AutonomousOperationDomain,
         task: String,
         taskProfileID: String?,
-        descriptor: LearningProjectDescriptorReference,
+        robotManifest: LearningProjectRobotManifestReference,
         modelBundlePolicy: LearningProjectModelBundlePolicy,
         trainingStrategy: LearningProjectTrainingStrategy,
         curriculum: LearningProjectCurriculum,
@@ -88,7 +88,7 @@ public struct LearningProjectTemplate: Codable, Sendable, Equatable {
         self.domain = domain
         self.task = task
         self.taskProfileID = taskProfileID
-        self.descriptor = descriptor
+        self.robotManifest = robotManifest
         self.modelBundlePolicy = modelBundlePolicy
         self.trainingStrategy = trainingStrategy
         self.curriculum = curriculum

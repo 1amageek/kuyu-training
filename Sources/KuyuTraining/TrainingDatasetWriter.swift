@@ -57,6 +57,25 @@ public struct TrainingDatasetWriter {
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
     ) throws -> URL {
+        try write(
+            dataset: makeDataset(
+                episode: episode,
+                timeStep: timeStep,
+                determinismTier: determinismTier,
+                observation: observation,
+                provenance: provenance
+            ),
+            to: directory
+        )
+    }
+
+    public func makeDataset(
+        episode: RolloutEpisode,
+        timeStep: Double,
+        determinismTier: String,
+        observation: TrainingObservationMetadata? = nil,
+        provenance: TrainingProvenanceManifest? = nil
+    ) -> TrainingDataset {
         let records = buildRecords(from: episode)
         let metadata = TrainingDatasetMetadata(
             scenarioId: episode.scenarioId,
@@ -80,7 +99,7 @@ public struct TrainingDatasetWriter {
             provenance: provenance
         )
 
-        return try write(metadata: metadata, records: records, to: directory)
+        return TrainingDataset(metadata: metadata, records: records)
     }
 
     private func write(

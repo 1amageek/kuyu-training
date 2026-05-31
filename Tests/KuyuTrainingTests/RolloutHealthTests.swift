@@ -36,6 +36,47 @@ import KuyuPhysics
     #expect(health.failureRate == 0)
 }
 
+@Test func rolloutHealthAddsSummariesAndMergesWithoutEpisodes() {
+    var baseline = RolloutHealth()
+    baseline.addEpisodeSummary(
+        done: false,
+        truncated: true,
+        failureReason: nil,
+        terminalReason: RolloutTerminalReason.curriculumHorizon,
+        rewardSum: 2.0,
+        maxOmega: 0.7,
+        maxTilt: 0.08,
+        minAltitude: 1.5
+    )
+
+    var candidate = RolloutHealth()
+    candidate.addEpisodeSummary(
+        done: true,
+        truncated: false,
+        failureReason: "ground-violation",
+        terminalReason: "ground-violation",
+        rewardSum: .infinity,
+        maxOmega: 1.2,
+        maxTilt: .nan,
+        minAltitude: .infinity,
+        nonFiniteMetricCount: 1
+    )
+
+    baseline.add(candidate)
+
+    #expect(baseline.episodeCount == 2)
+    #expect(baseline.doneCount == 1)
+    #expect(baseline.truncatedCount == 1)
+    #expect(baseline.failureCount == 1)
+    #expect(baseline.curriculumHorizonCount == 1)
+    #expect(baseline.nonCurriculumTruncationCount == 0)
+    #expect(baseline.rewardSum == 2.0)
+    #expect(baseline.maxOmega == 1.2)
+    #expect(baseline.maxTilt == 0.08)
+    #expect(baseline.minAltitude == 1.5)
+    #expect(baseline.nonFiniteMetricCount == 4)
+}
+
 @Test func rolloutHealthRejectsNewCancellationAndNonCurriculumTruncation() throws {
     let baseline = RolloutHealth(episodes: [
         try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 0.5, tilt: 0.05, altitude: 2.0),

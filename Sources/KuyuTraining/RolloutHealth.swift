@@ -67,31 +67,62 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         }
     }
 
+    public mutating func add(_ other: RolloutHealth) {
+        episodeCount += other.episodeCount
+        doneCount += other.doneCount
+        truncatedCount += other.truncatedCount
+        failureCount += other.failureCount
+        cancelledCount += other.cancelledCount
+        curriculumHorizonCount += other.curriculumHorizonCount
+        nonFiniteMetricCount += other.nonFiniteMetricCount
+        rewardSum += other.rewardSum
+        maxOmega = max(maxOmega, other.maxOmega)
+        maxTilt = max(maxTilt, other.maxTilt)
+        if let otherMinAltitude = other.minAltitude {
+            minAltitude = min(minAltitude ?? otherMinAltitude, otherMinAltitude)
+        }
+    }
+
     public mutating func add(_ episode: RolloutEpisode) {
-        episodeCount += 1
-        if episode.done {
-            doneCount += 1
-        }
-        if episode.truncated {
-            truncatedCount += 1
-        }
-        if episode.failureReason != nil {
-            failureCount += 1
-        }
-        if episode.cancelled {
-            cancelledCount += 1
-        }
-        if episode.terminalReason == RolloutTerminalReason.curriculumHorizon {
-            curriculumHorizonCount += 1
-        }
-        if episode.rewardSum.isFinite {
-            rewardSum += episode.rewardSum
-        } else {
-            nonFiniteMetricCount += 1
-        }
+        addEpisodeHeader(
+            done: episode.done,
+            truncated: episode.truncated,
+            failureReason: episode.failureReason,
+            cancelled: episode.cancelled,
+            terminalReason: episode.terminalReason,
+            rewardSum: episode.rewardSum
+        )
         for step in episode.steps {
             addStepMetrics(step)
         }
+    }
+
+    public mutating func addEpisodeSummary(
+        done: Bool,
+        truncated: Bool,
+        failureReason: String?,
+        cancelled: Bool = false,
+        terminalReason: String?,
+        rewardSum episodeRewardSum: Double,
+        maxOmega episodeMaxOmega: Double,
+        maxTilt episodeMaxTilt: Double,
+        minAltitude episodeMinAltitude: Double?,
+        nonFiniteMetricCount episodeNonFiniteMetricCount: Int = 0
+    ) {
+        addEpisodeHeader(
+            done: done,
+            truncated: truncated,
+            failureReason: failureReason,
+            cancelled: cancelled,
+            terminalReason: terminalReason,
+            rewardSum: episodeRewardSum
+        )
+        nonFiniteMetricCount += max(0, episodeNonFiniteMetricCount)
+        addSummaryMetrics(
+            maxOmega: episodeMaxOmega,
+            maxTilt: episodeMaxTilt,
+            minAltitude: episodeMinAltitude
+        )
     }
 
     public func isAcceptable(
@@ -99,6 +130,63 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         policy: RolloutHealthAcceptancePolicy = .conservative
     ) -> Bool {
         policy.accepts(candidate: self, relativeTo: baseline)
+    }
+
+    private mutating func addEpisodeHeader(
+        done: Bool,
+        truncated: Bool,
+        failureReason: String?,
+        cancelled: Bool,
+        terminalReason: String?,
+        rewardSum episodeRewardSum: Double
+    ) {
+        episodeCount += 1
+        if done {
+            doneCount += 1
+        }
+        if truncated {
+            truncatedCount += 1
+        }
+        if failureReason != nil {
+            failureCount += 1
+        }
+        if cancelled {
+            cancelledCount += 1
+        }
+        if terminalReason == RolloutTerminalReason.curriculumHorizon {
+            curriculumHorizonCount += 1
+        }
+        if episodeRewardSum.isFinite {
+            rewardSum += episodeRewardSum
+        } else {
+            nonFiniteMetricCount += 1
+        }
+    }
+
+    private mutating func addSummaryMetrics(
+        maxOmega episodeMaxOmega: Double,
+        maxTilt episodeMaxTilt: Double,
+        minAltitude episodeMinAltitude: Double?
+    ) {
+        if episodeMaxOmega.isFinite {
+            maxOmega = max(maxOmega, episodeMaxOmega)
+        } else {
+            nonFiniteMetricCount += 1
+        }
+
+        if episodeMaxTilt.isFinite {
+            maxTilt = max(maxTilt, episodeMaxTilt)
+        } else {
+            nonFiniteMetricCount += 1
+        }
+
+        if let episodeMinAltitude {
+            if episodeMinAltitude.isFinite {
+                minAltitude = min(minAltitude ?? episodeMinAltitude, episodeMinAltitude)
+            } else {
+                nonFiniteMetricCount += 1
+            }
+        }
     }
 
     private mutating func addStepMetrics(_ step: EnvironmentStep) {

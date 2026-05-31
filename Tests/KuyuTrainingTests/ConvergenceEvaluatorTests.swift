@@ -356,13 +356,15 @@ import Testing
             learningRate: 0.001,
             useAux: false,
             useQualityGating: true,
-            maxBatches: 1
+            maxBatches: 1,
+            miniBatchSize: 64
         ),
         artifactDirectory: directory.appendingPathComponent("run", isDirectory: true)
     )
 
     let request = try #require(backend.requests.first)
     #expect(request.datasetURL.lastPathComponent == "iter-1-mixed")
+    #expect(request.miniBatchSize == 64)
     let manifestData = try Data(contentsOf: request.datasetURL.appendingPathComponent("dataset-mix-manifest.json"))
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601

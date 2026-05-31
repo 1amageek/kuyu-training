@@ -13,6 +13,7 @@ public struct TrainingBackendRequest: Sendable, Equatable {
     public let useAux: Bool
     public let useQualityGating: Bool
     public let maxBatches: Int?
+    public let miniBatchSize: Int?
     public let sourceSnapshot: TrainingBackendSnapshot?
 
     public init(
@@ -25,6 +26,7 @@ public struct TrainingBackendRequest: Sendable, Equatable {
         useAux: Bool,
         useQualityGating: Bool,
         maxBatches: Int? = nil,
+        miniBatchSize: Int? = nil,
         sourceSnapshot: TrainingBackendSnapshot? = nil
     ) {
         self.datasetURL = datasetURL
@@ -36,6 +38,7 @@ public struct TrainingBackendRequest: Sendable, Equatable {
         self.useAux = useAux
         self.useQualityGating = useQualityGating
         self.maxBatches = maxBatches
+        self.miniBatchSize = miniBatchSize.map { max(1, $0) }
         self.sourceSnapshot = sourceSnapshot
     }
 }
@@ -431,6 +434,7 @@ public struct TrainingRunOrchestrator {
                 useAux: trainingTemplate.useAux,
                 useQualityGating: trainingTemplate.useQualityGating,
                 maxBatches: trainingTemplate.maxBatches,
+                miniBatchSize: trainingTemplate.miniBatchSize,
                 sourceSnapshot: sourceSnapshot
             )
             let result = try await backend.trainSupervised(request: request)

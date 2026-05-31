@@ -137,4 +137,37 @@ public struct LearningProjectObservationContract: Codable, Sendable, Equatable {
             channels: channels + reserved
         )
     }
+
+    public static func roArmM1JointTargetTracking() -> LearningProjectObservationContract {
+        let jointNames = (1...5).map { "joint\($0)" }
+        let channelNames = jointNames.map { "\($0)Position" }
+            + jointNames.map { "\($0)Velocity" }
+            + jointNames.map { "\($0)TargetError" }
+            + jointNames.map { "\($0)LowerLimitMargin" }
+            + jointNames.map { "\($0)UpperLimitMargin" }
+        return LearningProjectObservationContract(
+            schemaID: RoArmM1JointTargetTrainingGoal.canonical.observationSchemaID,
+            channelCount: channelNames.count,
+            channels: channelNames.enumerated().map { index, name in
+                let isTargetError = name.hasSuffix("TargetError")
+                return LearningProjectObservationChannel(
+                    index: index,
+                    name: name,
+                    unit: isTargetError ? "rad" : unit(forRoArmM1JointTargetChannel: name),
+                    isStateChannel: true,
+                    isStressable: !isTargetError
+                )
+            }
+        )
+    }
+
+    private static func unit(forRoArmM1JointTargetChannel name: String) -> String? {
+        if name.hasSuffix("Position") || name.hasSuffix("LowerLimitMargin") || name.hasSuffix("UpperLimitMargin") {
+            return "rad"
+        }
+        if name.hasSuffix("Velocity") {
+            return "rad/s"
+        }
+        return nil
+    }
 }

@@ -36,4 +36,14 @@ public struct LearningProjectActionContract: Codable, Sendable, Equatable {
             isBounded: true
         )
     }
+
+    public static func roArmM1JointTargets() -> LearningProjectActionContract {
+        LearningProjectActionContract(
+            schemaID: RoArmM1JointTargetTrainingGoal.canonical.actionSchemaID,
+            kind: .continuous,
+            driveCount: 5,
+            actuatorCount: 5,
+            isBounded: true
+        )
+    }
 }

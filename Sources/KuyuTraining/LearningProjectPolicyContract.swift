@@ -341,4 +341,63 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
             )
         )
     }
+
+    public static func roArmM1JointTargetTracking() -> LearningProjectPolicyContract {
+        LearningProjectPolicyContract(
+            architecture: .feedForward,
+            actionEncoding: .jointTargets,
+            actionDistribution: .deterministic,
+            actionDimension: 5,
+            temporalWindow: LearningProjectTemporalWindowContract(
+                historyLength: 1,
+                observationDimension: 25,
+                previousActionDimension: 5,
+                targetTrajectoryPointCount: 1
+            ),
+            privilegedCritic: LearningProjectPrivilegedCriticContract(
+                isEnabled: false,
+                privilegedDimension: 0,
+                parameterNames: []
+            ),
+            behaviorCloning: LearningProjectBehaviorCloningContract(
+                isEnabled: true,
+                loss: "mean-squared-joint-target",
+                initialCoefficient: 1,
+                finalCoefficient: 0.2
+            ),
+            ppo: LearningProjectPPOContract(
+                isEnabled: false,
+                clipEpsilon: 0.2,
+                discount: 0.99,
+                gaeLambda: 0.95,
+                valueLossCoefficient: 0.5,
+                entropyCoefficient: 0,
+                actionSmoothnessCoefficient: 0.01,
+                epochCount: 1,
+                minibatchSize: 1
+            ),
+            domainRandomization: LearningProjectDomainRandomizationContract(
+                isEnabled: true,
+                parameters: [
+                    LearningProjectDomainRandomizationParameter(name: "linkMass", lowerMultiplier: 0.85, upperMultiplier: 1.15),
+                    LearningProjectDomainRandomizationParameter(name: "linkInertia", lowerMultiplier: 0.8, upperMultiplier: 1.2),
+                    LearningProjectDomainRandomizationParameter(name: "servoTimeConstant", lowerMultiplier: 0.6, upperMultiplier: 1.6),
+                    LearningProjectDomainRandomizationParameter(name: "servoTorqueLimit", lowerMultiplier: 0.75, upperMultiplier: 1.1),
+                    LearningProjectDomainRandomizationParameter(name: "jointDamping", lowerMultiplier: 0.5, upperMultiplier: 1.5),
+                    LearningProjectDomainRandomizationParameter(name: "coulombFriction", lowerMultiplier: 0.5, upperMultiplier: 1.8)
+                ],
+                maximumActionLatencySteps: 2,
+                maximumWindMetersPerSecond: 0
+            ),
+            safetyFilter: LearningProjectSafetyFilterContract(
+                isEnabled: false,
+                minimumThrust: 0,
+                maximumThrust: 1,
+                maximumBodyRate: 1,
+                maximumYawRate: 1,
+                maximumTilt: 1,
+                lowPassAlpha: 1
+            )
+        )
+    }
 }

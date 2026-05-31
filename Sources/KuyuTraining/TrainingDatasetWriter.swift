@@ -10,6 +10,18 @@ public struct TrainingDatasetWriter {
 
     public init() {}
 
+    @discardableResult
+    public func write(
+        dataset: TrainingDataset,
+        to directory: URL
+    ) throws -> URL {
+        try write(
+            metadata: dataset.metadata,
+            records: dataset.records,
+            to: directory
+        )
+    }
+
     public func write(
         log: SimulationLog,
         to directory: URL,
@@ -17,8 +29,6 @@ public struct TrainingDatasetWriter {
         provenance: TrainingProvenanceManifest? = nil,
         policyId: String? = nil
     ) throws -> URL {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
         let records = buildRecords(from: log)
         let metadata = TrainingDatasetMetadata(
             scenarioId: log.scenarioId.rawValue,
@@ -36,34 +46,7 @@ public struct TrainingDatasetWriter {
             provenance: provenance
         )
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-
-        let metaURL = directory.appendingPathComponent("meta.json")
-        let metaData = try encoder.encode(metadata)
-        try metaData.write(to: metaURL, options: [.atomic])
-
-        let recordsURL = directory.appendingPathComponent("records.jsonl")
-        FileManager.default.createFile(atPath: recordsURL.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: recordsURL)
-
-        do {
-            for record in records {
-                let data = try encoder.encode(record)
-                handle.write(data)
-                handle.write(Data("\n".utf8))
-            }
-            try handle.close()
-        } catch let writeError {
-            do {
-                try handle.close()
-            } catch let closeError {
-                throw WriteError.closeFailedAfterWriteError(writeError: writeError, closeError: closeError)
-            }
-            throw writeError
-        }
-
-        return directory
+        return try write(metadata: metadata, records: records, to: directory)
     }
 
     public func write(
@@ -74,8 +57,6 @@ public struct TrainingDatasetWriter {
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
     ) throws -> URL {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
         let records = buildRecords(from: episode)
         let metadata = TrainingDatasetMetadata(
             scenarioId: episode.scenarioId,
@@ -99,6 +80,16 @@ public struct TrainingDatasetWriter {
             provenance: provenance
         )
 
+        return try write(metadata: metadata, records: records, to: directory)
+    }
+
+    private func write(
+        metadata: TrainingDatasetMetadata,
+        records: [TrainingDatasetRecord],
+        to directory: URL
+    ) throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
 
@@ -107,7 +98,7 @@ public struct TrainingDatasetWriter {
         try metaData.write(to: metaURL, options: [.atomic])
 
         let recordsURL = directory.appendingPathComponent("records.jsonl")
-        FileManager.default.createFile(atPath: recordsURL.path, contents: nil)
+        try Data().write(to: recordsURL, options: [.atomic])
         let handle = try FileHandle(forWritingTo: recordsURL)
 
         do {

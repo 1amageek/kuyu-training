@@ -98,16 +98,21 @@ Default project templates currently cover multi-stage robot training plans.
 Executable stages may be narrower than the full curriculum while task profiles
 and validators are added.
 
-| Template ID | Domain | Task |
-|-------------|--------|------|
-| `aerial-drone-autonomy-starter-v1` | aerialDrone | `lift` first, then hover/navigation/recovery/regression |
-| `aerial-single-prop-lift-recovery-v1` | aerialDrone | `singleLift` |
-| `aerial-drone-hover-stabilization-v1` | aerialDrone | `hoverStabilization` |
-| `aerial-drone-waypoint-navigation-v1` | aerialDrone | `waypointNavigation` |
-| `ground-robot-point-navigation-v1` | groundRobot | `pointNavigation` |
-| `legged-robot-locomotion-v1` | groundRobot | `leggedLocomotion` |
-| `manipulator-pick-and-place-v1` | manipulator | `pickAndPlace` |
-| `automotive-lane-keeping-v1` | automotive | `laneKeeping` |
+| Template ID | Domain | Task | Execution |
+|-------------|--------|------|-----------|
+| `aerial-drone-autonomy-starter-v1` | aerialDrone | `lift` first, then hover/navigation/recovery/regression | `runnableStarter` |
+| `aerial-single-prop-lift-recovery-v1` | aerialDrone | `singleLift` | `runnableStarter` |
+| `aerial-drone-hover-stabilization-v1` | aerialDrone | `hoverStabilization` | `designOnly` |
+| `aerial-drone-waypoint-navigation-v1` | aerialDrone | `waypointNavigation` | `designOnly` |
+| `ground-robot-point-navigation-v1` | groundRobot | `pointNavigation` | `designOnly` |
+| `legged-robot-locomotion-v1` | groundRobot | `leggedLocomotion` | `designOnly` |
+| `roarm-m1-joint-target-tracking-v1` | manipulator | `roArmM1JointTargetTracking` | `designOnly` |
+| `manipulator-pick-and-place-v1` | manipulator | `pickAndPlace` | `designOnly` |
+| `automotive-lane-keeping-v1` | automotive | `laneKeeping` | `designOnly` |
+
+RoArm M1 has an executable Kuyu dataset-generation command, but it is not a
+`runnableStarter` project template until a five-drive Manas joint-target policy
+backend can produce a compatible source model bundle.
 
 ### Dataset Types
 

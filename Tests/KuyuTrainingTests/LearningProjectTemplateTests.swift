@@ -22,6 +22,7 @@ import Testing
     #expect(levelsByID["ground-robot-point-navigation-v1"] == .designOnly)
     #expect(levelsByID["aerial-drone-hover-stabilization-v1"] == .designOnly)
     #expect(levelsByID["legged-robot-locomotion-v1"] == .designOnly)
+    #expect(levelsByID["roarm-m1-joint-target-tracking-v1"] == .designOnly)
     #expect(levelsByID["manipulator-pick-and-place-v1"] == .designOnly)
     #expect(levelsByID["automotive-lane-keeping-v1"] == .designOnly)
 }
@@ -31,7 +32,7 @@ import Testing
     let ids = catalog.templates.map(\.templateID)
 
     #expect(ids.count == Set(ids).count)
-    #expect(ids.count >= 8)
+    #expect(ids.count >= 9)
 }
 
 @Test func learningProjectTemplateCatalogPresetsValidateInAuthoringMode() throws {
@@ -119,6 +120,29 @@ import Testing
     #expect(template.primaryRunnableTrainingStage?.convergenceGoal.kind == .convergence)
     #expect(template.primaryRunnableTrainingStage?.generationLimit ?? 0 >= 1_000)
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "single-prop-regression" && $0.kind == .regression })
+}
+
+@Test func roArmM1TemplateDefinesCameraFreeJointTargetTrainingDesign() throws {
+    let template = LearningProjectTemplate.roArmM1JointTargetTracking
+
+    try LearningProjectTemplateValidator(requiresKnownTaskProfile: true).validate(template)
+
+    #expect(template.executionLevel == .designOnly)
+    #expect(!template.isRunnableStarter)
+    #expect(template.modelBundlePolicy.sourceCheckpointPolicy == .none)
+    #expect(template.robotManifest.robotManifestID == "roarm-m1-v0")
+    #expect(template.task == "roArmM1JointTargetTracking")
+    #expect(template.taskProfileID == "roArmM1JointTargetTracking-v1")
+    #expect(template.observation.channelCount == 25)
+    #expect(template.action.driveCount == 5)
+    #expect(template.action.actuatorCount == 5)
+    #expect(template.policy.actionEncoding == .jointTargets)
+    #expect(template.policy.behaviorCloning.isEnabled)
+    #expect(template.policy.domainRandomization.isEnabled)
+    #expect(template.primaryRunnableTrainingStage?.stageID == "teacher-trajectory-bootstrap")
+    #expect(template.curriculum.trainingStages.contains { $0.stageID == "hindsight-goal-relabeling" })
+    #expect(template.curriculum.trainingStages.contains { $0.stageID == "dynamics-domain-randomization" && $0.kind == .stress })
+    #expect(template.curriculum.trainingStages.contains { $0.stageID == "dynamic-simulation-regression" && $0.kind == .regression })
 }
 
 @Test func nonRunnableTemplatesDoNotRequestModelBundles() throws {

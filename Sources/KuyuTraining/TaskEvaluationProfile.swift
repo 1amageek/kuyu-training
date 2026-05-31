@@ -107,6 +107,26 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
                 baseEvaluationSuiteIDs: [6],
                 policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil)
             )
+        case RoArmM1JointTargetTrainingGoal.canonical.task:
+            return TaskEvaluationProfile(
+                profileID: RoArmM1JointTargetTrainingGoal.canonical.taskProfileID,
+                task: RoArmM1JointTargetTrainingGoal.canonical.task,
+                observationChannelCount: 25,
+                baseEvaluationSuiteIDs: [9],
+                regressionSuiteIDs: [9],
+                baselineMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil),
+                policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 2, smoothingTimeConstant: 0.08),
+                minimumRewardAverage: 0,
+                minimumTaskPassRate: 1,
+                minimumHoldTimeRatio: nil,
+                maximumAltitudeErrorRatio: nil,
+                failOnTruncation: true,
+                requiresReferenceTaskPass: true,
+                requiresParentCheckpointEvaluation: false,
+                referenceEvaluatorID: "RoArmM1JointTargetTrackingEvaluator",
+                qualityEvaluatorID: "RoArmM1JointTargetQualityEvaluator",
+                liftThresholdSource: nil
+            )
         default:
             throw TaskEvaluationProfileError.unsupportedTask(task)
         }
@@ -120,6 +140,8 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
             return try profile(task: "lift")
         case "singleLift", "singleLift-v1":
             return try profile(task: "singleLift")
+        case "roArmM1JointTargetTracking", "roArmM1JointTargetTracking-v1":
+            return try profile(task: RoArmM1JointTargetTrainingGoal.canonical.task)
         default:
             throw TaskEvaluationProfileError.unsupportedTask(profileID)
         }

@@ -157,7 +157,8 @@ public struct AttitudeRecoveryRelabeler: Sendable {
             maxSteps: episode.maxSteps,
             durationSeconds: episode.durationSeconds,
             cancelled: episode.cancelled,
-            steps: relabeledSteps
+            steps: relabeledSteps,
+            taskReference: episode.taskReference
         )
     }
 

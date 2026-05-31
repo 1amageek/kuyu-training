@@ -98,8 +98,40 @@ public struct TrainingProvenanceManifest: Sendable, Codable, Equatable {
     }
 }
 
+public struct TrainingAltitudeHoldReferenceMetadata: Sendable, Codable, Equatable {
+    public let targetPosition: Axis3
+    public let tolerance: Double
+    public let referenceVerticalVelocity: Double
+
+    public init(
+        targetPosition: Axis3,
+        tolerance: Double,
+        referenceVerticalVelocity: Double
+    ) {
+        self.targetPosition = targetPosition
+        self.tolerance = tolerance
+        self.referenceVerticalVelocity = referenceVerticalVelocity
+    }
+
+    public init(reference: ReferenceQuadrotorAltitudeHoldReference) {
+        self.init(
+            targetPosition: reference.targetPosition,
+            tolerance: reference.tolerance,
+            referenceVerticalVelocity: reference.referenceVerticalVelocity
+        )
+    }
+}
+
+public struct TrainingTaskReferenceMetadata: Sendable, Codable, Equatable {
+    public let altitudeHold: TrainingAltitudeHoldReferenceMetadata?
+
+    public init(altitudeHold: TrainingAltitudeHoldReferenceMetadata? = nil) {
+        self.altitudeHold = altitudeHold
+    }
+}
+
 public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 3
+    public static let currentSchemaVersion = 4
 
     public let schemaVersion: Int
     public let scenarioId: String
@@ -119,6 +151,7 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
     public let truncated: Bool?
     public let terminalReason: String?
     public let rewardDescriptor: RewardDescriptor?
+    public let taskReference: TrainingTaskReferenceMetadata?
     public let observation: TrainingObservationMetadata?
     public let provenance: TrainingProvenanceManifest?
 
@@ -141,6 +174,7 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         truncated: Bool? = nil,
         terminalReason: String? = nil,
         rewardDescriptor: RewardDescriptor? = nil,
+        taskReference: TrainingTaskReferenceMetadata? = nil,
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
     ) {
@@ -162,6 +196,7 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         self.truncated = truncated
         self.terminalReason = terminalReason
         self.rewardDescriptor = rewardDescriptor
+        self.taskReference = taskReference
         self.observation = observation
         self.provenance = provenance
     }
@@ -185,6 +220,7 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         case truncated
         case terminalReason
         case rewardDescriptor
+        case taskReference
         case observation
         case provenance
     }
@@ -209,6 +245,7 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated)
         terminalReason = try container.decodeIfPresent(String.self, forKey: .terminalReason)
         rewardDescriptor = try container.decodeIfPresent(RewardDescriptor.self, forKey: .rewardDescriptor)
+        taskReference = try container.decodeIfPresent(TrainingTaskReferenceMetadata.self, forKey: .taskReference)
         observation = try container.decodeIfPresent(TrainingObservationMetadata.self, forKey: .observation)
         provenance = try container.decodeIfPresent(TrainingProvenanceManifest.self, forKey: .provenance)
     }
@@ -299,7 +336,7 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
 }
 
 public struct TrainingDataset: Sendable, Equatable {
-    public static let supportedSchemaVersions: Set<Int> = [TrainingDatasetMetadata.currentSchemaVersion]
+    public static let supportedSchemaVersions: Set<Int> = [3, TrainingDatasetMetadata.currentSchemaVersion]
 
     public enum LoadError: Error, Equatable {
         case unsupportedSchemaVersion(found: Int, supported: [Int])

@@ -90,6 +90,7 @@ public struct RolloutEpisode: Sendable, Codable, Equatable {
     public let durationSeconds: Double
     public let cancelled: Bool
     public let steps: [EnvironmentStep]
+    public let taskReference: TrainingTaskReferenceMetadata?
 
     public init(
         episodeId: String,
@@ -111,7 +112,8 @@ public struct RolloutEpisode: Sendable, Codable, Equatable {
         maxSteps: Int? = nil,
         durationSeconds: Double,
         cancelled: Bool = false,
-        steps: [EnvironmentStep]
+        steps: [EnvironmentStep],
+        taskReference: TrainingTaskReferenceMetadata? = nil
     ) {
         self.episodeId = episodeId
         self.scenarioId = scenarioId
@@ -133,6 +135,7 @@ public struct RolloutEpisode: Sendable, Codable, Equatable {
         self.durationSeconds = durationSeconds
         self.cancelled = cancelled
         self.steps = steps
+        self.taskReference = taskReference
     }
 }
 
@@ -330,6 +333,11 @@ public struct RolloutRunner: Sendable {
             seed: info.seed.rawValue,
             workerIndex: workerIndex
         )
+        let taskReference = try TrainingTaskReferenceMetadata(
+            altitudeHold: TrainingAltitudeHoldReferenceMetadata(
+                reference: ReferenceQuadrotorAltitudeHoldReference(definition: definition)
+            )
+        )
         return RolloutEpisode(
             episodeId: episodeId,
             scenarioId: info.scenarioId.rawValue,
@@ -350,7 +358,8 @@ public struct RolloutRunner: Sendable {
             maxSteps: limits.maxStepsPerEpisode,
             durationSeconds: final.log.time.time,
             cancelled: false,
-            steps: steps
+            steps: steps,
+            taskReference: taskReference
         )
     }
 
@@ -416,7 +425,8 @@ public struct ParallelRolloutCollector: Sendable {
                             maxSteps: episode.maxSteps,
                             durationSeconds: episode.durationSeconds,
                             cancelled: episode.cancelled,
-                            steps: episode.steps
+                            steps: episode.steps,
+                            taskReference: episode.taskReference
                         )
                     }
                 }

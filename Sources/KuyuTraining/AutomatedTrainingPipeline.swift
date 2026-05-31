@@ -8,7 +8,7 @@ import KuyuScenarios
 /// ExtendedScenarioEvaluator, ParallelDataCollector, and CurriculumController
 /// into a single iterative pipeline.
 public struct AutomatedTrainingPipeline<Runner: PlantScenarioRunner>
-where Runner.Scenario == ReferenceQuadrotorScenarioDefinition {
+where Runner.Scenario == ReferenceQuadrotorScenarioDefinition, Runner.Cut: Sendable {
 
     public struct IterationResult: Sendable {
         public let level: Int

@@ -27,9 +27,13 @@ public struct TrainingDatasetWriter {
         to directory: URL,
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil,
-        policyId: String? = nil
+        policyId: String? = nil,
+        terminalFacts: ScenarioTerminalFacts? = nil,
+        rewardDescriptor: RewardDescriptor? = nil,
+        taskReference: TrainingTaskReferenceMetadata? = nil
     ) throws -> URL {
-        let records = buildRecords(from: log)
+        let resolvedTerminalFacts = terminalFacts ?? ScenarioTerminalFacts(log: log)
+        let records = buildRecords(from: log, terminalFacts: resolvedTerminalFacts)
         let metadata = TrainingDatasetMetadata(
             scenarioId: log.scenarioId.rawValue,
             seed: log.seed.rawValue,
@@ -39,9 +43,14 @@ public struct TrainingDatasetWriter {
             channelCount: maxChannelCount(records),
             driveCount: maxDriveCount(records),
             recordCount: records.count,
-            failureReason: log.failureReason?.rawValue,
-            failureTime: log.failureTime,
+            failureReason: resolvedTerminalFacts.failureReason?.rawValue,
+            failureTime: resolvedTerminalFacts.failureTime,
             policyId: policyId,
+            done: resolvedTerminalFacts.done,
+            truncated: resolvedTerminalFacts.truncated,
+            terminalReason: resolvedTerminalFacts.terminalReason,
+            rewardDescriptor: rewardDescriptor,
+            taskReference: taskReference,
             observation: observation,
             provenance: provenance
         )
@@ -95,6 +104,7 @@ public struct TrainingDatasetWriter {
             truncated: episode.truncated,
             terminalReason: episode.terminalReason,
             rewardDescriptor: episode.rewardDescriptor,
+            taskReference: episode.taskReference,
             observation: observation,
             provenance: provenance
         )
@@ -139,9 +149,13 @@ public struct TrainingDatasetWriter {
         return directory
     }
 
-    private func buildRecords(from log: SimulationLog) -> [TrainingDatasetRecord] {
+    private func buildRecords(
+        from log: SimulationLog,
+        terminalFacts: ScenarioTerminalFacts
+    ) -> [TrainingDatasetRecord] {
         let filledDriveIntents = filledDriveIntents(for: log.events)
         return log.events.enumerated().map { index, event in
+            let isLast = index == log.events.index(before: log.events.endIndex)
             let sensors = event.sensorSamples.map { sample in
                 TrainingSensorSample(
                     channelIndex: sample.channelIndex,
@@ -161,7 +175,10 @@ public struct TrainingDatasetWriter {
                 time: event.time.time,
                 sensors: sensors,
                 driveIntents: filledDriveIntents[index],
-                reflexCorrections: reflex
+                reflexCorrections: reflex,
+                continueValue: isLast ? 0.0 : 1.0,
+                done: isLast ? terminalFacts.done : false,
+                truncated: isLast ? terminalFacts.truncated : false
             )
         }
     }

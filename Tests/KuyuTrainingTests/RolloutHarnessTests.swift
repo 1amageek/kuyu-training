@@ -137,12 +137,19 @@ import KuyuScenarios
     #expect(meta.policyId == "teacherBaseline")
     #expect(meta.rewardSum == episode.rewardSum)
     #expect(meta.rewardDescriptor == episode.rewardDescriptor)
+    #expect(meta.taskReference == episode.taskReference)
+    #expect(meta.done == episode.done)
+    #expect(meta.truncated == episode.truncated)
+    #expect(meta.terminalReason == episode.terminalReason)
     #expect(record.reward != nil)
     #expect(record.episodeId == episode.episodeId)
     #expect(record.physicsState?.count == 13)
     #expect(record.actualState?.count == 13)
     #expect(record.actionValues?.isEmpty == false)
     #expect(record.continueValue == 0.0 || record.continueValue == 1.0)
+    #expect(records.last?.done == episode.done)
+    #expect(records.last?.truncated == episode.truncated)
+    #expect(records.last?.continueValue == 0.0)
     #expect(records.dropFirst().contains { record in
         guard let physics = record.physicsState, let actual = record.actualState else { return false }
         return zip(physics, actual).contains { abs($0 - $1) > 1e-12 }

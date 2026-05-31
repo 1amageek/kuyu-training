@@ -12,6 +12,9 @@ public struct TrainingDatasetExporter {
         to directory: URL,
         observationByScenarioKey: [ScenarioKey: TrainingObservationMetadata] = [:],
         provenanceByScenarioKey: [ScenarioKey: TrainingProvenanceManifest] = [:],
+        terminalFactsByScenarioKey: [ScenarioKey: ScenarioTerminalFacts] = [:],
+        rewardDescriptorByScenarioKey: [ScenarioKey: RewardDescriptor] = [:],
+        taskReferenceByScenarioKey: [ScenarioKey: TrainingTaskReferenceMetadata] = [:],
         policyId: String? = nil
     ) throws -> [ScenarioKey: URL] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -25,7 +28,10 @@ public struct TrainingDatasetExporter {
                 to: subdir,
                 observation: observationByScenarioKey[entry.key],
                 provenance: provenanceByScenarioKey[entry.key],
-                policyId: policyId
+                policyId: policyId,
+                terminalFacts: terminalFactsByScenarioKey[entry.key],
+                rewardDescriptor: rewardDescriptorByScenarioKey[entry.key],
+                taskReference: taskReferenceByScenarioKey[entry.key]
             )
             outputs[entry.key] = url
         }

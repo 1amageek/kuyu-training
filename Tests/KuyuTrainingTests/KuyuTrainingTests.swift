@@ -396,6 +396,130 @@ struct TrainingDatasetWriterTests {
         }
     }
 
+    @Test func simulationLogWriterMarksScenarioTerminalBoundary() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let log = try makeSimulationLog(steps: 3)
+        let rewardDescriptor = RewardDescriptor(
+            id: "writer-reward",
+            version: "1",
+            configHash: "writer-reward-hash"
+        )
+        let taskReference = TrainingTaskReferenceMetadata(
+            altitudeHold: TrainingAltitudeHoldReferenceMetadata(
+                targetPosition: Axis3(x: 0, y: 0, z: 2),
+                tolerance: 0.2,
+                referenceVerticalVelocity: 0.5
+            )
+        )
+        let writer = TrainingDatasetWriter()
+        _ = try writer.write(
+            log: log,
+            to: dir,
+            rewardDescriptor: rewardDescriptor,
+            taskReference: taskReference
+        )
+
+        let dataset = try TrainingDataset.load(from: dir)
+        #expect(dataset.metadata.done == false)
+        #expect(dataset.metadata.truncated == true)
+        #expect(dataset.metadata.terminalReason == ScenarioTerminalFacts.completedTerminalReason)
+        #expect(dataset.metadata.rewardDescriptor == rewardDescriptor)
+        #expect(dataset.metadata.taskReference == taskReference)
+        #expect(dataset.records.dropLast().allSatisfy { $0.continueValue == 1.0 })
+        #expect(dataset.records.dropLast().allSatisfy { $0.done == false && $0.truncated == false })
+        #expect(dataset.records.last?.continueValue == 0.0)
+        #expect(dataset.records.last?.done == false)
+        #expect(dataset.records.last?.truncated == true)
+    }
+
+    @Test func kuyAtt1ExporterUsesEvaluationTerminalFacts() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let log = try makeSimulationLog(steps: 2)
+        let key = ScenarioKey(scenarioId: log.scenarioId, seed: log.seed)
+        let evaluation = ScenarioEvaluation(
+            scenarioId: log.scenarioId,
+            seed: log.seed,
+            passed: false,
+            maxOmega: 1.0,
+            maxTiltDegrees: 10.0,
+            sustainedViolationSeconds: 0.2,
+            recoveryTimeSeconds: nil,
+            overshootDegrees: nil,
+            hfStabilityScore: nil,
+            failures: [FailureReason.sustainedFall.rawValue],
+            failureReason: .sustainedFall,
+            failureTime: 0.01
+        )
+        let output = KuyAtt1RunOutput(
+            result: SuiteRunResult(evaluations: [evaluation], replayChecks: [], passed: false),
+            summary: ValidationSummary(
+                suitePassed: false,
+                evaluations: [evaluation],
+                replayChecks: [],
+                manifest: [],
+                aggregate: EvaluationAggregate.from(evaluations: [evaluation])
+            ),
+            logs: [ScenarioLogEntry(key: key, log: log)]
+        )
+
+        let outputs = try TrainingDatasetExporter().write(output: output, to: dir)
+        let datasetURL = try #require(outputs[key])
+        let dataset = try TrainingDataset.load(from: datasetURL)
+        #expect(dataset.metadata.done == true)
+        #expect(dataset.metadata.truncated == false)
+        #expect(dataset.metadata.terminalReason == FailureReason.sustainedFall.rawValue)
+        #expect(dataset.metadata.failureReason == FailureReason.sustainedFall.rawValue)
+        #expect(dataset.metadata.failureTime == 0.01)
+        #expect(dataset.records.last?.continueValue == 0.0)
+        #expect(dataset.records.last?.done == true)
+        #expect(dataset.records.last?.truncated == false)
+    }
+
+    @Test func legacyV3DatasetRemainsLoadableAfterTaskReferenceSchemaUpgrade() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let metadata = TrainingDatasetMetadata(
+            scenarioId: "legacy-v3",
+            seed: 3,
+            timeStep: 0.005,
+            determinismTier: "tier0",
+            configHash: "legacy-v3-hash",
+            channelCount: 0,
+            driveCount: 4,
+            recordCount: 1,
+            schemaVersion: 3,
+            episodeId: "legacy-v3",
+            policyId: "manasMLX"
+        )
+        let record = TrainingDatasetRecord(
+            time: 0,
+            sensors: [],
+            driveIntents: [
+                TrainingDriveIntent(driveIndex: 0, value: 0.5),
+                TrainingDriveIntent(driveIndex: 1, value: 0),
+                TrainingDriveIntent(driveIndex: 2, value: 0),
+                TrainingDriveIntent(driveIndex: 3, value: 0),
+            ],
+            reflexCorrections: [],
+            reward: 0,
+            done: false,
+            truncated: true
+        )
+        let dataset = TrainingDataset(metadata: metadata, records: [record])
+
+        try TrainingDatasetWriter().write(dataset: dataset, to: dir)
+
+        let loaded = try TrainingDataset.load(from: dir)
+        #expect(loaded.metadata.schemaVersion == 3)
+        #expect(loaded.metadata.taskReference == nil)
+        #expect(loaded.records.count == 1)
+    }
+
     @Test func channelAndDriveCountsReflectMaxIndices() throws {
         let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }

@@ -12,6 +12,48 @@ belongs in `kuyu-mlx`.
 The package responsibility skeleton is defined in
 `../KUYU_PACKAGE_ARCHITECTURE.md`.
 
+## Responsibility Boundary
+
+`kuyu-training` consumes scenario semantics; it does not redefine them. Scenario
+targets, safety/failure/truncation reasons, reward functions, and task-quality
+meaning come from `kuyu-scenarios`. This package owns the training contract that
+preserves those semantics in datasets, plans, orchestration, and validation
+artifacts.
+
+```mermaid
+flowchart LR
+  Scenarios["kuyu-scenarios\nscenario semantics"]
+  Training["kuyu-training\ntraining contracts"]
+  Backend["kuyu-mlx\nconcrete MLX backend"]
+  Artifacts["datasets / gates / summaries"]
+
+  Scenarios --> Training
+  Training --> Backend
+  Training --> Artifacts
+  Backend --> Artifacts
+```
+
+| Owned here | Consumed from `kuyu-scenarios` | Not owned here |
+|---|---|---|
+| Dataset schemas and writers | Scenario definitions and deterministic seeds | Reward formula authority |
+| Rollout episode contracts and health gates | `RewardDescriptor` provenance | Target altitude/pose semantics |
+| Training plans, templates, and runtime orchestration | Failure, truncation, and terminal reasons | PPO/MLX kernels |
+| Artifact validation and acceptance contracts | Task-quality evaluation results | Manas checkpoint internals |
+
+### Reliability Contract
+
+- Persist scenario-owned terminal facts separately: `done`, `truncated`, and
+  `terminalReason` must not be collapsed at the dataset metadata boundary.
+- Persist `RewardDescriptor` with rollout datasets so cached training data can
+  be invalidated when scenario reward semantics change.
+- `continueValue` is a world-model sequence boundary signal, not a value
+  bootstrap policy. RL loaders must use `done`, `truncated`, and
+  `terminalReason` to decide whether bootstrapping is allowed.
+- Training code must consume typed scenario APIs for task references and gates;
+  fallback target heights or reward constants must not be duplicated here.
+- Backend-specific acceleration and checkpoint serialization belong in
+  `kuyu-mlx`; this package should expose typed contracts and validation only.
+
 ### Protocol Skeleton
 
 The training contract is intentionally split into generic internal protocols

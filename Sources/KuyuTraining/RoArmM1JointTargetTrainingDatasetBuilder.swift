@@ -11,8 +11,8 @@ public struct RoArmM1JointTargetTrainingDatasetBuilderConfig: Sendable, Equatabl
 
     public init(
         goal: RoArmM1JointTargetTrainingGoal = .canonical,
-        policyID: String = "roarm-m1-joint-target-teacher-v1",
-        episodeID: String = "roarm-m1-joint-target-smoke",
+        policyID: String = "roarm-m1-arm-gripper-teacher-v1",
+        episodeID: String = "roarm-m1-arm-gripper-smoke",
         jointRanges: [ClosedRange<Double>] = RoArmM1ServoCommandEncoder.manufacturerJointLimits,
         includeHindsightRelabels: Bool = true
     ) {
@@ -128,7 +128,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             truncated: false,
             terminalReason: report.passed ? "goal-achieved" : "goal-not-achieved",
             rewardDescriptor: RewardDescriptor(
-                id: "roarm-m1-joint-target-dense-reward",
+                id: "roarm-m1-arm-gripper-dense-reward",
                 version: "v1",
                 configHash: config.goal.goalID
             ),
@@ -148,7 +148,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
         try TrainingDatasetWriter().write(dataset: result.dataset, to: datasetDirectory)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let reportURL = directory.appendingPathComponent("roarm-m1-joint-target-training-report.json")
+        let reportURL = directory.appendingPathComponent("roarm-m1-arm-gripper-training-report.json")
         try encoder.encode(result.report).write(to: reportURL, options: [.atomic])
         return directory
     }
@@ -238,7 +238,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
         sourceRecordCount: Int,
         hindsightRecordCount: Int
     ) -> RoArmM1JointTargetTrainingReport {
-        let perJoint = aggregate.perJointMetrics()
+        let perDrive = aggregate.perDriveMetrics()
         let status: RoArmM1JointTargetTrainingStatus
         if aggregate.nonFiniteRecordCount == 0,
            aggregate.jointLimitViolationCount == 0,
@@ -267,7 +267,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             movementMagnitudeRadians: aggregate.movementMagnitude,
             jointLimitViolationCount: aggregate.jointLimitViolationCount,
             nonFiniteRecordCount: aggregate.nonFiniteRecordCount,
-            perJoint: perJoint,
+            perDrive: perDrive,
             activeEfficiencyTechniqueIDs: [
                 "roarm-m1-teacher-trajectory-bootstrap-v1",
                 "roarm-m1-hindsight-goal-relabeling-v1",
@@ -344,7 +344,7 @@ private enum RoArmM1JointTargetObservation {
                     provenance: TrainingObservationProvenanceMetadata(
                         producer: "ArticulatedRigidBodySimulator",
                         transport: "in-process",
-                        notes: "Camera-free RoArm M1 joint target tracking observation."
+                        notes: "Camera-free RoArm M1 arm and gripper target tracking observation."
                     )
                 )
             ]
@@ -361,12 +361,7 @@ private enum RoArmM1JointTargetObservation {
     }
 
     private static var channelNames: [String] {
-        let joints = (1...RoArmM1ServoCommandEncoder.jointCount).map { "joint\($0)" }
-        return joints.map { "\($0)Position" }
-            + joints.map { "\($0)Velocity" }
-            + joints.map { "\($0)TargetError" }
-            + joints.map { "\($0)LowerLimitMargin" }
-            + joints.map { "\($0)UpperLimitMargin" }
+        RoArmM1ArmGripperSemantics.observationChannelNames
     }
 }
 
@@ -426,15 +421,15 @@ private struct MetricsAccumulator: Sendable, Equatable {
         }
     }
 
-    func perJointMetrics() -> [RoArmM1JointTargetPerJointMetrics] {
+    func perDriveMetrics() -> [RoArmM1ArmGripperDriveMetrics] {
         errorSums.indices.map { index in
             let denominator = max(sampleCount / max(errorSums.count, 1), 1)
-            return RoArmM1JointTargetPerJointMetrics(
-                jointID: "joint_\(index + 1)",
+            return RoArmM1ArmGripperDriveMetrics(
+                driveID: RoArmM1ArmGripperSemantics.driveIDs[index],
                 meanAbsoluteErrorRadians: errorSums[index] / Double(denominator),
                 maximumAbsoluteErrorRadians: maximumErrors[index],
                 maximumAbsoluteVelocityRadiansPerSecond: maximumVelocities[index],
-                jointLimitViolationCount: limitViolations[index]
+                limitViolationCount: limitViolations[index]
             )
         }
     }

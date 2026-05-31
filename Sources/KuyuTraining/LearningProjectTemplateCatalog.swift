@@ -18,7 +18,7 @@ public struct LearningProjectTemplateCatalog: Sendable {
         .singlePropLiftRecovery,
         .groundRobotPointNavigation,
         .leggedRobotLocomotion,
-        .roArmM1JointTargetTracking,
+        .roArmM1ArmGripperTargetTracking,
         .manipulatorPickAndPlace,
         .automotiveLaneKeeping
     ]
@@ -570,13 +570,13 @@ public extension LearningProjectTemplate {
         tags: ["manipulator", "pick", "place", "grasp", "blueprint", "hybrid"]
     )
 
-    static let roArmM1JointTargetTracking: LearningProjectTemplate = {
+    static let roArmM1ArmGripperTargetTracking: LearningProjectTemplate = {
         let goal = RoArmM1JointTargetTrainingGoal.canonical
         let profile = knownTaskEvaluationProfile(task: goal.task)
         return LearningProjectTemplate(
-            templateID: "roarm-m1-joint-target-tracking-v1",
-            displayName: "RoArm M1 Joint Target Tracking",
-            summary: "Camera-free RoArm M1 training design for proprioceptive joint target tracking, safe range compliance, HER-style goal relabeling, and dynamic-simulation smoke validation.",
+            templateID: "roarm-m1-arm-gripper-target-tracking-v1",
+            displayName: "RoArm M1 Arm and Gripper Target Tracking",
+            summary: "Camera-free RoArm M1 training design for proprioceptive arm and gripper target tracking, safe range compliance, HER-style goal relabeling, and dynamic-simulation smoke validation.",
             domain: .manipulator,
             task: goal.task,
             taskProfileID: profile.profileID,
@@ -688,11 +688,11 @@ public extension LearningProjectTemplate {
                     .artifactLineageComplete
                 ]
             ),
-            observation: .roArmM1JointTargetTracking(),
-            action: .roArmM1JointTargets(),
-            policy: .roArmM1JointTargetTracking(),
+            observation: .roArmM1ArmGripperTargetTracking(),
+            action: .roArmM1ArmGripperTargets(),
+            policy: .roArmM1ArmGripperTargetTracking(),
             compute: localCompute(workerCount: 1, candidateEvaluationConcurrency: 100),
-            tags: ["manipulator", "roarm-m1", "joint-target", "proprioception", "her", "teacher-bootstrap", "design"]
+            tags: ["manipulator", "roarm-m1", "arm-gripper", "gripper", "proprioception", "her", "teacher-bootstrap", "design"]
         )
     }()
 

@@ -123,8 +123,8 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
                 failOnTruncation: true,
                 requiresReferenceTaskPass: true,
                 requiresParentCheckpointEvaluation: false,
-                referenceEvaluatorID: "RoArmM1JointTargetTrackingEvaluator",
-                qualityEvaluatorID: "RoArmM1JointTargetQualityEvaluator",
+                referenceEvaluatorID: "RoArmM1ArmGripperTargetTrackingEvaluator",
+                qualityEvaluatorID: "RoArmM1ArmGripperQualityEvaluator",
                 liftThresholdSource: nil
             )
         default:
@@ -140,7 +140,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
             return try profile(task: "lift")
         case "singleLift", "singleLift-v1":
             return try profile(task: "singleLift")
-        case "roArmM1JointTargetTracking", "roArmM1JointTargetTracking-v1":
+        case "roArmM1ArmGripperTargetTracking", "roArmM1ArmGripperTargetTracking-v1":
             return try profile(task: RoArmM1JointTargetTrainingGoal.canonical.task)
         default:
             throw TaskEvaluationProfileError.unsupportedTask(profileID)

@@ -5,25 +5,25 @@ public enum RoArmM1JointTargetTrainingStatus: String, Codable, Sendable, Equatab
     case notAchieved
 }
 
-public struct RoArmM1JointTargetPerJointMetrics: Codable, Sendable, Equatable {
-    public let jointID: String
+public struct RoArmM1ArmGripperDriveMetrics: Codable, Sendable, Equatable {
+    public let driveID: String
     public let meanAbsoluteErrorRadians: Double
     public let maximumAbsoluteErrorRadians: Double
     public let maximumAbsoluteVelocityRadiansPerSecond: Double
-    public let jointLimitViolationCount: Int
+    public let limitViolationCount: Int
 
     public init(
-        jointID: String,
+        driveID: String,
         meanAbsoluteErrorRadians: Double,
         maximumAbsoluteErrorRadians: Double,
         maximumAbsoluteVelocityRadiansPerSecond: Double,
-        jointLimitViolationCount: Int
+        limitViolationCount: Int
     ) {
-        self.jointID = jointID
+        self.driveID = driveID
         self.meanAbsoluteErrorRadians = meanAbsoluteErrorRadians
         self.maximumAbsoluteErrorRadians = maximumAbsoluteErrorRadians
         self.maximumAbsoluteVelocityRadiansPerSecond = maximumAbsoluteVelocityRadiansPerSecond
-        self.jointLimitViolationCount = jointLimitViolationCount
+        self.limitViolationCount = limitViolationCount
     }
 }
 
@@ -44,7 +44,7 @@ public struct RoArmM1JointTargetTrainingReport: Codable, Sendable, Equatable {
     public let movementMagnitudeRadians: Double
     public let jointLimitViolationCount: Int
     public let nonFiniteRecordCount: Int
-    public let perJoint: [RoArmM1JointTargetPerJointMetrics]
+    public let perDrive: [RoArmM1ArmGripperDriveMetrics]
     public let activeEfficiencyTechniqueIDs: [String]
 
     public var passed: Bool {
@@ -68,7 +68,7 @@ public struct RoArmM1JointTargetTrainingReport: Codable, Sendable, Equatable {
         movementMagnitudeRadians: Double,
         jointLimitViolationCount: Int,
         nonFiniteRecordCount: Int,
-        perJoint: [RoArmM1JointTargetPerJointMetrics],
+        perDrive: [RoArmM1ArmGripperDriveMetrics],
         activeEfficiencyTechniqueIDs: [String]
     ) {
         self.goal = goal
@@ -87,7 +87,7 @@ public struct RoArmM1JointTargetTrainingReport: Codable, Sendable, Equatable {
         self.movementMagnitudeRadians = movementMagnitudeRadians
         self.jointLimitViolationCount = jointLimitViolationCount
         self.nonFiniteRecordCount = nonFiniteRecordCount
-        self.perJoint = perJoint
+        self.perDrive = perDrive
         self.activeEfficiencyTechniqueIDs = activeEfficiencyTechniqueIDs
     }
 }

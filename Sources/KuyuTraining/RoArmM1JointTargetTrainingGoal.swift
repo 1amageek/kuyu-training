@@ -3,13 +3,13 @@ import KuyuPhysics
 
 public struct RoArmM1JointTargetTrainingGoal: Codable, Sendable, Equatable {
     public static let canonical = RoArmM1JointTargetTrainingGoal(
-        goalID: "roarm-m1-joint-target-tracking-v1",
+        goalID: "roarm-m1-arm-gripper-target-tracking-v1",
         robotManifestID: "roarm-m1-v0",
-        task: "roArmM1JointTargetTracking",
-        taskProfileID: "roArmM1JointTargetTracking-v1",
+        task: "roArmM1ArmGripperTargetTracking",
+        taskProfileID: "roArmM1ArmGripperTargetTracking-v1",
         requiredReadinessLevel: .dynamicSimulation,
-        observationSchemaID: "roarm-m1-joint-target-observation-25ch-v1",
-        actionSchemaID: "roarm-m1-joint-target-action-v1",
+        observationSchemaID: "roarm-m1-arm-gripper-observation-25ch-v1",
+        actionSchemaID: "roarm-m1-arm-gripper-action-v1",
         targetMeanAbsoluteErrorRadians: 1.2,
         targetMaximumAbsoluteErrorRadians: 3.2,
         minimumMovementRadians: 0.02,
@@ -22,14 +22,14 @@ public struct RoArmM1JointTargetTrainingGoal: Codable, Sendable, Equatable {
                 sourceTitle: "Learning Contact-Rich Manipulation Skills with Guided Policy Search",
                 sourceURL: "https://arxiv.org/abs/1501.05611",
                 implementationGoal: "Use deterministic Kuyu teacher trajectories as supervised labels before any policy-gradient refinement.",
-                artifactRequirement: "records.jsonl contains driveIntents and actionValues for each joint-target step."
+                artifactRequirement: "records.jsonl contains driveIntents and actionValues for each arm and gripper target step."
             ),
             LearningProjectEfficiencyTechnique(
                 techniqueID: "roarm-m1-hindsight-goal-relabeling-v1",
                 kind: .hindsightGoalRelabeling,
                 sourceTitle: "Hindsight Experience Replay",
                 sourceURL: "https://arxiv.org/abs/1707.01495",
-                implementationGoal: "Duplicate achieved joint poses as successful hold-goals so sparse target failures still produce useful goal-conditioned records.",
+                implementationGoal: "Duplicate achieved arm poses and gripper clamp states as successful hold-goals so sparse target failures still produce useful goal-conditioned records.",
                 artifactRequirement: "training report records the hindsightRecordCount and each relabeled record has zero target-error channels."
             ),
             LearningProjectEfficiencyTechnique(

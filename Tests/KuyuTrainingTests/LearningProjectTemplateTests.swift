@@ -22,7 +22,7 @@ import Testing
     #expect(levelsByID["ground-robot-point-navigation-v1"] == .designOnly)
     #expect(levelsByID["aerial-drone-hover-stabilization-v1"] == .designOnly)
     #expect(levelsByID["legged-robot-locomotion-v1"] == .designOnly)
-    #expect(levelsByID["roarm-m1-joint-target-tracking-v1"] == .designOnly)
+    #expect(levelsByID["roarm-m1-arm-gripper-target-tracking-v1"] == .designOnly)
     #expect(levelsByID["manipulator-pick-and-place-v1"] == .designOnly)
     #expect(levelsByID["automotive-lane-keeping-v1"] == .designOnly)
 }
@@ -122,8 +122,8 @@ import Testing
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "single-prop-regression" && $0.kind == .regression })
 }
 
-@Test func roArmM1TemplateDefinesCameraFreeJointTargetTrainingDesign() throws {
-    let template = LearningProjectTemplate.roArmM1JointTargetTracking
+@Test func roArmM1TemplateDefinesCameraFreeArmGripperTrainingDesign() throws {
+    let template = LearningProjectTemplate.roArmM1ArmGripperTargetTracking
 
     try LearningProjectTemplateValidator(requiresKnownTaskProfile: true).validate(template)
 
@@ -131,9 +131,10 @@ import Testing
     #expect(!template.isRunnableStarter)
     #expect(template.modelBundlePolicy.sourceCheckpointPolicy == .none)
     #expect(template.robotManifest.robotManifestID == "roarm-m1-v0")
-    #expect(template.task == "roArmM1JointTargetTracking")
-    #expect(template.taskProfileID == "roArmM1JointTargetTracking-v1")
+    #expect(template.task == "roArmM1ArmGripperTargetTracking")
+    #expect(template.taskProfileID == "roArmM1ArmGripperTargetTracking-v1")
     #expect(template.observation.channelCount == 25)
+    #expect(template.observation.channels.map(\.name).contains("gripperClampPosition"))
     #expect(template.action.driveCount == 5)
     #expect(template.action.actuatorCount == 5)
     #expect(template.policy.actionEncoding == .jointTargets)

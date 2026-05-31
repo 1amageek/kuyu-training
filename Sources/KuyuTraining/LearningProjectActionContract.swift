@@ -37,7 +37,7 @@ public struct LearningProjectActionContract: Codable, Sendable, Equatable {
         )
     }
 
-    public static func roArmM1JointTargets() -> LearningProjectActionContract {
+    public static func roArmM1ArmGripperTargets() -> LearningProjectActionContract {
         LearningProjectActionContract(
             schemaID: RoArmM1JointTargetTrainingGoal.canonical.actionSchemaID,
             kind: .continuous,

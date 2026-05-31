@@ -138,13 +138,8 @@ public struct LearningProjectObservationContract: Codable, Sendable, Equatable {
         )
     }
 
-    public static func roArmM1JointTargetTracking() -> LearningProjectObservationContract {
-        let jointNames = (1...5).map { "joint\($0)" }
-        let channelNames = jointNames.map { "\($0)Position" }
-            + jointNames.map { "\($0)Velocity" }
-            + jointNames.map { "\($0)TargetError" }
-            + jointNames.map { "\($0)LowerLimitMargin" }
-            + jointNames.map { "\($0)UpperLimitMargin" }
+    public static func roArmM1ArmGripperTargetTracking() -> LearningProjectObservationContract {
+        let channelNames = RoArmM1ArmGripperSemantics.observationChannelNames
         return LearningProjectObservationContract(
             schemaID: RoArmM1JointTargetTrainingGoal.canonical.observationSchemaID,
             channelCount: channelNames.count,
@@ -153,7 +148,7 @@ public struct LearningProjectObservationContract: Codable, Sendable, Equatable {
                 return LearningProjectObservationChannel(
                     index: index,
                     name: name,
-                    unit: isTargetError ? "rad" : unit(forRoArmM1JointTargetChannel: name),
+                    unit: isTargetError ? "rad" : unit(forRoArmM1ArmGripperChannel: name),
                     isStateChannel: true,
                     isStressable: !isTargetError
                 )
@@ -161,7 +156,7 @@ public struct LearningProjectObservationContract: Codable, Sendable, Equatable {
         )
     }
 
-    private static func unit(forRoArmM1JointTargetChannel name: String) -> String? {
+    private static func unit(forRoArmM1ArmGripperChannel name: String) -> String? {
         if name.hasSuffix("Position") || name.hasSuffix("LowerLimitMargin") || name.hasSuffix("UpperLimitMargin") {
             return "rad"
         }

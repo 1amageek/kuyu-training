@@ -342,7 +342,7 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
         )
     }
 
-    public static func roArmM1JointTargetTracking() -> LearningProjectPolicyContract {
+    public static func roArmM1ArmGripperTargetTracking() -> LearningProjectPolicyContract {
         LearningProjectPolicyContract(
             architecture: .feedForward,
             actionEncoding: .jointTargets,
@@ -361,7 +361,7 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
             ),
             behaviorCloning: LearningProjectBehaviorCloningContract(
                 isEnabled: true,
-                loss: "mean-squared-joint-target",
+                loss: "mean-squared-arm-gripper-target",
                 initialCoefficient: 1,
                 finalCoefficient: 0.2
             ),

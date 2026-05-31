@@ -4,7 +4,7 @@ import KuyuPhysics
 import KuyuTraining
 import Testing
 
-@Test func roArmM1JointTargetBuilderCreatesRewardAwareHindsightDataset() throws {
+@Test func roArmM1ArmGripperBuilderCreatesRewardAwareHindsightDataset() throws {
     let log = try makeRoArmM1JointTargetLog()
     let result = try RoArmM1JointTargetTrainingDatasetBuilder().build(from: log)
 
@@ -16,28 +16,30 @@ import Testing
     #expect(result.dataset.metadata.channelCount == 25)
     #expect(result.dataset.metadata.driveCount == 5)
     #expect(result.dataset.metadata.rewardSum == result.report.rewardSum)
+    #expect(result.dataset.metadata.observation?.modalities?.first?.channels?.contains("gripperClampTargetError") == true)
     #expect(result.dataset.records.count == 4)
     #expect(result.dataset.records.allSatisfy { $0.sensors.count == 25 })
     #expect(result.dataset.records.allSatisfy { $0.actionValues?.count == 5 })
+    #expect(result.report.perDrive.map(\.driveID) == RoArmM1ArmGripperSemantics.driveIDs)
     let hindsight = result.dataset.records[1]
     let targetErrorChannels = hindsight.sensors.filter { (10...14).contains(Int($0.channelIndex)) }
     #expect(targetErrorChannels.count == 5)
     #expect(targetErrorChannels.allSatisfy { abs($0.value) < 1e-12 })
 }
 
-@Test func roArmM1JointTargetBuilderWritesLoadableArtifacts() throws {
+@Test func roArmM1ArmGripperBuilderWritesLoadableArtifacts() throws {
     let log = try makeRoArmM1JointTargetLog()
     let result = try RoArmM1JointTargetTrainingDatasetBuilder().build(from: log)
     let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("kuyu-roarm-m1-joint-target-training-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("kuyu-roarm-m1-arm-gripper-training-\(UUID().uuidString)", isDirectory: true)
 
     let output = try RoArmM1JointTargetTrainingDatasetBuilder().write(result: result, to: directory)
     let dataset = try TrainingDataset.load(from: output.appendingPathComponent("dataset", isDirectory: true))
 
-    #expect(dataset.metadata.scenarioId == "ROARM-M1-JOINT-TARGET-TEST")
+    #expect(dataset.metadata.scenarioId == "ROARM-M1-ARM-GRIPPER-TEST")
     #expect(dataset.records.count == 4)
     #expect(FileManager.default.fileExists(
-        atPath: output.appendingPathComponent("roarm-m1-joint-target-training-report.json").path
+        atPath: output.appendingPathComponent("roarm-m1-arm-gripper-training-report.json").path
     ))
 }
 
@@ -47,11 +49,11 @@ private func makeRoArmM1JointTargetLog() throws -> SimulationLog {
         makeRoArmM1JointTargetStep(stepIndex: 1, positions: [0.03, 0.02, -0.02, 0.03, -0.03], targets: [0.04, 0.03, -0.03, 0.04, -0.04]),
     ]
     return try SimulationLog(
-        scenarioId: ScenarioID("ROARM-M1-JOINT-TARGET-TEST"),
+        scenarioId: ScenarioID("ROARM-M1-ARM-GRIPPER-TEST"),
         seed: ScenarioSeed(11),
         timeStep: TimeStep(delta: 0.02),
         determinism: DeterminismConfig(tier: .tier0, tier1Tolerance: nil),
-        configHash: "roarm-m1-joint-target-test",
+        configHash: "roarm-m1-arm-gripper-test",
         events: events
     )
 }

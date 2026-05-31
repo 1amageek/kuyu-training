@@ -106,13 +106,13 @@ and validators are added.
 | `aerial-drone-waypoint-navigation-v1` | aerialDrone | `waypointNavigation` | `designOnly` |
 | `ground-robot-point-navigation-v1` | groundRobot | `pointNavigation` | `designOnly` |
 | `legged-robot-locomotion-v1` | groundRobot | `leggedLocomotion` | `designOnly` |
-| `roarm-m1-joint-target-tracking-v1` | manipulator | `roArmM1JointTargetTracking` | `designOnly` |
+| `roarm-m1-arm-gripper-target-tracking-v1` | manipulator | `roArmM1ArmGripperTargetTracking` | `designOnly` |
 | `manipulator-pick-and-place-v1` | manipulator | `pickAndPlace` | `designOnly` |
 | `automotive-lane-keeping-v1` | automotive | `laneKeeping` | `designOnly` |
 
-RoArm M1 has an executable Kuyu dataset-generation command, but it is not a
-`runnableStarter` project template until a five-drive Manas joint-target policy
-backend can produce a compatible source model bundle.
+RoArm M1 has an executable Kuyu dataset-generation and Manas smoke-bundle
+command, but it is not a `runnableStarter` project template until full campaign
+orchestration can own the five-drive arm/gripper policy lifecycle.
 
 ### Dataset Types
 

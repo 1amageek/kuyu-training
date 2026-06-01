@@ -2,7 +2,7 @@ import Foundation
 import KuyuScenarios
 
 public enum TrainingProbeStage: String, Sendable, Codable, Equatable {
-    case teacherBaseline
+    case teacherActiveAltitudeHold
     case initialPolicy
     case trainingIteration
     case trainedPolicy
@@ -605,11 +605,11 @@ public struct TrainingProbeOrchestrator {
         let teacher: TrainingProbeRunSummary
         do {
             let output = try await scenarioExecutor.runProbeSuite(
-                stage: .teacherBaseline,
+                stage: .teacherActiveAltitudeHold,
                 request: teacherRequest,
                 checkpointURL: nil
             )
-            teacher = TrainingProbeRunSummary(stage: .teacherBaseline, output: output)
+            teacher = TrainingProbeRunSummary(stage: .teacherActiveAltitudeHold, output: output)
         } catch {
             return await failedResult(
                 manifest: manifest,
@@ -770,7 +770,7 @@ public struct TrainingProbeOrchestrator {
         artifactDirectory: URL,
         reason: String
     ) async -> TrainingProbeResult {
-        let fallbackTeacher = teacher ?? TrainingProbeRunSummary.empty(stage: .teacherBaseline)
+        let fallbackTeacher = teacher ?? TrainingProbeRunSummary.empty(stage: .teacherActiveAltitudeHold)
         let fallbackInitial = initial ?? TrainingProbeRunSummary.empty(stage: .initialPolicy)
         let comparison = TrainingProbeComparison(
             probeID: manifest.probeID,

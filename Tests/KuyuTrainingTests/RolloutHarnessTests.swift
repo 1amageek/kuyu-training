@@ -134,7 +134,7 @@ import KuyuScenarios
 
     #expect(meta.episodeId == episode.episodeId)
     #expect(meta.schemaVersion == TrainingDatasetMetadata.currentSchemaVersion)
-    #expect(meta.policyId == "teacherBaseline")
+    #expect(meta.policyId == "teacherActiveAltitudeHold")
     #expect(meta.rewardSum == episode.rewardSum)
     #expect(meta.rewardDescriptor == episode.rewardDescriptor)
     #expect(meta.taskReference == episode.taskReference)

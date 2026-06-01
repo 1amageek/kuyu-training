@@ -5,14 +5,18 @@ import KuyuScenarios
 
 public struct AttitudeRecoveryRelabelConfig: Sendable, Equatable {
     public let includeOnlyFailedScenarios: Bool
-    public let baselineMode: KuyAtt1BaselineMode
+    public let teacherConfig: PrivilegedAltitudeHoldTeacherConfig
 
     public init(
         includeOnlyFailedScenarios: Bool = true,
-        baselineMode: KuyAtt1BaselineMode = .teacher
+        teacherConfig: PrivilegedAltitudeHoldTeacherConfig = .activeAltitudeHold
     ) {
         self.includeOnlyFailedScenarios = includeOnlyFailedScenarios
-        self.baselineMode = baselineMode
+        self.teacherConfig = teacherConfig
+    }
+
+    public var policyId: String {
+        "teacherActiveAltitudeHoldRelabel"
     }
 }
 
@@ -41,10 +45,16 @@ public struct AttitudeRecoveryRelabelReport: Sendable, Codable, Equatable {
 public struct AttitudeRecoveryRelabelResult: Sendable, Equatable {
     public let entries: [ScenarioLogEntry]
     public let report: AttitudeRecoveryRelabelReport
+    public let policyId: String
 
-    public init(entries: [ScenarioLogEntry], report: AttitudeRecoveryRelabelReport) {
+    public init(
+        entries: [ScenarioLogEntry],
+        report: AttitudeRecoveryRelabelReport,
+        policyId: String = "teacherActiveAltitudeHoldRelabel"
+    ) {
         self.entries = entries
         self.report = report
+        self.policyId = policyId
     }
 }
 
@@ -101,7 +111,8 @@ public struct AttitudeRecoveryRelabeler: Sendable {
                 relabeledStepCount: relabeledStepCount,
                 relabeledCutStepCount: relabeledCutStepCount,
                 skippedEntryCount: skippedEntryCount
-            )
+            ),
+            policyId: config.policyId
         )
     }
 
@@ -120,11 +131,11 @@ public struct AttitudeRecoveryRelabeler: Sendable {
         gains: ImuRateDampingCutGains,
         config: AttitudeRecoveryRelabelConfig = AttitudeRecoveryRelabelConfig()
     ) throws -> RolloutEpisode {
-        var teacher = try makeTeacherCut(
+        var teacher = try makeTeacher(
             definition: definition,
             parameters: parameters,
             gains: gains,
-            mode: config.baselineMode
+            config: config
         )
         let relabeledSteps = try episode.steps.map { step -> EnvironmentStep in
             let relabeledLog = try relabel(event: step.log, teacher: &teacher)
@@ -142,7 +153,7 @@ public struct AttitudeRecoveryRelabeler: Sendable {
             scenarioId: episode.scenarioId,
             seed: episode.seed,
             workerIndex: episode.workerIndex,
-            policyId: "teacherRelabel",
+            policyId: config.policyId,
             configHash: episode.configHash,
             robotManifestID: episode.robotManifestID,
             rewardDescriptor: episode.rewardDescriptor,
@@ -181,7 +192,7 @@ public struct AttitudeRecoveryRelabeler: Sendable {
         return try TrainingDatasetExporter().write(
             entries: result.entries,
             to: directory,
-            policyId: "teacherRelabel"
+            policyId: result.policyId
         )
     }
 
@@ -192,11 +203,11 @@ public struct AttitudeRecoveryRelabeler: Sendable {
         gains: ImuRateDampingCutGains,
         config: AttitudeRecoveryRelabelConfig
     ) throws -> ScenarioLogEntry {
-        var teacher = try makeTeacherCut(
+        var teacher = try makeTeacher(
             definition: definition,
             parameters: parameters,
             gains: gains,
-            mode: config.baselineMode
+            config: config
         )
         let relabeledEvents = try entry.log.events.map { event in
             try relabel(event: event, teacher: &teacher)
@@ -217,18 +228,12 @@ public struct AttitudeRecoveryRelabeler: Sendable {
 
     private func relabel(
         event: WorldStepLog,
-        teacher: inout ImuRateDampingDriveCut
+        teacher: inout KuyAtt1PrivilegedAltitudeHoldTeacher
     ) throws -> WorldStepLog {
         let shouldRelabel = event.events.contains(.cutUpdate) || !event.driveIntents.isEmpty
         let drives: [DriveIntent]
         if shouldRelabel {
-            let output = try teacher.update(samples: event.sensorSamples, time: event.time)
-            switch output {
-            case .driveIntents(let intents, _):
-                drives = intents
-            case .actuatorValues:
-                drives = []
-            }
+            drives = try teacher.driveIntents(for: event)
         } else {
             drives = []
         }
@@ -247,34 +252,17 @@ public struct AttitudeRecoveryRelabeler: Sendable {
         )
     }
 
-    private func makeTeacherCut(
+    private func makeTeacher(
         definition: ReferenceQuadrotorScenarioDefinition,
         parameters: ReferenceQuadrotorParameters,
         gains: ImuRateDampingCutGains,
-        mode: KuyAtt1BaselineMode
-    ) throws -> ImuRateDampingDriveCut {
-        let hoverThrust = parameters.mass * parameters.gravity / 4.0 * gains.hoverThrustScale
-        let initialAttitude: EulerAngles
-        let tiltCorrectionTimeConstant: Double?
-        switch mode {
-        case .teacher:
-            initialAttitude = definition.initialAttitude
-            tiltCorrectionTimeConstant = nil
-        case .sensor:
-            initialAttitude = EulerAngles(roll: 0, pitch: 0, yaw: 0)
-            tiltCorrectionTimeConstant = 0.4
-        }
-        return try ImuRateDampingDriveCut(
-            hoverThrust: hoverThrust,
-            kp: gains.kp,
-            kd: gains.kd,
-            yawDamping: gains.yawDamping,
-            armLength: parameters.armLength,
-            yawCoefficient: parameters.yawCoefficient,
-            maxThrust: parameters.maxThrust,
-            initialRoll: initialAttitude.roll,
-            initialPitch: initialAttitude.pitch,
-            tiltCorrectionTimeConstant: tiltCorrectionTimeConstant
+        config: AttitudeRecoveryRelabelConfig
+    ) throws -> KuyAtt1PrivilegedAltitudeHoldTeacher {
+        try KuyAtt1PrivilegedAltitudeHoldTeacher(
+            definition: definition,
+            parameters: parameters,
+            gains: gains,
+            config: config.teacherConfig
         )
     }
 }

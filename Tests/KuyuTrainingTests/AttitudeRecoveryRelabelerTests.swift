@@ -19,10 +19,45 @@ import Testing
     #expect(result.report.sourceEntryCount == 1)
     #expect(result.report.relabeledEntryCount == 1)
     #expect(result.report.relabeledCutStepCount == 1)
+    #expect(result.policyId == "teacherActiveAltitudeHoldRelabel")
     let drives = try #require(result.entries.first?.log.events.first?.driveIntents)
     #expect(drives.count == 4)
     #expect(drives[0].activation > 0.0)
     #expect(drives[0].activation != 0.01)
+}
+
+@Test func attitudeRecoveryRelabelerUsesActiveAltitudeTeacherByDefault() throws {
+    let definition = try makeRecoveryDefinition()
+    let lowEntry = try makeRecoveryEntry(
+        definition: definition,
+        failed: true,
+        altitude: definition.initialPosition.z - 0.25,
+        verticalVelocity: 0
+    )
+    let referenceEntry = try makeRecoveryEntry(
+        definition: definition,
+        failed: true,
+        altitude: definition.initialPosition.z,
+        verticalVelocity: 0
+    )
+    let gains = try ImuRateDampingCutGains(kp: 6.0, kd: 4.0, yawDamping: 0.4, hoverThrustScale: 1.0)
+    let low = try AttitudeRecoveryRelabeler().relabel(
+        entries: [lowEntry],
+        definitions: [definition],
+        parameters: .baseline,
+        gains: gains
+    )
+    let reference = try AttitudeRecoveryRelabeler().relabel(
+        entries: [referenceEntry],
+        definitions: [definition],
+        parameters: .baseline,
+        gains: gains
+    )
+
+    let lowThrottle = try #require(low.entries.first?.log.events.first?.driveIntents.first?.activation)
+    let referenceThrottle = try #require(reference.entries.first?.log.events.first?.driveIntents.first?.activation)
+    #expect(low.policyId == "teacherActiveAltitudeHoldRelabel")
+    #expect(lowThrottle > referenceThrottle)
 }
 
 @Test func attitudeRecoveryRelabelerSkipsSuccessfulScenariosByDefault() throws {
@@ -69,11 +104,14 @@ private func makeRecoveryDefinition() throws -> ReferenceQuadrotorScenarioDefini
 
 private func makeRecoveryEntry(
     definition: ReferenceQuadrotorScenarioDefinition,
-    failed: Bool
+    failed: Bool,
+    altitude: Double? = nil,
+    verticalVelocity: Double = 0
 ) throws -> ScenarioLogEntry {
+    let z = altitude ?? definition.initialPosition.z
     let events = try [
-        makeRecoveryStep(stepIndex: 0, includeCutUpdate: true),
-        makeRecoveryStep(stepIndex: 1, includeCutUpdate: false),
+        makeRecoveryStep(stepIndex: 0, includeCutUpdate: true, altitude: z, verticalVelocity: verticalVelocity),
+        makeRecoveryStep(stepIndex: 1, includeCutUpdate: false, altitude: z, verticalVelocity: verticalVelocity),
     ]
     let log = try SimulationLog(
         scenarioId: definition.config.id,
@@ -91,7 +129,12 @@ private func makeRecoveryEntry(
     )
 }
 
-private func makeRecoveryStep(stepIndex: UInt64, includeCutUpdate: Bool) throws -> WorldStepLog {
+private func makeRecoveryStep(
+    stepIndex: UInt64,
+    includeCutUpdate: Bool,
+    altitude: Double = 2,
+    verticalVelocity: Double = 0
+) throws -> WorldStepLog {
     try WorldStepLog(
         time: WorldTime(stepIndex: stepIndex, time: Double(stepIndex) * 0.01),
         events: includeCutUpdate ? [.timeAdvance, .cutUpdate] : [.timeAdvance],
@@ -113,8 +156,8 @@ private func makeRecoveryStep(stepIndex: UInt64, includeCutUpdate: Bool) throws 
         plantState: PlantStateSnapshot(
             root: RigidBodySnapshot(
                 id: "root",
-                position: Axis3(x: 0, y: 0, z: 2),
-                velocity: Axis3(x: 0, y: 0, z: 0),
+                position: Axis3(x: 0, y: 0, z: altitude),
+                velocity: Axis3(x: 0, y: 0, z: verticalVelocity),
                 orientation: QuaternionSnapshot(w: 1, x: 0, y: 0, z: 0),
                 angularVelocity: Axis3(x: 0, y: 0, z: 0)
             )

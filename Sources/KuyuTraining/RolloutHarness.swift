@@ -29,18 +29,21 @@ public struct KuyAtt1BaselinePolicyFactory: ReferenceQuadrotorPolicyFactory {
     public let parameters: ReferenceQuadrotorParameters
     public let gains: ImuRateDampingCutGains
     public let mode: KuyAtt1BaselineMode
+    public let teacherConfig: PrivilegedAltitudeHoldTeacherConfig
 
     public init(
         parameters: ReferenceQuadrotorParameters = .baseline,
         gains: ImuRateDampingCutGains,
-        mode: KuyAtt1BaselineMode
+        mode: KuyAtt1BaselineMode,
+        teacherConfig: PrivilegedAltitudeHoldTeacherConfig = .activeAltitudeHold
     ) {
         self.parameters = parameters
         self.gains = gains
         self.mode = mode
+        self.teacherConfig = teacherConfig
         switch mode {
         case .teacher:
-            self.policyID = "teacherBaseline"
+            self.policyID = "teacherActiveAltitudeHold"
         case .sensor:
             self.policyID = "sensorBaseline"
         }
@@ -63,7 +66,8 @@ public struct KuyAtt1BaselinePolicyFactory: ReferenceQuadrotorPolicyFactory {
                 definition: definition,
                 parameters: parameters,
                 gains: gains,
-                mode: mode
+                mode: mode,
+                teacherConfig: teacherConfig
             )
         }
     }

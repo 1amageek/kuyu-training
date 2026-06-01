@@ -736,7 +736,7 @@ import Testing
     #expect(result.comparison.selectedCheckpointURL == candidate)
     #expect(result.training.checkpointDecision.state == .staged)
     #expect(result.probeCheckpointDecision.state == .accepted)
-    #expect(executor.stages == [.teacherBaseline, .initialPolicy, .trainingIteration, .trainedPolicy])
+    #expect(executor.stages == [.teacherActiveAltitudeHold, .initialPolicy, .trainingIteration, .trainedPolicy])
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("probe-manifest.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("comparison.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("probe-metrics.jsonl").path))
@@ -758,7 +758,7 @@ import Testing
         passed: true,
         log: try trainingContractMultiDriveSimulationLog()
     )
-    let summary = TrainingProbeRunSummary(stage: .teacherBaseline, output: output)
+    let summary = TrainingProbeRunSummary(stage: .teacherActiveAltitudeHold, output: output)
 
     #expect(trainingContractClose(summary.diagnostics.averageDriveActivationByIndex, [0.4, 0.6]))
     #expect(summary.diagnostics.maxDriveActivationByIndex == [0.6, 0.8])
@@ -1191,7 +1191,7 @@ private final class FakeTrainingProbeExecutor: TrainingProbeScenarioExecuting {
     ) async throws -> KuyAtt1RunOutput {
         stages.append(stage)
         switch stage {
-        case .teacherBaseline:
+        case .teacherActiveAltitudeHold:
             return try trainingContractRunOutput(passed: true)
         case .initialPolicy:
             return try trainingContractRunOutput(passed: false)

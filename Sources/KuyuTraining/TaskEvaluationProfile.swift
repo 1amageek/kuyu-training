@@ -160,7 +160,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
 
     public func motorNerveSettings(controllerRawValue: String) -> TaskMotorNerveSettings {
         switch controllerRawValue {
-        case "Baseline", "Teacher Baseline", "Sensor Baseline":
+        case "Teacher Active Altitude Hold", "Sensor Baseline":
             return baselineMotorNerveSettings
         default:
             return policyMotorNerveSettings

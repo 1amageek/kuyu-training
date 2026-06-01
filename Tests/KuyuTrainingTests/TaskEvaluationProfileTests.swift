@@ -16,7 +16,7 @@ import Testing
     #expect(profile.requiresParentCheckpointEvaluation)
     #expect(profile.liftThresholdSource == "scenario.liftEnvelope")
     #expect(profile.motorNerveSettings(controllerRawValue: "manasMLX").rateLimitPerSecond == 2)
-    #expect(profile.motorNerveSettings(controllerRawValue: "Teacher Baseline").rateLimitPerSecond == 100)
+    #expect(profile.motorNerveSettings(controllerRawValue: "Teacher Active Altitude Hold").rateLimitPerSecond == 100)
 }
 
 @Test func taskEvaluationProfileDefinesSingleLiftAsOneDriveLiftContract() throws {

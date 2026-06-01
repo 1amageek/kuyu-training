@@ -18,7 +18,7 @@ import KuyuPhysics
     #expect(!candidate.isAcceptable(relativeTo: baseline))
 }
 
-@Test func rolloutHealthCountsCurriculumHorizonAsTerminalHealthSignal() throws {
+@Test func rolloutHealthCountsHorizonLimitAsTerminalHealthSignal() throws {
     let health = RolloutHealth(episodes: [
         try makeRolloutHealthEpisode(
             rewardSum: 1.0,
@@ -31,9 +31,26 @@ import KuyuPhysics
 
     #expect(health.failureCount == 0)
     #expect(health.truncatedCount == 1)
-    #expect(health.curriculumHorizonCount == 1)
-    #expect(health.nonCurriculumTruncationCount == 0)
+    #expect(health.horizonLimitCount == 1)
+    #expect(health.nonHorizonTruncationCount == 0)
     #expect(health.failureRate == 0)
+}
+
+@Test func rolloutHealthCountsTimeLimitAsHorizonLimit() throws {
+    let health = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(
+            rewardSum: 1.0,
+            omega: 0.5,
+            tilt: 0.05,
+            altitude: 2.0,
+            terminalReason: RolloutTerminalReason.timeLimit
+        ),
+    ])
+
+    #expect(health.failureCount == 0)
+    #expect(health.truncatedCount == 1)
+    #expect(health.horizonLimitCount == 1)
+    #expect(health.nonHorizonTruncationCount == 0)
 }
 
 @Test func rolloutHealthAddsSummariesAndMergesWithoutEpisodes() {
@@ -68,8 +85,8 @@ import KuyuPhysics
     #expect(baseline.doneCount == 1)
     #expect(baseline.truncatedCount == 1)
     #expect(baseline.failureCount == 1)
-    #expect(baseline.curriculumHorizonCount == 1)
-    #expect(baseline.nonCurriculumTruncationCount == 0)
+    #expect(baseline.horizonLimitCount == 1)
+    #expect(baseline.nonHorizonTruncationCount == 0)
     #expect(baseline.rewardSum == 2.0)
     #expect(baseline.maxOmega == 1.2)
     #expect(baseline.maxTilt == 0.08)
@@ -77,7 +94,7 @@ import KuyuPhysics
     #expect(baseline.nonFiniteMetricCount == 4)
 }
 
-@Test func rolloutHealthRejectsNewCancellationAndNonCurriculumTruncation() throws {
+@Test func rolloutHealthRejectsNewCancellationAndNonHorizonTruncation() throws {
     let baseline = RolloutHealth(episodes: [
         try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 0.5, tilt: 0.05, altitude: 2.0),
     ])
@@ -98,7 +115,7 @@ import KuyuPhysics
     )
 
     #expect(reasons.contains(.cancellationCountRegressed))
-    #expect(reasons.contains(.nonCurriculumTruncationRegressed))
+    #expect(reasons.contains(.nonHorizonTruncationRegressed))
 }
 
 @Test func rolloutHealthRejectsNonFiniteMetrics() throws {

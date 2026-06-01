@@ -60,8 +60,8 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
         if candidate.cancelledCount > baseline.cancelledCount {
             reasons.append(.cancellationCountRegressed)
         }
-        if candidate.nonCurriculumTruncationCount > baseline.nonCurriculumTruncationCount {
-            reasons.append(.nonCurriculumTruncationRegressed)
+        if candidate.nonHorizonTruncationCount > baseline.nonHorizonTruncationCount {
+            reasons.append(.nonHorizonTruncationRegressed)
         }
 
         let omegaLimit = max(

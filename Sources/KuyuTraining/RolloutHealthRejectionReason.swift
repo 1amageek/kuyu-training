@@ -3,7 +3,7 @@ public enum RolloutHealthRejectionReason: String, Sendable, Codable, Equatable, 
     case nonFiniteMetric
     case failureCountRegressed
     case cancellationCountRegressed
-    case nonCurriculumTruncationRegressed
+    case nonHorizonTruncationRegressed
     case omegaRegressed
     case tiltRegressed
     case rewardAverageRegressed

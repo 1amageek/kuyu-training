@@ -7,7 +7,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
     public private(set) var truncatedCount: Int
     public private(set) var failureCount: Int
     public private(set) var cancelledCount: Int
-    public private(set) var curriculumHorizonCount: Int
+    public private(set) var horizonLimitCount: Int
     public private(set) var nonFiniteMetricCount: Int
     public private(set) var rewardSum: Double
     public private(set) var maxOmega: Double
@@ -20,7 +20,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         truncatedCount = 0
         failureCount = 0
         cancelledCount = 0
-        curriculumHorizonCount = 0
+        horizonLimitCount = 0
         nonFiniteMetricCount = 0
         rewardSum = 0
         maxOmega = 0
@@ -41,8 +41,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         rewardSum / Double(max(episodeCount, 1))
     }
 
-    public var nonCurriculumTruncationCount: Int {
-        max(0, truncatedCount - curriculumHorizonCount)
+    public var nonHorizonTruncationCount: Int {
+        max(0, truncatedCount - horizonLimitCount)
     }
 
     public var summary: String {
@@ -51,7 +51,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             "episodes=\(episodeCount)",
             "fail=\(failureCount)",
             "trunc=\(truncatedCount)",
-            "horizon=\(curriculumHorizonCount)",
+            "horizon=\(horizonLimitCount)",
             "cancel=\(cancelledCount)",
             "rewardAvg=\(String(format: "%.4f", rewardAverage))",
             "omega=\(String(format: "%.3f", maxOmega))",
@@ -73,7 +73,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         truncatedCount += other.truncatedCount
         failureCount += other.failureCount
         cancelledCount += other.cancelledCount
-        curriculumHorizonCount += other.curriculumHorizonCount
+        horizonLimitCount += other.horizonLimitCount
         nonFiniteMetricCount += other.nonFiniteMetricCount
         rewardSum += other.rewardSum
         maxOmega = max(maxOmega, other.maxOmega)
@@ -153,8 +153,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         if cancelled {
             cancelledCount += 1
         }
-        if terminalReason == RolloutTerminalReason.curriculumHorizon {
-            curriculumHorizonCount += 1
+        if RolloutTerminalReason.isHorizonLimit(terminalReason) {
+            horizonLimitCount += 1
         }
         if episodeRewardSum.isFinite {
             rewardSum += episodeRewardSum

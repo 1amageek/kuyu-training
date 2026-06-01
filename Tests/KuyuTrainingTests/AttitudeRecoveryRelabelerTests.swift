@@ -97,6 +97,54 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("recovery-relabel-report.json").path))
 }
 
+@Test func attitudeRecoveryRelabelerRelabelsRolloutEpisodePreservingTrainingSignal() throws {
+    let definition = try makeRecoveryDefinition()
+    let lowEpisode = try makeRecoveryEpisode(
+        definition: definition,
+        altitude: definition.initialPosition.z - 0.25,
+        verticalVelocity: -0.06
+    )
+    let referenceEpisode = try makeRecoveryEpisode(
+        definition: definition,
+        altitude: definition.initialPosition.z,
+        verticalVelocity: 0
+    )
+    let gains = try ImuRateDampingCutGains(kp: 6.0, kd: 4.0, yawDamping: 0.4, hoverThrustScale: 1.0)
+    let relabeler = AttitudeRecoveryRelabeler()
+
+    let low = try relabeler.relabelEpisode(
+        lowEpisode,
+        definition: definition,
+        parameters: .baseline,
+        gains: gains
+    )
+    let reference = try relabeler.relabelEpisode(
+        referenceEpisode,
+        definition: definition,
+        parameters: .baseline,
+        gains: gains
+    )
+
+    let lowThrottle = try #require(low.steps.first?.log.driveIntents.first?.activation)
+    let referenceThrottle = try #require(reference.steps.first?.log.driveIntents.first?.activation)
+    #expect(low.policyId == "teacherActiveAltitudeHoldRelabel")
+    #expect(lowThrottle > referenceThrottle)
+    #expect(low.rewardSum == lowEpisode.rewardSum)
+    #expect(low.steps.first?.reward == lowEpisode.steps.first?.reward)
+    #expect(low.steps.first?.observation == lowEpisode.steps.first?.observation)
+    #expect(low.terminalReason == lowEpisode.terminalReason)
+
+    let dataset = TrainingDatasetWriter().makeDataset(
+        episode: low,
+        timeStep: definition.config.timeStep.delta,
+        determinismTier: "tier0"
+    )
+    #expect(dataset.metadata.policyId == "teacherActiveAltitudeHoldRelabel")
+    #expect(dataset.records.first?.reward == lowEpisode.steps.first?.reward)
+    #expect(dataset.records.first?.actualState?.count == 13)
+    #expect(dataset.records.first?.driveIntents.count == 4)
+}
+
 private func makeRecoveryDefinition() throws -> ReferenceQuadrotorScenarioDefinition {
     let scenarios = try KuyAtt1Suite().scenarios()
     return try #require(scenarios.first)
@@ -126,6 +174,52 @@ private func makeRecoveryEntry(
     return ScenarioLogEntry(
         key: ScenarioKey(scenarioId: definition.config.id, seed: definition.config.seed),
         log: log
+    )
+}
+
+private func makeRecoveryEpisode(
+    definition: ReferenceQuadrotorScenarioDefinition,
+    altitude: Double,
+    verticalVelocity: Double
+) throws -> RolloutEpisode {
+    let logs = try [
+        makeRecoveryStep(stepIndex: 0, includeCutUpdate: true, altitude: altitude, verticalVelocity: verticalVelocity),
+        makeRecoveryStep(stepIndex: 1, includeCutUpdate: false, altitude: altitude, verticalVelocity: verticalVelocity),
+    ]
+    let steps = try logs.enumerated().map { index, log in
+        try EnvironmentStep(
+            observation: EnvironmentObservation(log: log),
+            reward: index == 0 ? 0.5 : -1.0,
+            done: index == logs.count - 1,
+            truncated: false,
+            info: EpisodeInfo(
+                scenarioId: definition.config.id,
+                seed: definition.config.seed,
+                configHash: "recovery-episode-test",
+                stepCount: index + 1,
+                rewardSum: -0.5,
+                terminalReason: "sustained-fall"
+            ),
+            log: log
+        )
+    }
+    return RolloutEpisode(
+        episodeId: "recovery-episode-test",
+        scenarioId: definition.config.id.rawValue,
+        seed: definition.config.seed.rawValue,
+        workerIndex: 0,
+        policyId: "manasMLX-policy",
+        configHash: "recovery-episode-test",
+        robotManifestID: nil,
+        rewardSum: -0.5,
+        done: true,
+        truncated: false,
+        terminalReason: "sustained-fall",
+        failureReason: "sustained-fall",
+        failureTime: logs.last?.time.time,
+        stepCount: steps.count,
+        durationSeconds: logs.last?.time.time ?? 0,
+        steps: steps
     )
 }
 

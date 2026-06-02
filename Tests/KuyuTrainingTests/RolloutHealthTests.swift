@@ -244,6 +244,33 @@ import KuyuPhysics
     #expect(reasons == [.stabilityMetricRegressed])
 }
 
+@Test func rolloutStabilityRegressionEnvelopeDetectsProfileDefinedImprovement() throws {
+    var baseline = RolloutHealth()
+    baseline.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.7, aggregation: .maximum)
+    baseline.recordStabilityMetric(id: "root.clearance", value: 0.2, aggregation: .minimum)
+    var candidate = RolloutHealth()
+    candidate.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
+    candidate.recordStabilityMetric(id: "root.clearance", value: 0.3, aggregation: .minimum)
+    let envelope = try RolloutStabilityRegressionEnvelope(checks: [
+        try RolloutStabilityRegressionCheck(
+            metricID: "joint.maximumVelocity",
+            direction: .upperBound,
+            absoluteTolerance: 0.1,
+            relativeTolerance: 0.25,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+        try RolloutStabilityRegressionCheck(
+            metricID: "root.clearance",
+            direction: .lowerBound,
+            absoluteTolerance: 0.05,
+            relativeTolerance: 0.0,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+    ])
+
+    #expect(envelope.hasDirectionalImprovement(candidate: candidate, relativeTo: baseline))
+}
+
 @Test func rolloutStabilityRegressionEnvelopeRejectsMissingConfiguredMetric() throws {
     var baseline = RolloutHealth()
     baseline.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.2, aggregation: .maximum)

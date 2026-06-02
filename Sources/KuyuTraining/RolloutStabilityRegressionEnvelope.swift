@@ -48,4 +48,13 @@ public struct RolloutStabilityRegressionEnvelope: Sendable, Equatable {
     ) -> [RolloutHealthRejectionReason] {
         checks.compactMap { $0.rejectionReason(candidate: candidate, relativeTo: baseline) }
     }
+
+    public func hasDirectionalImprovement(
+        candidate: RolloutHealth,
+        relativeTo baseline: RolloutHealth
+    ) -> Bool {
+        checks.contains {
+            $0.isDirectionallyImproved(candidate: candidate, relativeTo: baseline)
+        }
+    }
 }

@@ -68,4 +68,21 @@ public struct RolloutStabilityRegressionCheck: Sendable, Equatable {
             return candidateValue < limit ? rejectionReason : nil
         }
     }
+
+    public func isDirectionallyImproved(
+        candidate: RolloutHealth,
+        relativeTo baseline: RolloutHealth
+    ) -> Bool {
+        guard let baselineValue = baseline.stabilityMetricValue(metricID),
+              let candidateValue = candidate.stabilityMetricValue(metricID) else {
+            return false
+        }
+
+        switch direction {
+        case .upperBound:
+            return candidateValue < baselineValue
+        case .lowerBound:
+            return candidateValue > baselineValue
+        }
+    }
 }

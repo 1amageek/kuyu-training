@@ -137,31 +137,22 @@ public struct LearningProjectDomainRandomizationContract: Codable, Sendable, Equ
     }
 }
 
-public struct LearningProjectSafetyFilterContract: Codable, Sendable, Equatable {
+public struct LearningProjectActionSafetyContract: Codable, Sendable, Equatable {
     public let isEnabled: Bool
-    public let minimumThrust: Double
-    public let maximumThrust: Double
-    public let maximumBodyRate: Double
-    public let maximumYawRate: Double
-    public let maximumTilt: Double
-    public let lowPassAlpha: Double
+    public let lowerBounds: [Double]
+    public let upperBounds: [Double]
+    public let smoothingAlpha: Double
 
     public init(
         isEnabled: Bool,
-        minimumThrust: Double,
-        maximumThrust: Double,
-        maximumBodyRate: Double,
-        maximumYawRate: Double,
-        maximumTilt: Double,
-        lowPassAlpha: Double
+        lowerBounds: [Double],
+        upperBounds: [Double],
+        smoothingAlpha: Double
     ) {
         self.isEnabled = isEnabled
-        self.minimumThrust = minimumThrust
-        self.maximumThrust = maximumThrust
-        self.maximumBodyRate = maximumBodyRate
-        self.maximumYawRate = maximumYawRate
-        self.maximumTilt = maximumTilt
-        self.lowPassAlpha = lowPassAlpha
+        self.lowerBounds = lowerBounds
+        self.upperBounds = upperBounds
+        self.smoothingAlpha = smoothingAlpha
     }
 }
 
@@ -175,7 +166,7 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
     public let behaviorCloning: LearningProjectBehaviorCloningContract
     public let ppo: LearningProjectPPOContract
     public let domainRandomization: LearningProjectDomainRandomizationContract
-    public let safetyFilter: LearningProjectSafetyFilterContract
+    public let actionSafety: LearningProjectActionSafetyContract
 
     public init(
         architecture: LearningProjectPolicyArchitecture,
@@ -187,7 +178,7 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
         behaviorCloning: LearningProjectBehaviorCloningContract,
         ppo: LearningProjectPPOContract,
         domainRandomization: LearningProjectDomainRandomizationContract,
-        safetyFilter: LearningProjectSafetyFilterContract
+        actionSafety: LearningProjectActionSafetyContract
     ) {
         self.architecture = architecture
         self.actionEncoding = actionEncoding
@@ -198,92 +189,7 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
         self.behaviorCloning = behaviorCloning
         self.ppo = ppo
         self.domainRandomization = domainRandomization
-        self.safetyFilter = safetyFilter
-    }
-
-    /// Reference quadrotor temporal-CTBR contract.
-    ///
-    /// `observationDimension` / `historyLength` are parameterized so a starter can
-    /// be sized to the task's real channel contract instead of zero-padding a
-    /// narrow observation into a wide policy. The defaults (64 / 32) are the lift
-    /// privileged-observation profile; attitude is body-rate reactive and uses its
-    /// 6 IMU channels with `historyLength == 1` (matching
-    /// `TaskEvaluationProfile.attitude` and the regression evaluator, which derive
-    /// `historyLength = observationChannelCount >= 64 ? 32 : 1`).
-    public static func referenceQuadrotorTemporalCTBR(
-        observationDimension: Int = 64,
-        historyLength: Int = 32
-    ) -> LearningProjectPolicyContract {
-        LearningProjectPolicyContract(
-            architecture: .temporalGRUActorCritic,
-            actionEncoding: .ctbr,
-            actionDistribution: .gaussian,
-            actionDimension: 4,
-            temporalWindow: LearningProjectTemporalWindowContract(
-                historyLength: historyLength,
-                observationDimension: observationDimension,
-                previousActionDimension: 4,
-                targetTrajectoryPointCount: 4
-            ),
-            privilegedCritic: LearningProjectPrivilegedCriticContract(
-                isEnabled: true,
-                privilegedDimension: 13,
-                parameterNames: [
-                    "mass",
-                    "inertiaXX",
-                    "inertiaYY",
-                    "inertiaZZ",
-                    "thrustToWeight",
-                    "motorDelay",
-                    "dragX",
-                    "dragY",
-                    "dragZ",
-                    "batteryVoltageScale",
-                    "windX",
-                    "windY",
-                    "windZ"
-                ]
-            ),
-            behaviorCloning: LearningProjectBehaviorCloningContract(
-                isEnabled: true,
-                loss: "mean-squared-ctbr",
-                initialCoefficient: 1,
-                finalCoefficient: 0.05
-            ),
-            ppo: LearningProjectPPOContract(
-                isEnabled: true,
-                clipEpsilon: 0.2,
-                discount: 0.997,
-                gaeLambda: 0.95,
-                valueLossCoefficient: 0.5,
-                entropyCoefficient: 0.01,
-                actionSmoothnessCoefficient: 0.02,
-                epochCount: 4,
-                minibatchSize: 256
-            ),
-            domainRandomization: LearningProjectDomainRandomizationContract(
-                isEnabled: true,
-                parameters: [
-                    LearningProjectDomainRandomizationParameter(name: "mass", lowerMultiplier: 0.85, upperMultiplier: 1.15),
-                    LearningProjectDomainRandomizationParameter(name: "inertia", lowerMultiplier: 0.8, upperMultiplier: 1.2),
-                    LearningProjectDomainRandomizationParameter(name: "motorTimeConstant", lowerMultiplier: 0.5, upperMultiplier: 1.8),
-                    LearningProjectDomainRandomizationParameter(name: "thrustScale", lowerMultiplier: 0.75, upperMultiplier: 1.25),
-                    LearningProjectDomainRandomizationParameter(name: "drag", lowerMultiplier: 0.5, upperMultiplier: 1.5),
-                    LearningProjectDomainRandomizationParameter(name: "batteryScale", lowerMultiplier: 0.85, upperMultiplier: 1.05)
-                ],
-                maximumActionLatencySteps: 3,
-                maximumWindMetersPerSecond: 3
-            ),
-            safetyFilter: LearningProjectSafetyFilterContract(
-                isEnabled: true,
-                minimumThrust: 0,
-                maximumThrust: 1,
-                maximumBodyRate: 1,
-                maximumYawRate: 1,
-                maximumTilt: 0.95,
-                lowPassAlpha: 0.35
-            )
-        )
+        self.actionSafety = actionSafety
     }
 
     public static func simpleFeedForward(
@@ -330,73 +236,11 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
                 maximumActionLatencySteps: 0,
                 maximumWindMetersPerSecond: 0
             ),
-            safetyFilter: LearningProjectSafetyFilterContract(
+            actionSafety: LearningProjectActionSafetyContract(
                 isEnabled: false,
-                minimumThrust: 0,
-                maximumThrust: 1,
-                maximumBodyRate: 1,
-                maximumYawRate: 1,
-                maximumTilt: 1,
-                lowPassAlpha: 1
-            )
-        )
-    }
-
-    public static func roArmM1ArmGripperTargetTracking() -> LearningProjectPolicyContract {
-        LearningProjectPolicyContract(
-            architecture: .feedForward,
-            actionEncoding: .jointTargets,
-            actionDistribution: .deterministic,
-            actionDimension: 5,
-            temporalWindow: LearningProjectTemporalWindowContract(
-                historyLength: 1,
-                observationDimension: 25,
-                previousActionDimension: 5,
-                targetTrajectoryPointCount: 1
-            ),
-            privilegedCritic: LearningProjectPrivilegedCriticContract(
-                isEnabled: false,
-                privilegedDimension: 0,
-                parameterNames: []
-            ),
-            behaviorCloning: LearningProjectBehaviorCloningContract(
-                isEnabled: true,
-                loss: "mean-squared-arm-gripper-target",
-                initialCoefficient: 1,
-                finalCoefficient: 0.2
-            ),
-            ppo: LearningProjectPPOContract(
-                isEnabled: false,
-                clipEpsilon: 0.2,
-                discount: 0.99,
-                gaeLambda: 0.95,
-                valueLossCoefficient: 0.5,
-                entropyCoefficient: 0,
-                actionSmoothnessCoefficient: 0.01,
-                epochCount: 1,
-                minibatchSize: 1
-            ),
-            domainRandomization: LearningProjectDomainRandomizationContract(
-                isEnabled: true,
-                parameters: [
-                    LearningProjectDomainRandomizationParameter(name: "linkMass", lowerMultiplier: 0.85, upperMultiplier: 1.15),
-                    LearningProjectDomainRandomizationParameter(name: "linkInertia", lowerMultiplier: 0.8, upperMultiplier: 1.2),
-                    LearningProjectDomainRandomizationParameter(name: "servoTimeConstant", lowerMultiplier: 0.6, upperMultiplier: 1.6),
-                    LearningProjectDomainRandomizationParameter(name: "servoTorqueLimit", lowerMultiplier: 0.75, upperMultiplier: 1.1),
-                    LearningProjectDomainRandomizationParameter(name: "jointDamping", lowerMultiplier: 0.5, upperMultiplier: 1.5),
-                    LearningProjectDomainRandomizationParameter(name: "coulombFriction", lowerMultiplier: 0.5, upperMultiplier: 1.8)
-                ],
-                maximumActionLatencySteps: 2,
-                maximumWindMetersPerSecond: 0
-            ),
-            safetyFilter: LearningProjectSafetyFilterContract(
-                isEnabled: false,
-                minimumThrust: 0,
-                maximumThrust: 1,
-                maximumBodyRate: 1,
-                maximumYawRate: 1,
-                maximumTilt: 1,
-                lowPassAlpha: 1
+                lowerBounds: Array(repeating: -1, count: actionDimension),
+                upperBounds: Array(repeating: 1, count: actionDimension),
+                smoothingAlpha: 1
             )
         )
     }

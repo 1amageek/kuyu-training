@@ -51,8 +51,11 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
         if candidate.episodeCount != baseline.episodeCount {
             reasons.append(.episodeCountMismatch)
         }
-        if candidate.nonFiniteMetricCount > 0 {
-            reasons.append(.nonFiniteMetric)
+        for reason in candidate.trainingDecisionContractRejectionReasons {
+            appendUnique(reason, to: &reasons)
+        }
+        for reason in baseline.trainingDecisionContractRejectionReasons {
+            appendUnique(reason, to: &reasons)
         }
         if candidate.failureCount > baseline.failureCount {
             reasons.append(.failureCountRegressed)
@@ -93,6 +96,15 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
         }
 
         return reasons
+    }
+
+    private func appendUnique(
+        _ reason: RolloutHealthRejectionReason,
+        to reasons: inout [RolloutHealthRejectionReason]
+    ) {
+        if !reasons.contains(reason) {
+            reasons.append(reason)
+        }
     }
 
     private init(

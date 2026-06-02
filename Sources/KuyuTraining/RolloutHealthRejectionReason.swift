@@ -8,4 +8,7 @@ public enum RolloutHealthRejectionReason: String, Sendable, Codable, Equatable, 
     case tiltRegressed
     case rewardAverageRegressed
     case minimumAltitudeRegressed
+    case stabilityMetricRegressed
+    case stabilityMetricMissing
+    case stabilityMetricContractViolation
 }

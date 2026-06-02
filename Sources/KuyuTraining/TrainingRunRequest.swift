@@ -6,6 +6,7 @@ public struct TrainingRunRequest: Sendable, Equatable {
     public let artifactRoot: URL
     public let taskProfileID: String
     public let policyContract: LearningProjectPolicyContract
+    public let actionContract: LearningProjectActionContract
     public let sourceBundle: ModelBundleReference?
     public let seedCount: Int
     public let populationSize: Int
@@ -18,6 +19,7 @@ public struct TrainingRunRequest: Sendable, Equatable {
         artifactRoot: URL,
         taskProfileID: String,
         policyContract: LearningProjectPolicyContract,
+        actionContract: LearningProjectActionContract,
         sourceBundle: ModelBundleReference? = nil,
         seedCount: Int = 1,
         populationSize: Int = 1,
@@ -29,6 +31,7 @@ public struct TrainingRunRequest: Sendable, Equatable {
         self.artifactRoot = artifactRoot
         self.taskProfileID = taskProfileID
         self.policyContract = policyContract
+        self.actionContract = actionContract
         self.sourceBundle = sourceBundle
         self.seedCount = max(1, seedCount)
         self.populationSize = max(1, populationSize)

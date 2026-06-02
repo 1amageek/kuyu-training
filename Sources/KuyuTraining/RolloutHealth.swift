@@ -13,6 +13,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
     public private(set) var maxOmega: Double
     public private(set) var maxTilt: Double
     public private(set) var minAltitude: Double?
+    public private(set) var stabilityMetrics: [String: RolloutStabilityMetricSummary]
+    public private(set) var stabilityMetricContractViolations: [RolloutStabilityMetricContractViolation]
 
     public init() {
         episodeCount = 0
@@ -26,6 +28,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         maxOmega = 0
         maxTilt = 0
         minAltitude = nil
+        stabilityMetrics = [:]
+        stabilityMetricContractViolations = []
     }
 
     public init(episodes: [RolloutEpisode]) {
@@ -43,6 +47,21 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
 
     public var nonHorizonTruncationCount: Int {
         max(0, truncatedCount - horizonLimitCount)
+    }
+
+    public var trainingDecisionContractRejectionReasons: [RolloutHealthRejectionReason] {
+        var reasons: [RolloutHealthRejectionReason] = []
+        if nonFiniteMetricCount > 0 {
+            reasons.append(.nonFiniteMetric)
+        }
+        if !stabilityMetricContractViolations.isEmpty {
+            reasons.append(.stabilityMetricContractViolation)
+        }
+        return reasons
+    }
+
+    public var isValidForTrainingDecision: Bool {
+        trainingDecisionContractRejectionReasons.isEmpty
     }
 
     public var summary: String {
@@ -81,6 +100,14 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         if let otherMinAltitude = other.minAltitude {
             minAltitude = min(minAltitude ?? otherMinAltitude, otherMinAltitude)
         }
+        stabilityMetricContractViolations.append(contentsOf: other.stabilityMetricContractViolations)
+        for metric in other.stabilityMetrics.values {
+            recordStabilityMetric(
+                id: metric.id,
+                value: metric.value,
+                aggregation: metric.aggregation
+            )
+        }
     }
 
     public mutating func add(_ episode: RolloutEpisode) {
@@ -107,7 +134,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         maxOmega episodeMaxOmega: Double,
         maxTilt episodeMaxTilt: Double,
         minAltitude episodeMinAltitude: Double?,
-        nonFiniteMetricCount episodeNonFiniteMetricCount: Int = 0
+        nonFiniteMetricCount episodeNonFiniteMetricCount: Int = 0,
+        stabilityMetrics episodeStabilityMetrics: [RolloutStabilityMetricSummary] = []
     ) {
         addEpisodeHeader(
             done: done,
@@ -123,6 +151,13 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             maxTilt: episodeMaxTilt,
             minAltitude: episodeMinAltitude
         )
+        for metric in episodeStabilityMetrics {
+            recordStabilityMetric(
+                id: metric.id,
+                value: metric.value,
+                aggregation: metric.aggregation
+            )
+        }
     }
 
     public func isAcceptable(
@@ -130,6 +165,49 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         policy: RolloutHealthAcceptancePolicy = .conservative
     ) -> Bool {
         policy.accepts(candidate: self, relativeTo: baseline)
+    }
+
+    public func stabilityMetricValue(_ id: RolloutStabilityMetricID) -> Double? {
+        stabilityMetrics[id.rawValue]?.value
+    }
+
+    public mutating func recordStabilityMetric(
+        id: RolloutStabilityMetricID,
+        value: Double,
+        aggregation: RolloutStabilityMetricAggregation
+    ) {
+        guard value.isFinite else {
+            nonFiniteMetricCount += 1
+            return
+        }
+        guard !id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            stabilityMetricContractViolations.append(RolloutStabilityMetricContractViolation(
+                metricID: id,
+                reason: .emptyMetricID
+            ))
+            return
+        }
+        if let existing = stabilityMetrics[id.rawValue],
+           existing.aggregation != aggregation {
+            stabilityMetricContractViolations.append(RolloutStabilityMetricContractViolation(
+                metricID: id,
+                reason: .aggregationMismatch
+            ))
+            return
+        }
+        let existingValue = stabilityMetrics[id.rawValue]?.value ?? value
+        let mergedValue: Double
+        switch aggregation {
+        case .maximum:
+            mergedValue = max(existingValue, value)
+        case .minimum:
+            mergedValue = min(existingValue, value)
+        }
+        stabilityMetrics[id.rawValue] = RolloutStabilityMetricSummary(
+            id: id,
+            aggregation: aggregation,
+            value: mergedValue
+        )
     }
 
     private mutating func addEpisodeHeader(
@@ -170,12 +248,22 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
     ) {
         if episodeMaxOmega.isFinite {
             maxOmega = max(maxOmega, episodeMaxOmega)
+            recordStabilityMetric(
+                id: .maximumAngularRate,
+                value: episodeMaxOmega,
+                aggregation: .maximum
+            )
         } else {
             nonFiniteMetricCount += 1
         }
 
         if episodeMaxTilt.isFinite {
             maxTilt = max(maxTilt, episodeMaxTilt)
+            recordStabilityMetric(
+                id: .maximumAttitudeDeviation,
+                value: episodeMaxTilt,
+                aggregation: .maximum
+            )
         } else {
             nonFiniteMetricCount += 1
         }
@@ -183,6 +271,11 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         if let episodeMinAltitude {
             if episodeMinAltitude.isFinite {
                 minAltitude = min(minAltitude ?? episodeMinAltitude, episodeMinAltitude)
+                recordStabilityMetric(
+                    id: .minimumRootAltitude,
+                    value: episodeMinAltitude,
+                    aggregation: .minimum
+                )
             } else {
                 nonFiniteMetricCount += 1
             }
@@ -193,6 +286,11 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         let omega = step.log.safetyTrace.omegaMagnitude
         if omega.isFinite {
             maxOmega = max(maxOmega, omega)
+            recordStabilityMetric(
+                id: .maximumAngularRate,
+                value: omega,
+                aggregation: .maximum
+            )
         } else {
             nonFiniteMetricCount += 1
         }
@@ -200,6 +298,11 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         let tilt = step.log.safetyTrace.tiltRadians
         if tilt.isFinite {
             maxTilt = max(maxTilt, tilt)
+            recordStabilityMetric(
+                id: .maximumAttitudeDeviation,
+                value: tilt,
+                aggregation: .maximum
+            )
         } else {
             nonFiniteMetricCount += 1
         }
@@ -207,6 +310,11 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         let altitude = step.log.plantState.root.position.z
         if altitude.isFinite {
             minAltitude = min(minAltitude ?? altitude, altitude)
+            recordStabilityMetric(
+                id: .minimumRootAltitude,
+                value: altitude,
+                aggregation: .minimum
+            )
         } else {
             nonFiniteMetricCount += 1
         }

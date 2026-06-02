@@ -20,25 +20,21 @@ import Testing
     #expect(spec.requiresAccelerator == .metal)
 }
 
-@Test func vectorizedBatchSpecRejectsInvalidCTBRShape() {
-    do {
-        _ = try VectorizedTrainingBatchSpec(
-            populationSize: 100,
-            worldCount: 4,
-            rolloutHorizon: 256,
-            historyLength: 32,
-            observationDimension: 64,
-            actionDimension: 3,
-            actionEncoding: .ctbr,
-            executionMode: .isolatedWorlds,
-            requiresAccelerator: .metal
-        )
-        Issue.record("Expected invalid CTBR action dimension to throw.")
-    } catch VectorizedTrainingBatchSpecError.ctbrRequiresFourActions {
-        #expect(Bool(true))
-    } catch {
-        Issue.record("Unexpected error: \(error)")
-    }
+@Test func vectorizedBatchSpecDoesNotOwnActionEncodingSemantics() throws {
+    let spec = try VectorizedTrainingBatchSpec(
+        populationSize: 100,
+        worldCount: 4,
+        rolloutHorizon: 256,
+        historyLength: 32,
+        observationDimension: 64,
+        actionDimension: 3,
+        actionEncoding: .ctbr,
+        executionMode: .isolatedWorlds,
+        requiresAccelerator: .metal
+    )
+
+    #expect(spec.actionShape == [100, 4, 3])
+    #expect(spec.actionEncoding == .ctbr)
 }
 
 @Test func vectorizedBatchSpecAllowsSingleDriveDirectMotorShape() throws {

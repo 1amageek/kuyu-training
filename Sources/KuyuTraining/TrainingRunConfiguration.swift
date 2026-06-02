@@ -150,7 +150,7 @@ public struct TrainingQualityGateSettings: Sendable, Codable, Equatable {
 
 public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
     public let warmupEnabled: Bool
-    public let requiresTemporalCTBR: Bool
+    public let requiresTemporalActorCritic: Bool
     public let rolloutDuration: Double
     public let iterations: Int
     public let learningRate: Double
@@ -158,14 +158,14 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
 
     public init(
         warmupEnabled: Bool = true,
-        requiresTemporalCTBR: Bool = true,
+        requiresTemporalActorCritic: Bool = true,
         rolloutDuration: Double = 2,
         iterations: Int = 1,
         learningRate: Double = 3e-4,
         maxBatches: Int? = nil
     ) {
         self.warmupEnabled = warmupEnabled
-        self.requiresTemporalCTBR = requiresTemporalCTBR
+        self.requiresTemporalActorCritic = requiresTemporalActorCritic
         self.rolloutDuration = rolloutDuration.isFinite ? max(0.01, rolloutDuration) : 2
         self.iterations = max(1, iterations)
         self.learningRate = learningRate.isFinite ? max(0.000_001, learningRate) : 3e-4

@@ -143,9 +143,9 @@ public extension LearningProjectTemplate {
                 ]
             ),
             evaluationGate: .from(profile: liftProfile),
-            observation: .referenceQuadrotorTemporalCTBR(),
-            action: .referenceQuadrotorBodyRateControl(),
-            policy: .referenceQuadrotorTemporalCTBR(),
+            observation: ReferenceQuadrotorLearningContracts.temporalCTBRObservationContract(),
+            action: ReferenceQuadrotorLearningContracts.bodyRateActionContract(),
+            policy: ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract(),
             compute: LearningProjectComputeProfile(
                 preset: .local,
                 workerCount: 1,
@@ -233,16 +233,26 @@ public extension LearningProjectTemplate {
                 ]
             ),
             evaluationGate: .from(profile: profile),
-            observation: .referenceQuadrotorLift(),
+            observation: ReferenceQuadrotorLearningContracts.liftObservationContract(),
             action: LearningProjectActionContract(
                 schemaID: "single-prop-drive-v1",
                 kind: .continuous,
                 driveCount: 1,
                 actuatorCount: 1,
-                isBounded: true
+                isBounded: true,
+                channels: [
+                    LearningProjectActionChannel(
+                        index: 0,
+                        name: "propellerThrust",
+                        unit: "normalized",
+                        normalizedLowerBound: 0,
+                        normalizedUpperBound: 1,
+                        outputTransform: .sigmoid
+                    )
+                ]
             ),
             policy: .simpleFeedForward(
-                observationDimension: LearningProjectObservationContract.referenceQuadrotorLift().channelCount,
+                observationDimension: ReferenceQuadrotorLearningContracts.liftObservationContract().channelCount,
                 actionDimension: 1,
                 actionEncoding: .directMotor
             ),
@@ -329,7 +339,14 @@ public extension LearningProjectTemplate {
             kind: .continuous,
             driveCount: 2,
             actuatorCount: 2,
-            isBounded: true
+            isBounded: true,
+            channels: LearningProjectActionContract.boundedChannels(
+                names: ["leftWheel", "rightWheel"],
+                unit: "normalized",
+                lowerBound: -1,
+                upperBound: 1,
+                transform: .tanh
+            )
         ),
         policy: .simpleFeedForward(
             observationDimension: 6,
@@ -379,9 +396,9 @@ public extension LearningProjectTemplate {
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
-        observation: .referenceQuadrotorTemporalCTBR(),
-        action: .referenceQuadrotorBodyRateControl(),
-        policy: .referenceQuadrotorTemporalCTBR(),
+        observation: ReferenceQuadrotorLearningContracts.temporalCTBRObservationContract(),
+        action: ReferenceQuadrotorLearningContracts.bodyRateActionContract(),
+        policy: ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract(),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["aerial", "drone", "hover", "stabilization", "blueprint", "hybrid"]
     )
@@ -425,9 +442,9 @@ public extension LearningProjectTemplate {
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
-        observation: .referenceQuadrotorTemporalCTBR(),
-        action: .referenceQuadrotorBodyRateControl(),
-        policy: .referenceQuadrotorTemporalCTBR(),
+        observation: ReferenceQuadrotorLearningContracts.temporalCTBRObservationContract(),
+        action: ReferenceQuadrotorLearningContracts.bodyRateActionContract(),
+        policy: ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract(),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["aerial", "drone", "waypoint", "navigation", "blueprint", "hybrid"]
     )
@@ -490,7 +507,15 @@ public extension LearningProjectTemplate {
             kind: .continuous,
             driveCount: 12,
             actuatorCount: 12,
-            isBounded: true
+            isBounded: true,
+            channels: LearningProjectActionContract.indexedBoundedChannels(
+                prefix: "jointTarget",
+                count: 12,
+                unit: "normalized",
+                lowerBound: -1,
+                upperBound: 1,
+                transform: .tanh
+            )
         ),
         policy: .simpleFeedForward(
             observationDimension: 8,
@@ -559,7 +584,15 @@ public extension LearningProjectTemplate {
             kind: .continuous,
             driveCount: 7,
             actuatorCount: 7,
-            isBounded: true
+            isBounded: true,
+            channels: LearningProjectActionContract.indexedBoundedChannels(
+                prefix: "manipulatorTarget",
+                count: 7,
+                unit: "normalized",
+                lowerBound: -1,
+                upperBound: 1,
+                transform: .tanh
+            )
         ),
         policy: .simpleFeedForward(
             observationDimension: 8,
@@ -688,9 +721,9 @@ public extension LearningProjectTemplate {
                     .artifactLineageComplete
                 ]
             ),
-            observation: .roArmM1ArmGripperTargetTracking(),
-            action: .roArmM1ArmGripperTargets(),
-            policy: .roArmM1ArmGripperTargetTracking(),
+            observation: RoArmM1LearningContracts.armGripperTargetTrackingObservationContract(),
+            action: RoArmM1LearningContracts.armGripperTargetsActionContract(),
+            policy: RoArmM1LearningContracts.armGripperTargetTrackingPolicyContract(),
             compute: localCompute(workerCount: 1, candidateEvaluationConcurrency: 100),
             tags: ["manipulator", "roarm-m1", "arm-gripper", "gripper", "proprioception", "her", "teacher-bootstrap", "design"]
         )
@@ -770,7 +803,33 @@ public extension LearningProjectTemplate {
             kind: .continuous,
             driveCount: 3,
             actuatorCount: 3,
-            isBounded: true
+            isBounded: true,
+            channels: [
+                LearningProjectActionChannel(
+                    index: 0,
+                    name: "steering",
+                    unit: "normalized",
+                    normalizedLowerBound: -1,
+                    normalizedUpperBound: 1,
+                    outputTransform: .tanh
+                ),
+                LearningProjectActionChannel(
+                    index: 1,
+                    name: "throttle",
+                    unit: "normalized",
+                    normalizedLowerBound: 0,
+                    normalizedUpperBound: 1,
+                    outputTransform: .sigmoid
+                ),
+                LearningProjectActionChannel(
+                    index: 2,
+                    name: "brake",
+                    unit: "normalized",
+                    normalizedLowerBound: 0,
+                    normalizedUpperBound: 1,
+                    outputTransform: .sigmoid
+                )
+            ]
         ),
         policy: .simpleFeedForward(
             observationDimension: 8,

@@ -187,7 +187,7 @@ public struct AttitudeRecoveryRelabeler: Sendable {
         // The relabeled actions are the teacher's, not the rolled-out policy's, so
         // stamp the dataset's provenance as a teacher relabel. The CTBR dataset
         // loader gates on a "teacher"/"ctbr" policyId; without this the relabeled
-        // dataset would be rejected as nonCTBRDataset even though its driveIntents
+        // dataset would be rejected by profile validation even though its driveIntents
         // are the normalized teacher activation it expects.
         return try TrainingDatasetExporter().write(
             entries: result.entries,

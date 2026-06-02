@@ -13,6 +13,7 @@ public enum LearningProjectTemplateValidationError: Error, Sendable, Equatable, 
     case emptyObservationSchemaID
     case duplicateObservationChannel(index: Int)
     case observationChannelCountMismatch(expected: Int, actual: Int)
+    case invalidObservationContract(reason: String)
     case invalidActionContract(reason: String)
     case invalidPolicyContract(reason: String)
     case invalidCurriculum(reason: String)
@@ -45,6 +46,8 @@ public enum LearningProjectTemplateValidationError: Error, Sendable, Equatable, 
             return "duplicate-observation-channel index=\(index)"
         case let .observationChannelCountMismatch(expected, actual):
             return "observation-channel-count-mismatch expected=\(expected) actual=\(actual)"
+        case let .invalidObservationContract(reason):
+            return "invalid-observation-contract reason=\(reason)"
         case let .invalidActionContract(reason):
             return "invalid-action-contract reason=\(reason)"
         case let .invalidPolicyContract(reason):

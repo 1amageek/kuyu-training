@@ -9,6 +9,11 @@ templates, rollout artifacts, GA/RL protocols, training plans, runtime
 orchestration, and artifact validation. Concrete Manas/MLX checkpoint work
 belongs in `kuyu-mlx`.
 
+The generic contract reset is defined in
+`GENERIC_TRAINING_CONTRACT_DESIGN.md`. Generic validators must check contract
+consistency only; robot-specific action, observation, privileged-feature, and
+training-profile requirements belong to profile validators.
+
 The package responsibility skeleton is defined in
 `../KUYU_PACKAGE_ARCHITECTURE.md`.
 
@@ -39,6 +44,7 @@ flowchart LR
 | Rollout episode contracts and health gates | `RewardDescriptor` provenance | Target altitude/pose semantics |
 | Training plans, templates, and runtime orchestration | Failure, truncation, and terminal reasons | PPO/MLX kernels |
 | Artifact validation and acceptance contracts | Task-quality evaluation results | Manas checkpoint internals |
+| Generic observation/action/policy contracts | Profile-specific schema requirements | Robot-specific action semantics |
 
 ### Reliability Contract
 

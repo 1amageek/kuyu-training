@@ -75,48 +75,55 @@ public struct LearningProjectTemplateValidator: Sendable {
     }
 
     private func validateObservation(_ observation: LearningProjectObservationContract) throws {
-        if observation.schemaID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw LearningProjectTemplateValidationError.emptyObservationSchemaID
-        }
-        if observation.channelCount <= 0 {
-            throw LearningProjectTemplateValidationError.invalidObservationChannelCount(
-                expected: 1,
-                actual: observation.channelCount
-            )
-        }
-        if observation.channels.count != observation.channelCount {
-            throw LearningProjectTemplateValidationError.observationChannelCountMismatch(
-                expected: observation.channelCount,
-                actual: observation.channels.count
-            )
-        }
-        var seen: Set<Int> = []
-        for channel in observation.channels {
-            if channel.index < 0 || channel.index >= observation.channelCount {
+        do {
+            try LearningProjectContractValidator().validateObservation(observation)
+        } catch LearningProjectContractValidationError.invalidObservation(let reason) {
+            switch reason {
+            case "empty-schema-id":
+                throw LearningProjectTemplateValidationError.emptyObservationSchemaID
+            case "non-positive-channel-count":
+                throw LearningProjectTemplateValidationError.invalidObservationChannelCount(
+                    expected: 1,
+                    actual: observation.channelCount
+                )
+            case "channel-count-mismatch":
+                throw LearningProjectTemplateValidationError.observationChannelCountMismatch(
+                    expected: observation.channelCount,
+                    actual: observation.channels.count
+                )
+            case "channel-index-out-of-range":
+                let invalidIndex = observation.channels.first { channel in
+                    channel.index < 0 || channel.index >= observation.channelCount
+                }?.index ?? -1
                 throw LearningProjectTemplateValidationError.invalidObservationChannelCount(
                     expected: observation.channelCount,
-                    actual: channel.index
+                    actual: invalidIndex
                 )
+            case "duplicate-channel-index":
+                var seen: Set<Int> = []
+                let duplicate = observation.channels.first { channel in
+                    if seen.contains(channel.index) {
+                        return true
+                    }
+                    seen.insert(channel.index)
+                    return false
+                }?.index ?? -1
+                throw LearningProjectTemplateValidationError.duplicateObservationChannel(index: duplicate)
+            default:
+                throw LearningProjectTemplateValidationError.invalidObservationContract(reason: reason)
             }
-            if seen.contains(channel.index) {
-                throw LearningProjectTemplateValidationError.duplicateObservationChannel(index: channel.index)
-            }
-            seen.insert(channel.index)
+        } catch {
+            throw error
         }
     }
 
     private func validateAction(_ action: LearningProjectActionContract) throws {
-        if action.schemaID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw LearningProjectTemplateValidationError.invalidActionContract(reason: "empty-schema-id")
-        }
-        if let driveCount = action.driveCount, driveCount <= 0 {
-            throw LearningProjectTemplateValidationError.invalidActionContract(reason: "non-positive-drive-count")
-        }
-        if let actuatorCount = action.actuatorCount, actuatorCount <= 0 {
-            throw LearningProjectTemplateValidationError.invalidActionContract(reason: "non-positive-actuator-count")
-        }
-        if action.driveCount == nil && action.actuatorCount == nil {
-            throw LearningProjectTemplateValidationError.invalidActionContract(reason: "missing-drive-or-actuator-count")
+        do {
+            try LearningProjectContractValidator().validateAction(action)
+        } catch LearningProjectContractValidationError.invalidAction(let reason) {
+            throw LearningProjectTemplateValidationError.invalidActionContract(reason: reason)
+        } catch {
+            throw error
         }
     }
 
@@ -125,86 +132,16 @@ public struct LearningProjectTemplateValidator: Sendable {
         observation: LearningProjectObservationContract,
         action: LearningProjectActionContract
     ) throws {
-        if policy.actionDimension <= 0 {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "non-positive-action-dimension")
-        }
-        if policy.temporalWindow.historyLength <= 0 {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "non-positive-history-length")
-        }
-        if policy.temporalWindow.observationDimension != observation.channelCount {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(
-                reason: "policy-observation-dimension-mismatch"
+        do {
+            try LearningProjectContractValidator().validatePolicy(
+                policy,
+                observation: observation,
+                action: action
             )
-        }
-        if let driveCount = action.driveCount, policy.actionDimension != driveCount {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "policy-action-drive-count-mismatch")
-        }
-        if policy.actionEncoding == .ctbr && policy.actionDimension != 4 {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "ctbr-requires-four-actions")
-        }
-        if policy.actionEncoding == .ctbr && action.schemaID != "reference-quadrotor-body-rate-control-action-v1" {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "ctbr-action-schema-mismatch")
-        }
-        if policy.actionDistribution == .gaussian && !policy.ppo.isEnabled {
-            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "gaussian-policy-requires-ppo")
-        }
-        if policy.privilegedCritic.isEnabled {
-            if policy.privilegedCritic.privilegedDimension <= 0 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(
-                    reason: "privileged-critic-missing-dimension"
-                )
-            }
-            if policy.privilegedCritic.parameterNames.count != policy.privilegedCritic.privilegedDimension {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(
-                    reason: "privileged-critic-parameter-count-mismatch"
-                )
-            }
-        }
-        if policy.ppo.isEnabled {
-            if !policy.ppo.clipEpsilon.isFinite || policy.ppo.clipEpsilon <= 0 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-ppo-clip-epsilon")
-            }
-            if !policy.ppo.discount.isFinite || policy.ppo.discount <= 0 || policy.ppo.discount > 1 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-ppo-discount")
-            }
-            if !policy.ppo.gaeLambda.isFinite || policy.ppo.gaeLambda < 0 || policy.ppo.gaeLambda > 1 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-ppo-gae-lambda")
-            }
-            if !policy.ppo.actionSmoothnessCoefficient.isFinite || policy.ppo.actionSmoothnessCoefficient < 0 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(
-                    reason: "invalid-action-smoothness-coefficient"
-                )
-            }
-        }
-        if policy.domainRandomization.isEnabled {
-            if !policy.domainRandomization.maximumWindMetersPerSecond.isFinite ||
-                policy.domainRandomization.maximumWindMetersPerSecond < 0 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-maximum-wind")
-            }
-            for parameter in policy.domainRandomization.parameters {
-                if parameter.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    throw LearningProjectTemplateValidationError.invalidPolicyContract(
-                        reason: "empty-domain-randomization-parameter"
-                    )
-                }
-                if !parameter.lowerMultiplier.isFinite || !parameter.upperMultiplier.isFinite ||
-                    parameter.lowerMultiplier <= 0 || parameter.upperMultiplier < parameter.lowerMultiplier {
-                    throw LearningProjectTemplateValidationError.invalidPolicyContract(
-                        reason: "invalid-domain-randomization-range"
-                    )
-                }
-            }
-        }
-        if policy.safetyFilter.isEnabled {
-            if policy.safetyFilter.maximumThrust < policy.safetyFilter.minimumThrust {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-thrust-range")
-            }
-            if policy.safetyFilter.maximumBodyRate <= 0 || policy.safetyFilter.maximumYawRate <= 0 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-rate-limit")
-            }
-            if policy.safetyFilter.lowPassAlpha < 0 || policy.safetyFilter.lowPassAlpha > 1 {
-                throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: "invalid-low-pass-alpha")
-            }
+        } catch LearningProjectContractValidationError.invalidPolicy(let reason) {
+            throw LearningProjectTemplateValidationError.invalidPolicyContract(reason: reason)
+        } catch {
+            throw error
         }
     }
 

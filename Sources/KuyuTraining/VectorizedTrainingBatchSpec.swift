@@ -55,9 +55,6 @@ public struct VectorizedTrainingBatchSpec: Sendable, Codable, Equatable {
         guard actionDimension > 0 else {
             throw VectorizedTrainingBatchSpecError.nonPositiveActionDimension
         }
-        if actionEncoding == .ctbr, actionDimension != 4 {
-            throw VectorizedTrainingBatchSpecError.ctbrRequiresFourActions
-        }
         self.populationSize = populationSize
         self.worldCount = worldCount
         self.rolloutHorizon = rolloutHorizon
@@ -85,5 +82,4 @@ public enum VectorizedTrainingBatchSpecError: Error, Sendable, Equatable {
     case nonPositiveHistoryLength
     case nonPositiveObservationDimension
     case nonPositiveActionDimension
-    case ctbrRequiresFourActions
 }

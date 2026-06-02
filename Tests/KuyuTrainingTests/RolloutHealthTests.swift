@@ -132,6 +132,179 @@ import KuyuPhysics
     #expect(reasons.contains(.nonFiniteMetric))
 }
 
+@Test func rolloutHealthRejectsNonFiniteBaselineMetrics() throws {
+    let baseline = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(rewardSum: .infinity, omega: 0.5, tilt: 0.05, altitude: 2.0),
+    ])
+    let candidate = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 0.5, tilt: 0.05, altitude: 2.0),
+    ])
+
+    let reasons = RolloutHealthAcceptancePolicy.conservative
+        .rejectionReasons(candidate: candidate, relativeTo: baseline)
+
+    #expect(!baseline.isValidForTrainingDecision)
+    #expect(reasons.contains(.nonFiniteMetric))
+}
+
+@Test func rolloutHealthMirrorsBuiltInStabilityMetrics() throws {
+    let health = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 0.7, tilt: 0.08, altitude: 2.0),
+        try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 1.1, tilt: 0.05, altitude: 1.7),
+    ])
+
+    #expect(health.maxOmega == 1.1)
+    #expect(health.maxTilt == 0.08)
+    #expect(health.minAltitude == 1.7)
+    #expect(health.stabilityMetricValue(.maximumAngularRate) == 1.1)
+    #expect(health.stabilityMetricValue(.maximumAttitudeDeviation) == 0.08)
+    #expect(health.stabilityMetricValue(.minimumRootAltitude) == 1.7)
+}
+
+@Test func rolloutHealthAggregatesProfileDefinedStabilityMetrics() {
+    var health = RolloutHealth()
+    health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
+    health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.9, aggregation: .maximum)
+    health.recordStabilityMetric(id: "root.clearance", value: 0.3, aggregation: .minimum)
+    health.recordStabilityMetric(id: "root.clearance", value: 0.2, aggregation: .minimum)
+
+    #expect(health.stabilityMetricValue("joint.maximumVelocity") == 0.9)
+    #expect(health.stabilityMetricValue("root.clearance") == 0.2)
+}
+
+@Test func rolloutHealthCountsNonFiniteProfileMetric() {
+    var health = RolloutHealth()
+    health.recordStabilityMetric(id: "joint.maximumVelocity", value: .infinity, aggregation: .maximum)
+
+    #expect(health.stabilityMetricValue("joint.maximumVelocity") == nil)
+    #expect(health.nonFiniteMetricCount == 1)
+}
+
+@Test func rolloutHealthRejectsProfileMetricAggregationMismatch() {
+    var health = RolloutHealth()
+    health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
+    health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.1, aggregation: .minimum)
+
+    let reasons = RolloutHealthAcceptancePolicy.conservative
+        .rejectionReasons(candidate: health, relativeTo: RolloutHealth())
+
+    #expect(health.stabilityMetricValue("joint.maximumVelocity") == 0.4)
+    #expect(health.stabilityMetricContractViolations == [
+        RolloutStabilityMetricContractViolation(
+            metricID: "joint.maximumVelocity",
+            reason: .aggregationMismatch
+        ),
+    ])
+    #expect(reasons.contains(.stabilityMetricContractViolation))
+}
+
+@Test func rolloutHealthRejectsEmptyProfileMetricID() {
+    var health = RolloutHealth()
+    health.recordStabilityMetric(id: " ", value: 0.4, aggregation: .maximum)
+
+    let reasons = RolloutHealthAcceptancePolicy.conservative
+        .rejectionReasons(candidate: health, relativeTo: RolloutHealth())
+
+    #expect(health.stabilityMetricContractViolations == [
+        RolloutStabilityMetricContractViolation(metricID: " ", reason: .emptyMetricID),
+    ])
+    #expect(reasons.contains(.stabilityMetricContractViolation))
+}
+
+@Test func rolloutHealthRejectsInvalidBaselineStabilityMetricContract() {
+    var baseline = RolloutHealth()
+    baseline.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
+    baseline.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.1, aggregation: .minimum)
+    var candidate = RolloutHealth()
+    candidate.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
+
+    let reasons = RolloutHealthAcceptancePolicy.conservative
+        .rejectionReasons(candidate: candidate, relativeTo: baseline)
+
+    #expect(reasons.contains(.stabilityMetricContractViolation))
+}
+
+@Test func rolloutStabilityRegressionEnvelopeUsesProfileDefinedMetric() throws {
+    var baseline = RolloutHealth()
+    baseline.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.2, aggregation: .maximum)
+    var candidate = RolloutHealth()
+    candidate.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.7, aggregation: .maximum)
+    let envelope = try RolloutStabilityRegressionEnvelope(checks: [
+        try RolloutStabilityRegressionCheck(
+            metricID: "joint.maximumVelocity",
+            direction: .upperBound,
+            absoluteTolerance: 0.1,
+            relativeTolerance: 0.25,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+    ])
+
+    let reasons = envelope.rejectionReasons(candidate: candidate, relativeTo: baseline)
+
+    #expect(reasons == [.stabilityMetricRegressed])
+}
+
+@Test func rolloutStabilityRegressionEnvelopeRejectsMissingConfiguredMetric() throws {
+    var baseline = RolloutHealth()
+    baseline.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.2, aggregation: .maximum)
+    let candidate = RolloutHealth()
+    let envelope = try RolloutStabilityRegressionEnvelope(checks: [
+        try RolloutStabilityRegressionCheck(
+            metricID: "joint.maximumVelocity",
+            direction: .upperBound,
+            absoluteTolerance: 0.1,
+            relativeTolerance: 0.25,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+    ])
+
+    let reasons = envelope.rejectionReasons(candidate: candidate, relativeTo: baseline)
+
+    #expect(reasons == [.stabilityMetricMissing])
+}
+
+@Test func rolloutStabilityRegressionCheckRejectsInvalidContract() {
+    #expect(throws: RolloutStabilityRegressionContractError.emptyMetricID) {
+        _ = try RolloutStabilityRegressionCheck(
+            metricID: " ",
+            direction: .upperBound,
+            absoluteTolerance: 0.1,
+            relativeTolerance: 0.25,
+            rejectionReason: .stabilityMetricRegressed
+        )
+    }
+    #expect(throws: RolloutStabilityRegressionContractError.invalidTolerance) {
+        _ = try RolloutStabilityRegressionCheck(
+            metricID: "joint.maximumVelocity",
+            direction: .upperBound,
+            absoluteTolerance: .nan,
+            relativeTolerance: 0.25,
+            rejectionReason: .stabilityMetricRegressed
+        )
+    }
+}
+
+@Test func rolloutStabilityRegressionEnvelopeRejectsDuplicateMetricChecks() throws {
+    let first = try RolloutStabilityRegressionCheck(
+        metricID: "joint.maximumVelocity",
+        direction: .upperBound,
+        absoluteTolerance: 0.1,
+        relativeTolerance: 0.25,
+        rejectionReason: .stabilityMetricRegressed
+    )
+    let second = try RolloutStabilityRegressionCheck(
+        metricID: "joint.maximumVelocity",
+        direction: .upperBound,
+        absoluteTolerance: 0.2,
+        relativeTolerance: 0.25,
+        rejectionReason: .stabilityMetricRegressed
+    )
+
+    #expect(throws: RolloutStabilityRegressionContractError.duplicateMetricID("joint.maximumVelocity")) {
+        _ = try RolloutStabilityRegressionEnvelope(checks: [first, second])
+    }
+}
+
 private func makeRolloutHealthEpisode(
     rewardSum: Double,
     omega: Double,

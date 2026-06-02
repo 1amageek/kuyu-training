@@ -290,6 +290,56 @@ import KuyuPhysics
     #expect(reasons == [.stabilityMetricMissing])
 }
 
+@Test func rolloutStabilityLimitEnvelopeUsesProfileDefinedUpperLimit() throws {
+    var health = RolloutHealth()
+    health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.7, aggregation: .maximum)
+    let envelope = try RolloutStabilityLimitEnvelope(checks: [
+        try RolloutStabilityLimitCheck(
+            metricID: "joint.maximumVelocity",
+            direction: .upperBound,
+            limit: 0.5,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+    ])
+
+    let reasons = envelope.rejectionReasons(health: health)
+
+    #expect(reasons == [.stabilityMetricRegressed])
+}
+
+@Test func rolloutStabilityLimitEnvelopeUsesProfileDefinedLowerLimit() throws {
+    var health = RolloutHealth()
+    health.recordStabilityMetric(id: "root.clearance", value: 0.2, aggregation: .minimum)
+    let envelope = try RolloutStabilityLimitEnvelope(checks: [
+        try RolloutStabilityLimitCheck(
+            metricID: "root.clearance",
+            direction: .lowerBound,
+            limit: 0.3,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+    ])
+
+    let reasons = envelope.rejectionReasons(health: health)
+
+    #expect(reasons == [.stabilityMetricRegressed])
+}
+
+@Test func rolloutStabilityLimitEnvelopeRejectsMissingConfiguredMetric() throws {
+    let health = RolloutHealth()
+    let envelope = try RolloutStabilityLimitEnvelope(checks: [
+        try RolloutStabilityLimitCheck(
+            metricID: "joint.maximumVelocity",
+            direction: .upperBound,
+            limit: 0.5,
+            rejectionReason: .stabilityMetricRegressed
+        ),
+    ])
+
+    let reasons = envelope.rejectionReasons(health: health)
+
+    #expect(reasons == [.stabilityMetricMissing])
+}
+
 @Test func rolloutStabilityRegressionCheckRejectsInvalidContract() {
     #expect(throws: RolloutStabilityRegressionContractError.emptyMetricID) {
         _ = try RolloutStabilityRegressionCheck(

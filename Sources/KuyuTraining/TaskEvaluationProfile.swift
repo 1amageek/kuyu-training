@@ -33,6 +33,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
     public let referenceEvaluatorID: String
     public let qualityEvaluatorID: String
     public let liftThresholdSource: String?
+    public let stabilityLimitEnvelope: RolloutStabilityLimitEnvelope
 
     public init(
         profileID: String,
@@ -51,7 +52,8 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         requiresParentCheckpointEvaluation: Bool,
         referenceEvaluatorID: String = "ReferenceQuadrotorScenarioEvaluator",
         qualityEvaluatorID: String = "ReferenceQuadrotorTaskQualityEvaluator",
-        liftThresholdSource: String? = nil
+        liftThresholdSource: String? = nil,
+        stabilityLimitEnvelope: RolloutStabilityLimitEnvelope = .unbounded
     ) {
         self.profileID = profileID
         self.task = task
@@ -70,6 +72,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         self.referenceEvaluatorID = referenceEvaluatorID
         self.qualityEvaluatorID = qualityEvaluatorID
         self.liftThresholdSource = liftThresholdSource
+        self.stabilityLimitEnvelope = stabilityLimitEnvelope
     }
 
     public static func profile(task: String) throws -> TaskEvaluationProfile {
@@ -95,7 +98,8 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
                 maximumAltitudeErrorRatio: nil,
                 failOnTruncation: false,
                 requiresReferenceTaskPass: true,
-                requiresParentCheckpointEvaluation: false
+                requiresParentCheckpointEvaluation: false,
+                stabilityLimitEnvelope: try referenceQuadrotorAttitudeStabilityLimits()
             )
         case "lift":
             return liftProfile(task: "lift", profileID: "lift-v1")
@@ -193,6 +197,14 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
             requiresReferenceTaskPass: true,
             requiresParentCheckpointEvaluation: true,
             liftThresholdSource: "scenario.liftEnvelope"
+        )
+    }
+
+    public static func referenceQuadrotorAttitudeStabilityLimits() throws -> RolloutStabilityLimitEnvelope {
+        try RolloutStabilityLimitEnvelope.rootRigidBody(
+            maximumAngularRate: 8.0,
+            maximumAttitudeDeviation: 1.25,
+            minimumRootAltitude: 1.75
         )
     }
 }

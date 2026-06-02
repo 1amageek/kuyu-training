@@ -41,6 +41,12 @@ import Testing
     #expect(profile.minimumHoldTimeRatio == nil)
     #expect(profile.maximumAltitudeErrorRatio == nil)
     #expect(!profile.requiresParentCheckpointEvaluation)
+
+    var unstableHealth = RolloutHealth()
+    unstableHealth.recordStabilityMetric(id: .maximumAttitudeDeviation, value: 2.0, aggregation: .maximum)
+    unstableHealth.recordStabilityMetric(id: .maximumAngularRate, value: 2.0, aggregation: .maximum)
+    unstableHealth.recordStabilityMetric(id: .minimumRootAltitude, value: 2.0, aggregation: .minimum)
+    #expect(profile.stabilityLimitEnvelope.rejectionReasons(health: unstableHealth) == [.tiltRegressed])
 }
 
 @Test func taskEvaluationProfileRejectsUnsupportedTasks() {

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RolloutStabilityRegressionCheck: Sendable, Equatable {
+public struct RolloutStabilityRegressionCheck: Sendable, Codable, Equatable {
     public let metricID: RolloutStabilityMetricID
     public let direction: RolloutStabilityRegressionDirection
     public let absoluteTolerance: Double

@@ -1,5 +1,7 @@
-public struct RolloutStabilityRegressionEnvelope: Sendable, Equatable {
+public struct RolloutStabilityRegressionEnvelope: Sendable, Codable, Equatable {
     public let checks: [RolloutStabilityRegressionCheck]
+
+    public static let empty = RolloutStabilityRegressionEnvelope(uncheckedChecks: [])
 
     public init(checks: [RolloutStabilityRegressionCheck]) throws {
         var metricIDs: Set<RolloutStabilityMetricID> = []
@@ -16,26 +18,28 @@ public struct RolloutStabilityRegressionEnvelope: Sendable, Equatable {
         self.checks = checks
     }
 
-    public static func rootRigidBody(policy: RolloutHealthAcceptancePolicy) -> RolloutStabilityRegressionEnvelope {
+    public static func rootRigidBody(
+        tolerances: RootRigidBodyStabilityTolerances
+    ) -> RolloutStabilityRegressionEnvelope {
         RolloutStabilityRegressionEnvelope(uncheckedChecks: [
             RolloutStabilityRegressionCheck(
                 uncheckedMetricID: .maximumAngularRate,
                 direction: .upperBound,
-                absoluteTolerance: policy.maxOmegaAbsoluteTolerance,
-                relativeTolerance: policy.maxOmegaRelativeTolerance,
+                absoluteTolerance: tolerances.maxAngularRateAbsoluteTolerance,
+                relativeTolerance: tolerances.maxAngularRateRelativeTolerance,
                 rejectionReason: .omegaRegressed
             ),
             RolloutStabilityRegressionCheck(
                 uncheckedMetricID: .maximumAttitudeDeviation,
                 direction: .upperBound,
-                absoluteTolerance: policy.maxTiltAbsoluteTolerance,
-                relativeTolerance: policy.maxTiltRelativeTolerance,
+                absoluteTolerance: tolerances.maxAttitudeDeviationAbsoluteTolerance,
+                relativeTolerance: tolerances.maxAttitudeDeviationRelativeTolerance,
                 rejectionReason: .tiltRegressed
             ),
             RolloutStabilityRegressionCheck(
                 uncheckedMetricID: .minimumRootAltitude,
                 direction: .lowerBound,
-                absoluteTolerance: policy.minAltitudeTolerance,
+                absoluteTolerance: tolerances.minRootAltitudeTolerance,
                 relativeTolerance: 0,
                 rejectionReason: .minimumAltitudeRegressed
             ),

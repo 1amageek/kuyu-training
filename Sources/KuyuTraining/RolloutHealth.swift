@@ -8,6 +8,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
     public private(set) var failureCount: Int
     public private(set) var cancelledCount: Int
     public private(set) var horizonLimitCount: Int
+    public private(set) var terminalStepObservationCount: Int
+    public private(set) var terminalStepSum: Int
     public private(set) var nonFiniteMetricCount: Int
     public private(set) var rewardSum: Double
     public private(set) var maxOmega: Double
@@ -23,6 +25,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         failureCount = 0
         cancelledCount = 0
         horizonLimitCount = 0
+        terminalStepObservationCount = 0
+        terminalStepSum = 0
         nonFiniteMetricCount = 0
         rewardSum = 0
         maxOmega = 0
@@ -43,6 +47,10 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
 
     public var rewardAverage: Double {
         rewardSum / Double(max(episodeCount, 1))
+    }
+
+    public var terminalStepAverage: Double {
+        Double(terminalStepSum) / Double(max(terminalStepObservationCount, 1))
     }
 
     public var nonHorizonTruncationCount: Int {
@@ -73,6 +81,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             "horizon=\(horizonLimitCount)",
             "cancel=\(cancelledCount)",
             "rewardAvg=\(String(format: "%.4f", rewardAverage))",
+            "stepAvg=\(String(format: "%.1f", terminalStepAverage))",
             "omega=\(String(format: "%.3f", maxOmega))",
             "tilt=\(String(format: "%.3f", maxTilt))",
             "minZ=\(minAltitudeText)",
@@ -93,6 +102,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         failureCount += other.failureCount
         cancelledCount += other.cancelledCount
         horizonLimitCount += other.horizonLimitCount
+        terminalStepObservationCount += other.terminalStepObservationCount
+        terminalStepSum += other.terminalStepSum
         nonFiniteMetricCount += other.nonFiniteMetricCount
         rewardSum += other.rewardSum
         maxOmega = max(maxOmega, other.maxOmega)
@@ -117,7 +128,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             failureReason: episode.failureReason,
             cancelled: episode.cancelled,
             terminalReason: episode.terminalReason,
-            rewardSum: episode.rewardSum
+            rewardSum: episode.rewardSum,
+            terminalStepCount: episode.stepCount
         )
         for step in episode.steps {
             addStepMetrics(step)
@@ -134,6 +146,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         maxOmega episodeMaxOmega: Double,
         maxTilt episodeMaxTilt: Double,
         minAltitude episodeMinAltitude: Double?,
+        terminalStepCount: Int? = nil,
         nonFiniteMetricCount episodeNonFiniteMetricCount: Int = 0,
         stabilityMetrics episodeStabilityMetrics: [RolloutStabilityMetricSummary] = []
     ) {
@@ -143,7 +156,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             failureReason: failureReason,
             cancelled: cancelled,
             terminalReason: terminalReason,
-            rewardSum: episodeRewardSum
+            rewardSum: episodeRewardSum,
+            terminalStepCount: terminalStepCount
         )
         nonFiniteMetricCount += max(0, episodeNonFiniteMetricCount)
         addSummaryMetrics(
@@ -216,7 +230,8 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         failureReason: String?,
         cancelled: Bool,
         terminalReason: String?,
-        rewardSum episodeRewardSum: Double
+        rewardSum episodeRewardSum: Double,
+        terminalStepCount: Int?
     ) {
         episodeCount += 1
         if done {
@@ -233,6 +248,10 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         }
         if RolloutTerminalReason.isHorizonLimit(terminalReason) {
             horizonLimitCount += 1
+        }
+        if let terminalStepCount {
+            terminalStepObservationCount += 1
+            terminalStepSum += max(0, terminalStepCount)
         }
         if episodeRewardSum.isFinite {
             rewardSum += episodeRewardSum
@@ -318,5 +337,73 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         } else {
             nonFiniteMetricCount += 1
         }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case episodeCount
+        case doneCount
+        case truncatedCount
+        case failureCount
+        case cancelledCount
+        case horizonLimitCount
+        case terminalStepObservationCount
+        case terminalStepSum
+        case nonFiniteMetricCount
+        case rewardSum
+        case maxOmega
+        case maxTilt
+        case minAltitude
+        case stabilityMetrics
+        case stabilityMetricContractViolations
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        episodeCount = try container.decode(Int.self, forKey: .episodeCount)
+        doneCount = try container.decode(Int.self, forKey: .doneCount)
+        truncatedCount = try container.decode(Int.self, forKey: .truncatedCount)
+        failureCount = try container.decode(Int.self, forKey: .failureCount)
+        cancelledCount = try container.decode(Int.self, forKey: .cancelledCount)
+        horizonLimitCount = try container.decode(Int.self, forKey: .horizonLimitCount)
+        terminalStepObservationCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .terminalStepObservationCount
+        ) ?? 0
+        terminalStepSum = try container.decodeIfPresent(Int.self, forKey: .terminalStepSum) ?? 0
+        nonFiniteMetricCount = try container.decode(Int.self, forKey: .nonFiniteMetricCount)
+        rewardSum = try container.decode(Double.self, forKey: .rewardSum)
+        maxOmega = try container.decode(Double.self, forKey: .maxOmega)
+        maxTilt = try container.decode(Double.self, forKey: .maxTilt)
+        minAltitude = try container.decodeIfPresent(Double.self, forKey: .minAltitude)
+        stabilityMetrics = try container.decode(
+            [String: RolloutStabilityMetricSummary].self,
+            forKey: .stabilityMetrics
+        )
+        stabilityMetricContractViolations = try container.decode(
+            [RolloutStabilityMetricContractViolation].self,
+            forKey: .stabilityMetricContractViolations
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(episodeCount, forKey: .episodeCount)
+        try container.encode(doneCount, forKey: .doneCount)
+        try container.encode(truncatedCount, forKey: .truncatedCount)
+        try container.encode(failureCount, forKey: .failureCount)
+        try container.encode(cancelledCount, forKey: .cancelledCount)
+        try container.encode(horizonLimitCount, forKey: .horizonLimitCount)
+        try container.encode(terminalStepObservationCount, forKey: .terminalStepObservationCount)
+        try container.encode(terminalStepSum, forKey: .terminalStepSum)
+        try container.encode(nonFiniteMetricCount, forKey: .nonFiniteMetricCount)
+        try container.encode(rewardSum, forKey: .rewardSum)
+        try container.encode(maxOmega, forKey: .maxOmega)
+        try container.encode(maxTilt, forKey: .maxTilt)
+        try container.encodeIfPresent(minAltitude, forKey: .minAltitude)
+        try container.encode(stabilityMetrics, forKey: .stabilityMetrics)
+        try container.encode(
+            stabilityMetricContractViolations,
+            forKey: .stabilityMetricContractViolations
+        )
     }
 }

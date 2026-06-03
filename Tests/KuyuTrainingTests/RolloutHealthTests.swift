@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import KuyuCore
 import KuyuPhysics
@@ -11,11 +12,28 @@ import KuyuPhysics
         try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 2.0, tilt: 0.1, altitude: 2.0),
     ])
 
-    let reasons = RolloutHealthAcceptancePolicy.conservative
+    let reasons = RolloutHealthAcceptancePolicy.rootRigidBodyConservative
         .rejectionReasons(candidate: candidate, relativeTo: baseline)
 
     #expect(reasons == [.omegaRegressed])
-    #expect(!candidate.isAcceptable(relativeTo: baseline))
+    #expect(!candidate.isAcceptable(
+        relativeTo: baseline,
+        policy: .rootRigidBodyConservative
+    ))
+}
+
+@Test func genericRolloutHealthAcceptanceDoesNotAssumeRootRigidBodyMetrics() throws {
+    let baseline = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 1.0, tilt: 0.1, altitude: 2.0),
+    ])
+    let candidate = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 2.0, tilt: 0.1, altitude: 2.0),
+    ])
+
+    let reasons = RolloutHealthAcceptancePolicy.conservative
+        .rejectionReasons(candidate: candidate, relativeTo: baseline)
+
+    #expect(reasons.isEmpty)
 }
 
 @Test func rolloutHealthCountsHorizonLimitAsTerminalHealthSignal() throws {
@@ -53,6 +71,57 @@ import KuyuPhysics
     #expect(health.nonHorizonTruncationCount == 0)
 }
 
+@Test func rolloutHealthTracksTerminalStepProgress() throws {
+    let health = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(
+            rewardSum: -1.0,
+            omega: 0.5,
+            tilt: 0.05,
+            altitude: 1.8,
+            failureReason: "sustained-fall",
+            stepCount: 5_000
+        ),
+        try makeRolloutHealthEpisode(
+            rewardSum: 1.0,
+            omega: 0.5,
+            tilt: 0.05,
+            altitude: 2.0,
+            terminalReason: RolloutTerminalReason.curriculumHorizon,
+            stepCount: 20_000
+        ),
+    ])
+
+    #expect(health.terminalStepObservationCount == 2)
+    #expect(health.terminalStepSum == 25_000)
+    #expect(health.terminalStepAverage == 12_500)
+}
+
+@Test func rolloutHealthDecodesLegacyPayloadWithoutTerminalStepProgress() throws {
+    let legacyJSON = """
+    {
+      "cancelledCount" : 0,
+      "doneCount" : 0,
+      "episodeCount" : 1,
+      "failureCount" : 0,
+      "horizonLimitCount" : 1,
+      "maxOmega" : 0.5,
+      "maxTilt" : 0.05,
+      "minAltitude" : 2.0,
+      "nonFiniteMetricCount" : 0,
+      "rewardSum" : 1.0,
+      "stabilityMetricContractViolations" : [],
+      "stabilityMetrics" : {},
+      "truncatedCount" : 1
+    }
+    """.data(using: .utf8)!
+
+    let health = try JSONDecoder().decode(RolloutHealth.self, from: legacyJSON)
+
+    #expect(health.terminalStepObservationCount == 0)
+    #expect(health.terminalStepSum == 0)
+    #expect(health.terminalStepAverage == 0)
+}
+
 @Test func rolloutHealthAddsSummariesAndMergesWithoutEpisodes() {
     var baseline = RolloutHealth()
     baseline.addEpisodeSummary(
@@ -63,7 +132,8 @@ import KuyuPhysics
         rewardSum: 2.0,
         maxOmega: 0.7,
         maxTilt: 0.08,
-        minAltitude: 1.5
+        minAltitude: 1.5,
+        terminalStepCount: 2_000
     )
 
     var candidate = RolloutHealth()
@@ -76,6 +146,7 @@ import KuyuPhysics
         maxOmega: 1.2,
         maxTilt: .nan,
         minAltitude: .infinity,
+        terminalStepCount: 100,
         nonFiniteMetricCount: 1
     )
 
@@ -86,6 +157,8 @@ import KuyuPhysics
     #expect(baseline.truncatedCount == 1)
     #expect(baseline.failureCount == 1)
     #expect(baseline.horizonLimitCount == 1)
+    #expect(baseline.terminalStepObservationCount == 2)
+    #expect(baseline.terminalStepSum == 2_100)
     #expect(baseline.nonHorizonTruncationCount == 0)
     #expect(baseline.rewardSum == 2.0)
     #expect(baseline.maxOmega == 1.2)
@@ -110,7 +183,7 @@ import KuyuPhysics
     ])
 
     let reasons = Set(
-        RolloutHealthAcceptancePolicy.conservative
+        RolloutHealthAcceptancePolicy.rootRigidBodyConservative
             .rejectionReasons(candidate: candidate, relativeTo: baseline)
     )
 
@@ -126,7 +199,7 @@ import KuyuPhysics
         try makeRolloutHealthEpisode(rewardSum: .infinity, omega: 0.5, tilt: 0.05, altitude: 2.0),
     ])
 
-    let reasons = RolloutHealthAcceptancePolicy.conservative
+    let reasons = RolloutHealthAcceptancePolicy.rootRigidBodyConservative
         .rejectionReasons(candidate: candidate, relativeTo: baseline)
 
     #expect(reasons.contains(.nonFiniteMetric))
@@ -140,7 +213,7 @@ import KuyuPhysics
         try makeRolloutHealthEpisode(rewardSum: 1.0, omega: 0.5, tilt: 0.05, altitude: 2.0),
     ])
 
-    let reasons = RolloutHealthAcceptancePolicy.conservative
+    let reasons = RolloutHealthAcceptancePolicy.rootRigidBodyConservative
         .rejectionReasons(candidate: candidate, relativeTo: baseline)
 
     #expect(!baseline.isValidForTrainingDecision)
@@ -185,7 +258,7 @@ import KuyuPhysics
     health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
     health.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.1, aggregation: .minimum)
 
-    let reasons = RolloutHealthAcceptancePolicy.conservative
+    let reasons = RolloutHealthAcceptancePolicy.rootRigidBodyConservative
         .rejectionReasons(candidate: health, relativeTo: RolloutHealth())
 
     #expect(health.stabilityMetricValue("joint.maximumVelocity") == 0.4)
@@ -202,7 +275,7 @@ import KuyuPhysics
     var health = RolloutHealth()
     health.recordStabilityMetric(id: " ", value: 0.4, aggregation: .maximum)
 
-    let reasons = RolloutHealthAcceptancePolicy.conservative
+    let reasons = RolloutHealthAcceptancePolicy.rootRigidBodyConservative
         .rejectionReasons(candidate: health, relativeTo: RolloutHealth())
 
     #expect(health.stabilityMetricContractViolations == [
@@ -218,7 +291,7 @@ import KuyuPhysics
     var candidate = RolloutHealth()
     candidate.recordStabilityMetric(id: "joint.maximumVelocity", value: 0.4, aggregation: .maximum)
 
-    let reasons = RolloutHealthAcceptancePolicy.conservative
+    let reasons = RolloutHealthAcceptancePolicy.rootRigidBodyConservative
         .rejectionReasons(candidate: candidate, relativeTo: baseline)
 
     #expect(reasons.contains(.stabilityMetricContractViolation))
@@ -389,7 +462,8 @@ private func makeRolloutHealthEpisode(
     altitude: Double,
     terminalReason: String? = nil,
     failureReason: String? = nil,
-    cancelled: Bool = false
+    cancelled: Bool = false,
+    stepCount: Int = 1
 ) throws -> RolloutEpisode {
     let time = try WorldTime(stepIndex: 1, time: 0.001)
     let root = RigidBodySnapshot(
@@ -451,7 +525,7 @@ private func makeRolloutHealthEpisode(
         terminalReason: terminalReason,
         failureReason: failureReason,
         failureTime: done ? time.time : nil,
-        stepCount: 1,
+        stepCount: max(0, stepCount),
         durationSeconds: time.time,
         cancelled: cancelled,
         steps: [step]

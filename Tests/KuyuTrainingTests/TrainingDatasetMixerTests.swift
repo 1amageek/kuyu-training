@@ -44,6 +44,42 @@ struct TrainingDatasetMixerTests {
             )
         }
     }
+
+    @Test func suffixBudgetKeepsLatestContiguousRecordWindows() {
+        let first = makeBudgetDataset(episodeID: "first", seed: 1, recordCount: 4, rewardOffset: 0)
+        let second = makeBudgetDataset(episodeID: "second", seed: 2, recordCount: 4, rewardOffset: 10)
+
+        let limited = TrainingDatasetRecordBudgeter().limit(
+            [first, second],
+            maxTotalRecordCount: 5,
+            selection: .suffix
+        )
+
+        #expect(limited.map(\.metadata.episodeId) == ["first", "second"])
+        #expect(limited.map(\.metadata.recordCount) == [1, 4])
+        #expect(limited.flatMap(\.records).map(\.time) == [0.03, 0.0, 0.01, 0.02, 0.03])
+        #expect(limited[0].metadata.rewardSum == 3)
+        #expect(limited[0].metadata.truncated == true)
+        #expect(limited[0].metadata.terminalReason == "time-limit")
+    }
+
+    @Test func prefixBudgetClearsTerminalMetadataWhenWindowStopsBeforeTerminal() {
+        let first = makeBudgetDataset(episodeID: "first", seed: 1, recordCount: 4, rewardOffset: 0)
+        let second = makeBudgetDataset(episodeID: "second", seed: 2, recordCount: 4, rewardOffset: 10)
+
+        let limited = TrainingDatasetRecordBudgeter().limit(
+            [first, second],
+            maxTotalRecordCount: 5,
+            selection: .prefix
+        )
+
+        #expect(limited.map(\.metadata.episodeId) == ["first", "second"])
+        #expect(limited.map(\.metadata.recordCount) == [4, 1])
+        #expect(limited[1].metadata.rewardSum == 10)
+        #expect(limited[1].metadata.done == false)
+        #expect(limited[1].metadata.truncated == false)
+        #expect(limited[1].metadata.terminalReason == nil)
+    }
 }
 
 private func temporaryDirectory(_ prefix: String) -> URL {
@@ -89,4 +125,52 @@ private func writeDataset(
         atomically: true,
         encoding: .utf8
     )
+}
+
+private func makeBudgetDataset(
+    episodeID: String,
+    seed: UInt64,
+    recordCount: Int,
+    rewardOffset: Double
+) -> TrainingDataset {
+    let records = (0..<recordCount).map { index in
+        TrainingDatasetRecord(
+            time: Double(index) * 0.01,
+            sensors: [
+                TrainingSensorSample(
+                    channelIndex: 0,
+                    value: Double(index),
+                    timestamp: Double(index) * 0.01
+                ),
+            ],
+            driveIntents: [
+                TrainingDriveIntent(driveIndex: 0, value: 0.25),
+            ],
+            reflexCorrections: [],
+            reward: rewardOffset + Double(index),
+            done: false,
+            truncated: index == recordCount - 1,
+            episodeId: episodeID,
+            policyId: "test-policy"
+        )
+    }
+    let metadata = TrainingDatasetMetadata(
+        scenarioId: "budget-test",
+        seed: seed,
+        timeStep: 0.01,
+        determinismTier: "tier0",
+        configHash: "budget-test",
+        channelCount: 1,
+        driveCount: 1,
+        recordCount: records.count,
+        episodeId: episodeID,
+        policyId: "test-policy",
+        rewardSum: records.reduce(0.0) { partial, record in
+            partial + (record.reward ?? 0.0)
+        },
+        done: false,
+        truncated: true,
+        terminalReason: "time-limit"
+    )
+    return TrainingDataset(metadata: metadata, records: records)
 }

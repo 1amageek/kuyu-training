@@ -1,42 +1,36 @@
 public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
-    public let maxOmegaAbsoluteTolerance: Double
-    public let maxOmegaRelativeTolerance: Double
-    public let maxTiltAbsoluteTolerance: Double
-    public let maxTiltRelativeTolerance: Double
     public let rewardAverageTolerance: Double
-    public let minAltitudeTolerance: Double
+    public let stabilityRegressionEnvelope: RolloutStabilityRegressionEnvelope
 
     public static let conservative = RolloutHealthAcceptancePolicy(
-        uncheckedMaxOmegaAbsoluteTolerance: 0.25,
-        uncheckedMaxOmegaRelativeTolerance: 0.10,
-        uncheckedMaxTiltAbsoluteTolerance: 0.05,
-        uncheckedMaxTiltRelativeTolerance: 0.10,
         uncheckedRewardAverageTolerance: 0.02,
-        uncheckedMinAltitudeTolerance: 0.05
+        stabilityRegressionEnvelope: .empty
+    )
+
+    public static let rootRigidBodyConservative = RolloutHealthAcceptancePolicy(
+        uncheckedRewardAverageTolerance: 0.02,
+        stabilityRegressionEnvelope: .rootRigidBody(tolerances: .conservative)
     )
 
     public init(
-        maxOmegaAbsoluteTolerance: Double = 0.25,
-        maxOmegaRelativeTolerance: Double = 0.10,
-        maxTiltAbsoluteTolerance: Double = 0.05,
-        maxTiltRelativeTolerance: Double = 0.10,
         rewardAverageTolerance: Double = 0.02,
-        minAltitudeTolerance: Double = 0.05
+        stabilityRegressionEnvelope: RolloutStabilityRegressionEnvelope = .empty
     ) throws {
-        guard maxOmegaAbsoluteTolerance.isFinite, maxOmegaAbsoluteTolerance >= 0,
-              maxOmegaRelativeTolerance.isFinite, maxOmegaRelativeTolerance >= 0,
-              maxTiltAbsoluteTolerance.isFinite, maxTiltAbsoluteTolerance >= 0,
-              maxTiltRelativeTolerance.isFinite, maxTiltRelativeTolerance >= 0,
-              rewardAverageTolerance.isFinite, rewardAverageTolerance >= 0,
-              minAltitudeTolerance.isFinite, minAltitudeTolerance >= 0 else {
+        guard rewardAverageTolerance.isFinite, rewardAverageTolerance >= 0 else {
             throw RolloutHealthAcceptancePolicyError.invalidTolerance
         }
-        self.maxOmegaAbsoluteTolerance = maxOmegaAbsoluteTolerance
-        self.maxOmegaRelativeTolerance = maxOmegaRelativeTolerance
-        self.maxTiltAbsoluteTolerance = maxTiltAbsoluteTolerance
-        self.maxTiltRelativeTolerance = maxTiltRelativeTolerance
         self.rewardAverageTolerance = rewardAverageTolerance
-        self.minAltitudeTolerance = minAltitudeTolerance
+        self.stabilityRegressionEnvelope = stabilityRegressionEnvelope
+    }
+
+    public static func rootRigidBody(
+        rewardAverageTolerance: Double = 0.02,
+        tolerances: RootRigidBodyStabilityTolerances = .conservative
+    ) throws -> RolloutHealthAcceptancePolicy {
+        try RolloutHealthAcceptancePolicy(
+            rewardAverageTolerance: rewardAverageTolerance,
+            stabilityRegressionEnvelope: .rootRigidBody(tolerances: tolerances)
+        )
     }
 
     public func accepts(candidate: RolloutHealth, relativeTo baseline: RolloutHealth) -> Bool {
@@ -66,36 +60,23 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
         if candidate.nonHorizonTruncationCount > baseline.nonHorizonTruncationCount {
             reasons.append(.nonHorizonTruncationRegressed)
         }
-
-        let omegaLimit = max(
-            baseline.maxOmega + maxOmegaAbsoluteTolerance,
-            baseline.maxOmega * (1 + maxOmegaRelativeTolerance)
+        appendUnique(
+            stabilityRegressionEnvelope.rejectionReasons(candidate: candidate, relativeTo: baseline),
+            to: &reasons
         )
-        if candidate.maxOmega > omegaLimit {
-            reasons.append(.omegaRegressed)
-        }
-
-        let tiltLimit = max(
-            baseline.maxTilt + maxTiltAbsoluteTolerance,
-            baseline.maxTilt * (1 + maxTiltRelativeTolerance)
-        )
-        if candidate.maxTilt > tiltLimit {
-            reasons.append(.tiltRegressed)
-        }
-
         if candidate.rewardAverage < baseline.rewardAverage - rewardAverageTolerance {
             reasons.append(.rewardAverageRegressed)
         }
-
-        if let baselineAltitude = baseline.minAltitude,
-           let candidateAltitude = candidate.minAltitude,
-           candidateAltitude < baselineAltitude - minAltitudeTolerance {
-            reasons.append(.minimumAltitudeRegressed)
-        } else if baseline.minAltitude != nil, candidate.minAltitude == nil {
-            reasons.append(.minimumAltitudeRegressed)
-        }
-
         return reasons
+    }
+
+    private func appendUnique(
+        _ newReasons: [RolloutHealthRejectionReason],
+        to reasons: inout [RolloutHealthRejectionReason]
+    ) {
+        for reason in newReasons {
+            appendUnique(reason, to: &reasons)
+        }
     }
 
     private func appendUnique(
@@ -108,18 +89,10 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
     }
 
     private init(
-        uncheckedMaxOmegaAbsoluteTolerance: Double,
-        uncheckedMaxOmegaRelativeTolerance: Double,
-        uncheckedMaxTiltAbsoluteTolerance: Double,
-        uncheckedMaxTiltRelativeTolerance: Double,
         uncheckedRewardAverageTolerance: Double,
-        uncheckedMinAltitudeTolerance: Double
+        stabilityRegressionEnvelope: RolloutStabilityRegressionEnvelope
     ) {
-        maxOmegaAbsoluteTolerance = uncheckedMaxOmegaAbsoluteTolerance
-        maxOmegaRelativeTolerance = uncheckedMaxOmegaRelativeTolerance
-        maxTiltAbsoluteTolerance = uncheckedMaxTiltAbsoluteTolerance
-        maxTiltRelativeTolerance = uncheckedMaxTiltRelativeTolerance
         rewardAverageTolerance = uncheckedRewardAverageTolerance
-        minAltitudeTolerance = uncheckedMinAltitudeTolerance
+        self.stabilityRegressionEnvelope = stabilityRegressionEnvelope
     }
 }

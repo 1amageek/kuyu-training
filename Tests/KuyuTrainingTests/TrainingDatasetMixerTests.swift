@@ -80,6 +80,33 @@ struct TrainingDatasetMixerTests {
         #expect(limited[1].metadata.truncated == false)
         #expect(limited[1].metadata.terminalReason == nil)
     }
+
+    @Test func suffixFromRecordIndexPreservesTerminalFactsAndRecomputesReward() throws {
+        let dataset = makeBudgetDataset(episodeID: "windowed", seed: 3, recordCount: 5, rewardOffset: 10)
+
+        let clipped = try #require(TrainingDatasetRecordBudgeter().suffix(
+            dataset,
+            startingAtRecordIndex: 2
+        ))
+
+        #expect(clipped.metadata.episodeId == "windowed")
+        #expect(clipped.metadata.recordCount == 3)
+        #expect(clipped.records.map(\.time) == [0.02, 0.03, 0.04])
+        #expect(clipped.metadata.rewardSum == 39)
+        #expect(clipped.metadata.truncated == true)
+        #expect(clipped.metadata.terminalReason == "time-limit")
+    }
+
+    @Test func suffixFromRecordIndexReturnsNilWhenWindowIsEmpty() {
+        let dataset = makeBudgetDataset(episodeID: "empty-window", seed: 4, recordCount: 2, rewardOffset: 0)
+
+        let clipped = TrainingDatasetRecordBudgeter().suffix(
+            dataset,
+            startingAtRecordIndex: 2
+        )
+
+        #expect(clipped == nil)
+    }
 }
 
 private func temporaryDirectory(_ prefix: String) -> URL {

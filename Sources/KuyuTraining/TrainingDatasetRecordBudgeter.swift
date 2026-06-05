@@ -23,6 +23,16 @@ public struct TrainingDatasetRecordBudgeter: Sendable {
         }
     }
 
+    public func suffix(
+        _ dataset: TrainingDataset,
+        startingAtRecordIndex startIndex: Int
+    ) -> TrainingDataset? {
+        let boundedStartIndex = min(max(0, startIndex), dataset.records.count)
+        guard boundedStartIndex < dataset.records.count else { return nil }
+        let records = Array(dataset.records[boundedStartIndex...])
+        return clippedDataset(dataset, records: records)
+    }
+
     private func prefixLimit(
         _ datasets: [TrainingDataset],
         maxTotalRecordCount: Int

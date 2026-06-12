@@ -299,6 +299,9 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
     public let actionValues: [Double]?
     public let continueValue: Double?
     public let reward: Double?
+    /// Per-step safety cost for constrained RL. Nil means no cost signal was
+    /// recorded; constrained pipelines must fail closed instead of assuming zero.
+    public let cost: Double?
     public let done: Bool?
     public let truncated: Bool?
     public let episodeId: String?
@@ -314,6 +317,7 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
         actionValues: [Double]? = nil,
         continueValue: Double? = nil,
         reward: Double? = nil,
+        cost: Double? = nil,
         done: Bool? = nil,
         truncated: Bool? = nil,
         episodeId: String? = nil,
@@ -328,6 +332,7 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
         self.actionValues = actionValues
         self.continueValue = continueValue
         self.reward = reward
+        self.cost = cost
         self.done = done
         self.truncated = truncated
         self.episodeId = episodeId

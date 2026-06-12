@@ -61,4 +61,18 @@ public struct RolloutStabilityRegressionEnvelope: Sendable, Codable, Equatable {
             $0.isDirectionallyImproved(candidate: candidate, relativeTo: baseline)
         }
     }
+
+    public func hasMaterialDirectionalImprovement(
+        candidate: RolloutHealth,
+        relativeTo baseline: RolloutHealth,
+        toleranceScale: Double
+    ) -> Bool {
+        checks.contains {
+            $0.isMateriallyDirectionallyImproved(
+                candidate: candidate,
+                relativeTo: baseline,
+                toleranceScale: toleranceScale
+            )
+        }
+    }
 }

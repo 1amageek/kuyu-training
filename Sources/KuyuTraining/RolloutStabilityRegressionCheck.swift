@@ -85,4 +85,37 @@ public struct RolloutStabilityRegressionCheck: Sendable, Codable, Equatable {
             return candidateValue > baselineValue
         }
     }
+
+    public func isMateriallyDirectionallyImproved(
+        candidate: RolloutHealth,
+        relativeTo baseline: RolloutHealth,
+        toleranceScale: Double
+    ) -> Bool {
+        guard let baselineValue = baseline.stabilityMetricValue(metricID),
+              let candidateValue = candidate.stabilityMetricValue(metricID) else {
+            return false
+        }
+        let threshold = directionalImprovementThreshold(
+            relativeTo: baselineValue,
+            toleranceScale: toleranceScale
+        )
+
+        switch direction {
+        case .upperBound:
+            return candidateValue < baselineValue - threshold
+        case .lowerBound:
+            return candidateValue > baselineValue + threshold
+        }
+    }
+
+    private func directionalImprovementThreshold(
+        relativeTo baselineValue: Double,
+        toleranceScale: Double
+    ) -> Double {
+        let scale = toleranceScale.isFinite ? max(0, toleranceScale) : 0
+        return max(
+            absoluteTolerance * scale,
+            abs(baselineValue) * relativeTolerance * scale
+        )
+    }
 }

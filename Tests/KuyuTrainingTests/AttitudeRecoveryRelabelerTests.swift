@@ -145,6 +145,34 @@ import Testing
     #expect(dataset.records.first?.driveIntents.count == 4)
 }
 
+@Test func attitudeRecoveryRelabelerRelabelsTailAfterPrefixWarmup() throws {
+    let definition = try makeRecoveryDefinition()
+    let episode = try makeRecoveryEpisode(
+        definition: definition,
+        altitude: definition.initialPosition.z - 0.25,
+        verticalVelocity: -0.06,
+        stepCount: 4
+    )
+    let gains = try ImuRateDampingCutGains(kp: 6.0, kd: 4.0, yawDamping: 0.4, hoverThrustScale: 1.0)
+
+    let relabeled = try AttitudeRecoveryRelabeler().relabelEpisode(
+        episode,
+        definition: definition,
+        parameters: .baseline,
+        gains: gains,
+        startIndex: 2
+    )
+
+    let expectedRewardSum = episode.steps.suffix(2).map(\.reward).reduce(0, +)
+    #expect(relabeled.policyId == "teacherActiveAltitudeHoldRelabel")
+    #expect(relabeled.steps.count == 2)
+    #expect(relabeled.stepCount == 2)
+    #expect(relabeled.rewardSum == expectedRewardSum)
+    #expect(relabeled.steps.first?.log.time == episode.steps[2].log.time)
+    #expect(relabeled.steps.first?.observation == episode.steps[2].observation)
+    #expect(relabeled.steps.first?.log.driveIntents.count == 4)
+}
+
 private func makeRecoveryDefinition() throws -> ReferenceQuadrotorScenarioDefinition {
     let scenarios = try KuyAtt1Suite().scenarios()
     return try #require(scenarios.first)
@@ -180,12 +208,18 @@ private func makeRecoveryEntry(
 private func makeRecoveryEpisode(
     definition: ReferenceQuadrotorScenarioDefinition,
     altitude: Double,
-    verticalVelocity: Double
+    verticalVelocity: Double,
+    stepCount: Int = 2
 ) throws -> RolloutEpisode {
-    let logs = try [
-        makeRecoveryStep(stepIndex: 0, includeCutUpdate: true, altitude: altitude, verticalVelocity: verticalVelocity),
-        makeRecoveryStep(stepIndex: 1, includeCutUpdate: false, altitude: altitude, verticalVelocity: verticalVelocity),
-    ]
+    let count = max(1, stepCount)
+    let logs = try (0..<count).map { index in
+        try makeRecoveryStep(
+            stepIndex: UInt64(index),
+            includeCutUpdate: true,
+            altitude: altitude,
+            verticalVelocity: verticalVelocity
+        )
+    }
     let steps = try logs.enumerated().map { index, log in
         try EnvironmentStep(
             observation: EnvironmentObservation(log: log),

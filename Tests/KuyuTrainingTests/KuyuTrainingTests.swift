@@ -455,11 +455,15 @@ struct TrainingDatasetWriterTests {
             failureTime: 0.01
         )
         let output = KuyAtt1RunOutput(
-            result: SuiteRunResult(evaluations: [evaluation], replayChecks: [], passed: false),
+            result: SuiteRunResult(
+                evaluations: [evaluation],
+                replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
+                passed: false
+            ),
             summary: ValidationSummary(
                 suitePassed: false,
                 evaluations: [evaluation],
-                replayChecks: [],
+                replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
                 manifest: [],
                 aggregate: EvaluationAggregate.from(evaluations: [evaluation])
             ),

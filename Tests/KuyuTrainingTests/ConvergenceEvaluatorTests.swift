@@ -1278,12 +1278,16 @@ private func trainingContractRunOutput(passed: Bool, log: SimulationLog) throws 
     let summary = ValidationSummary(
         suitePassed: passed,
         evaluations: [evaluation],
-        replayChecks: [],
+        replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
         manifest: [],
         aggregate: EvaluationAggregate.from(evaluations: [evaluation])
     )
     return KuyAtt1RunOutput(
-        result: SuiteRunResult(evaluations: [evaluation], replayChecks: [], passed: passed),
+        result: SuiteRunResult(
+            evaluations: [evaluation],
+            replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
+            passed: passed
+        ),
         summary: summary,
         logs: [ScenarioLogEntry(
             key: ScenarioKey(scenarioId: log.scenarioId, seed: log.seed),

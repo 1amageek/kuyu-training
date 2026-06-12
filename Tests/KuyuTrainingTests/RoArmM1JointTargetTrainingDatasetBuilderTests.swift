@@ -20,11 +20,156 @@ import Testing
     #expect(result.dataset.records.count == 4)
     #expect(result.dataset.records.allSatisfy { $0.sensors.count == 25 })
     #expect(result.dataset.records.allSatisfy { $0.actionValues?.count == 5 })
+    #expect(result.dataset.records.allSatisfy { record in
+        record.driveIntents.allSatisfy { (-1.0...1.0).contains($0.value) }
+    })
+    #expect(result.dataset.records.allSatisfy { record in
+        record.actionValues?.allSatisfy { (-1.0...1.0).contains($0) } == true
+    })
     #expect(result.report.perDrive.map(\.driveID) == RoArmM1ArmGripperSemantics.driveIDs)
+    let codec = try JointTargetActionCodec(
+        physicalRanges: RoArmM1ServoCommandEncoder.manufacturerJointLimits,
+        actionContract: RoArmM1LearningContracts.armGripperTargetsActionContract()
+    )
+    let firstRecord = try #require(result.dataset.records.first)
+    let firstActions = try #require(firstRecord.actionValues)
+    let firstTargets = try codec.physicalTargets(fromNormalizedActions: firstActions)
+    assertArrayApproximatelyEqual(firstTargets, [0.02, 0.01, -0.01, 0.02, -0.02])
+    #expect(firstRecord.driveIntents.map(\.value) == firstActions)
     let hindsight = result.dataset.records[1]
     let targetErrorChannels = hindsight.sensors.filter { (10...14).contains(Int($0.channelIndex)) }
     #expect(targetErrorChannels.count == 5)
     #expect(targetErrorChannels.allSatisfy { abs($0.value) < 1e-12 })
+}
+
+@Test func jointTargetActionCodecRoundTripsRoArmM1JointTargets() throws {
+    let codec = try JointTargetActionCodec(
+        physicalRanges: RoArmM1ServoCommandEncoder.manufacturerJointLimits,
+        actionContract: RoArmM1LearningContracts.armGripperTargetsActionContract()
+    )
+    let physicalTargets = [-3.14, 0.0, 2.7, -2.1, -1.57]
+
+    let normalizedActions = try codec.normalizedActions(fromPhysicalTargets: physicalTargets)
+    let decodedTargets = try codec.physicalTargets(fromNormalizedActions: normalizedActions)
+    let driveIntents = try codec.driveIntents(fromNormalizedActions: normalizedActions)
+
+    #expect(normalizedActions.allSatisfy { (-1.0...1.0).contains($0) })
+    assertArrayApproximatelyEqual(decodedTargets, physicalTargets)
+    assertArrayApproximatelyEqual(driveIntents.map(\.activation), physicalTargets)
+    #expect(driveIntents.map { Int($0.index.rawValue) } == [0, 1, 2, 3, 4])
+}
+
+@Test func jointTargetActionCodecRejectsInvalidActionContractsAndValues() throws {
+    let physicalRanges = RoArmM1ServoCommandEncoder.manufacturerJointLimits
+    let invalidContract = LearningProjectActionContract(
+        schemaID: RoArmM1JointTargetTrainingGoal.canonical.actionSchemaID,
+        kind: .continuous,
+        driveCount: 5,
+        actuatorCount: 5,
+        isBounded: true,
+        channels: [
+            LearningProjectActionChannel(
+                index: 0,
+                name: "baseYaw",
+                unit: "normalized",
+                normalizedLowerBound: -1,
+                normalizedUpperBound: 1,
+                outputTransform: .tanh
+            ),
+            LearningProjectActionChannel(
+                index: 2,
+                name: "elbowPitch",
+                unit: "normalized",
+                normalizedLowerBound: -1,
+                normalizedUpperBound: 1,
+                outputTransform: .tanh
+            ),
+            LearningProjectActionChannel(
+                index: 3,
+                name: "wristPitch",
+                unit: "normalized",
+                normalizedLowerBound: -1,
+                normalizedUpperBound: 1,
+                outputTransform: .tanh
+            ),
+            LearningProjectActionChannel(
+                index: 4,
+                name: "gripperClamp",
+                unit: "normalized",
+                normalizedLowerBound: -1,
+                normalizedUpperBound: 1,
+                outputTransform: .tanh
+            ),
+            LearningProjectActionChannel(
+                index: 5,
+                name: "spare",
+                unit: "normalized",
+                normalizedLowerBound: -1,
+                normalizedUpperBound: 1,
+                outputTransform: .tanh
+            ),
+        ]
+    )
+    #expect(throws: JointTargetActionCodec.CodecError.unsupportedActionContract("non-contiguous-channel-indices")) {
+        _ = try JointTargetActionCodec(
+            physicalRanges: physicalRanges,
+            actionContract: invalidContract
+        )
+    }
+
+    let codec = try JointTargetActionCodec(
+        physicalRanges: physicalRanges,
+        actionContract: RoArmM1LearningContracts.armGripperTargetsActionContract()
+    )
+    #expect(throws: JointTargetActionCodec.CodecError.outOfPhysicalRange(
+        index: 0,
+        value: 4,
+        lower: physicalRanges[0].lowerBound,
+        upper: physicalRanges[0].upperBound
+    )) {
+        _ = try codec.normalizedActions(fromPhysicalTargets: [4, 0, 0, 0, 0])
+    }
+    #expect(throws: JointTargetActionCodec.CodecError.outOfNormalizedRange(
+        index: 0,
+        value: 2,
+        lower: -1,
+        upper: 1
+    )) {
+        _ = try codec.physicalTargets(fromNormalizedActions: [2, 0, 0, 0, 0])
+    }
+
+    let clampedTargets = try codec.physicalTargets(
+        fromNormalizedActions: [2, -2, 0, 0, 0],
+        decodingMode: .clamped
+    )
+    #expect(clampedTargets[0] == physicalRanges[0].upperBound)
+    #expect(clampedTargets[1] == physicalRanges[1].lowerBound)
+}
+
+@Test func roArmM1ArmGripperBuilderRejectsMismatchedActionContractSchema() throws {
+    let mismatchedContract = LearningProjectActionContract(
+        schemaID: "not-roarm-m1-action-v1",
+        kind: .continuous,
+        driveCount: 5,
+        actuatorCount: 5,
+        isBounded: true,
+        channels: LearningProjectActionContract.boundedChannels(
+            names: RoArmM1ArmGripperSemantics.driveIDs,
+            unit: "normalized",
+            lowerBound: -1,
+            upperBound: 1,
+            transform: .tanh
+        )
+    )
+    let builder = RoArmM1JointTargetTrainingDatasetBuilder(config: RoArmM1JointTargetTrainingDatasetBuilderConfig(
+        actionContract: mismatchedContract
+    ))
+    #expect(throws: RoArmM1JointTargetTrainingDatasetBuilder.BuildError.actionContractSchemaMismatch(
+        expected: RoArmM1JointTargetTrainingGoal.canonical.actionSchemaID,
+        actual: mismatchedContract.schemaID
+    )) {
+        _ = try builder.build(from: makeRoArmM1JointTargetLog())
+    }
 }
 
 @Test func roArmM1ArmGripperBuilderWritesLoadableArtifacts() throws {
@@ -56,6 +201,17 @@ private func makeRoArmM1JointTargetLog() throws -> SimulationLog {
         configHash: "roarm-m1-arm-gripper-test",
         events: events
     )
+}
+
+private func assertArrayApproximatelyEqual(
+    _ lhs: [Double],
+    _ rhs: [Double],
+    tolerance: Double = 1e-9
+) {
+    #expect(lhs.count == rhs.count)
+    for (left, right) in zip(lhs, rhs) {
+        #expect(abs(left - right) <= tolerance)
+    }
 }
 
 private func makeRoArmM1JointTargetStep(

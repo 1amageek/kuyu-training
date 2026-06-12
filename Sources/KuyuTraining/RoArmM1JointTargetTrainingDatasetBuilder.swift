@@ -4,6 +4,7 @@ import KuyuPhysics
 
 public struct RoArmM1JointTargetTrainingDatasetBuilderConfig: Sendable, Equatable {
     public let goal: RoArmM1JointTargetTrainingGoal
+    public let actionContract: LearningProjectActionContract
     public let policyID: String
     public let episodeID: String
     public let jointRanges: [ClosedRange<Double>]
@@ -11,12 +12,14 @@ public struct RoArmM1JointTargetTrainingDatasetBuilderConfig: Sendable, Equatabl
 
     public init(
         goal: RoArmM1JointTargetTrainingGoal = .canonical,
+        actionContract: LearningProjectActionContract = RoArmM1LearningContracts.armGripperTargetsActionContract(),
         policyID: String = "roarm-m1-arm-gripper-teacher-v1",
         episodeID: String = "roarm-m1-arm-gripper-smoke",
         jointRanges: [ClosedRange<Double>] = RoArmM1ServoCommandEncoder.manufacturerJointLimits,
         includeHindsightRelabels: Bool = true
     ) {
         self.goal = goal
+        self.actionContract = actionContract
         self.policyID = policyID
         self.episodeID = episodeID
         self.jointRanges = jointRanges
@@ -38,6 +41,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
     public enum BuildError: Error, Sendable, Equatable, CustomStringConvertible {
         case emptyLog
         case invalidJointRangeCount(expected: Int, actual: Int)
+        case actionContractSchemaMismatch(expected: String, actual: String)
         case missingScalar(String)
         case nonFiniteScalar(String)
 
@@ -47,6 +51,8 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
                 return "empty-log"
             case .invalidJointRangeCount(let expected, let actual):
                 return "invalid-joint-range-count expected=\(expected) actual=\(actual)"
+            case .actionContractSchemaMismatch(let expected, let actual):
+                return "action-contract-schema-mismatch expected=\(expected) actual=\(actual)"
             case .missingScalar(let id):
                 return "missing-scalar id=\(id)"
             case .nonFiniteScalar(let id):
@@ -69,6 +75,16 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
         guard config.jointRanges.count == jointCount else {
             throw BuildError.invalidJointRangeCount(expected: jointCount, actual: config.jointRanges.count)
         }
+        guard config.actionContract.schemaID == config.goal.actionSchemaID else {
+            throw BuildError.actionContractSchemaMismatch(
+                expected: config.goal.actionSchemaID,
+                actual: config.actionContract.schemaID
+            )
+        }
+        let actionCodec = try JointTargetActionCodec(
+            physicalRanges: config.jointRanges,
+            actionContract: config.actionContract
+        )
 
         var records: [TrainingDatasetRecord] = []
         records.reserveCapacity(log.events.count * (config.includeHindsightRelabels ? 2 : 1))
@@ -80,9 +96,10 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             let reward = reward(for: jointState)
             aggregate.append(jointState: jointState, reward: reward, ranges: config.jointRanges)
             records.append(
-                makeRecord(
+                try makeRecord(
                     event: event,
                     jointState: jointState,
+                    actionCodec: actionCodec,
                     reward: reward,
                     isHindsight: false,
                     done: isLastSourceRecord
@@ -92,9 +109,10 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             if config.includeHindsightRelabels {
                 let hindsightState = jointState.asAchievedGoal()
                 records.append(
-                    makeRecord(
+                    try makeRecord(
                         event: event,
                         jointState: hindsightState,
+                        actionCodec: actionCodec,
                         reward: 1.0,
                         isHindsight: true,
                         done: isLastSourceRecord
@@ -116,7 +134,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             timeStep: log.timeStep.delta,
             determinismTier: log.determinism.tier.rawValue,
             configHash: "\(log.configHash)-\(config.goal.goalID)",
-            channelCount: RoArmM1JointTargetObservation.channelCount,
+            channelCount: RoArmM1JointTargetObservationEncoder.channelCount,
             driveCount: RoArmM1ServoCommandEncoder.jointCount,
             recordCount: records.count,
             failureReason: log.failureReason?.rawValue,
@@ -132,7 +150,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
                 version: "v1",
                 configHash: config.goal.goalID
             ),
-            observation: RoArmM1JointTargetObservation.metadata(),
+            observation: RoArmM1JointTargetObservationEncoder.metadata(),
             provenance: nil
         )
         return RoArmM1JointTargetTrainingResult(
@@ -163,8 +181,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
         targets.reserveCapacity(RoArmM1ServoCommandEncoder.jointCount)
         torques.reserveCapacity(RoArmM1ServoCommandEncoder.jointCount)
 
-        for index in 1...RoArmM1ServoCommandEncoder.jointCount {
-            let signalID = "joint_\(index)"
+        for signalID in RoArmM1ArmGripperSemantics.actuatorSignalIDs {
             positions.append(try scalar(signalID, from: event))
             velocities.append(try scalar("velocity_\(signalID)", from: event))
             targets.append(try scalar("target_\(signalID)", from: event))
@@ -202,13 +219,21 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
     private func makeRecord(
         event: WorldStepLog,
         jointState: RoArmM1JointTargetState,
+        actionCodec: JointTargetActionCodec,
         reward: Double,
         isHindsight: Bool,
         done: Bool
-    ) -> TrainingDatasetRecord {
-        let targetActions = isHindsight ? jointState.positions : jointState.targets
-        let sensors = RoArmM1JointTargetObservation.samples(
-            state: jointState,
+    ) throws -> TrainingDatasetRecord {
+        let targetPositions = isHindsight ? jointState.positions : jointState.targets
+        let targetActions = try actionCodec.normalizedActions(fromPhysicalTargets: targetPositions)
+        let observationState = try RoArmM1JointTargetObservationEncoder.observationState(
+            positions: jointState.positions,
+            velocities: jointState.velocities,
+            targets: jointState.targets,
+            ranges: jointState.ranges
+        )
+        let sensors = try RoArmM1JointTargetObservationEncoder.samples(
+            observationState: observationState,
             timestamp: event.time.time
         )
         let drives = targetActions.enumerated().map { index, value in
@@ -220,7 +245,7 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             driveIntents: drives,
             reflexCorrections: [],
             physicsState: jointState.physicsState,
-            actualState: jointState.observationState,
+            actualState: observationState,
             actionValues: targetActions,
             continueValue: done ? 0.0 : 1.0,
             reward: reward,
@@ -294,24 +319,8 @@ private struct RoArmM1JointTargetState: Sendable, Equatable {
         }.count
     }
 
-    var observationState: [Double] {
-        positions + velocities + errors + lowerMargins + upperMargins
-    }
-
     var physicsState: [Double] {
         positions + velocities + targets + torques
-    }
-
-    var lowerMargins: [Double] {
-        positions.enumerated().map { index, position in
-            position - ranges[index].lowerBound
-        }
-    }
-
-    var upperMargins: [Double] {
-        positions.enumerated().map { index, position in
-            ranges[index].upperBound - position
-        }
     }
 
     func asAchievedGoal() -> RoArmM1JointTargetState {
@@ -322,46 +331,6 @@ private struct RoArmM1JointTargetState: Sendable, Equatable {
             torques: torques,
             ranges: ranges
         )
-    }
-}
-
-private enum RoArmM1JointTargetObservation {
-    static let channelCount = 25
-
-    static func metadata() -> TrainingObservationMetadata {
-        TrainingObservationMetadata(
-            clock: TrainingObservationClockMetadata(
-                timebase: "kuyu-world-time",
-                maxSkewMs: 0,
-                syncPolicy: "single-authoritative-simulation-step"
-            ),
-            modalities: [
-                TrainingObservationModalityMetadata(
-                    id: "roarm-m1-proprioception",
-                    type: "joint-state",
-                    channels: channelNames,
-                    timestampSource: "WorldStepLog.time",
-                    provenance: TrainingObservationProvenanceMetadata(
-                        producer: "ArticulatedRigidBodySimulator",
-                        transport: "in-process",
-                        notes: "Camera-free RoArm M1 arm and gripper target tracking observation."
-                    )
-                )
-            ]
-        )
-    }
-
-    static func samples(
-        state: RoArmM1JointTargetState,
-        timestamp: Double
-    ) -> [TrainingSensorSample] {
-        state.observationState.enumerated().map { index, value in
-            TrainingSensorSample(channelIndex: UInt32(index), value: value, timestamp: timestamp)
-        }
-    }
-
-    private static var channelNames: [String] {
-        RoArmM1ArmGripperSemantics.observationChannelNames
     }
 }
 

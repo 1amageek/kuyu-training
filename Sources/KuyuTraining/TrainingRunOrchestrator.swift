@@ -186,12 +186,19 @@ public struct TrainingRunOrchestrator {
         self.checkpointRepository = checkpointRepository
     }
 
+    /// Runs the training loop.
+    ///
+    /// `onIterationBoundary` is invoked before each iteration starts — the
+    /// only point where external control (pause/stop) may take effect without
+    /// tearing an iteration. Returning `.stopRun` ends the run as
+    /// `cancelled`; a thrown error ends it as `failed`.
     public func run(
         config: TrainingRunConfig,
         runRequest: SimulationRunRequest,
         trainingTemplate: TrainingBackendRequest,
         artifactDirectory: URL,
         observationMetadata: TrainingObservationMetadata? = nil,
+        onIterationBoundary: (@MainActor (Int) async throws -> TrainingIterationBoundaryDirective)? = nil,
         onEvent: (@Sendable (TrainingRunEvent) -> Void)? = nil
     ) async -> TrainingRunResult {
         let startedAt = Date()
@@ -252,7 +259,32 @@ public struct TrainingRunOrchestrator {
         var finalCheckpointURL: URL?
         var currentSourceSnapshot = trainingTemplate.sourceSnapshot
 
+        var cancelledAtIterationBoundary = false
+
         for iteration in 1...config.maxIterations {
+            if let onIterationBoundary {
+                let directive: TrainingIterationBoundaryDirective
+                do {
+                    directive = try await onIterationBoundary(iteration)
+                } catch {
+                    return await finish(
+                        manifest: manifest,
+                        metrics: metrics,
+                        bestCheckpointID: bestCheckpointID,
+                        bestCheckpointURL: bestCheckpointURL,
+                        finalCheckpointID: finalCheckpointID,
+                        finalCheckpointURL: finalCheckpointURL,
+                        artifactDirectory: artifactDirectory,
+                        state: .failed,
+                        failureReason: "iteration-boundary-failed: \(error)",
+                        onEvent: onEvent
+                    )
+                }
+                if directive == .stopRun {
+                    cancelledAtIterationBoundary = true
+                    break
+                }
+            }
             onEvent?(.iterationStarted(iteration))
             let output: KuyAtt1RunOutput
             do {
@@ -385,7 +417,15 @@ public struct TrainingRunOrchestrator {
             bestCheckpointID: bestCheckpointID ?? finalCheckpointID
         )
         onEvent?(.convergenceUpdated(convergence))
-        let state: LearningRunTerminalState = convergence.accepted ? .completed : .rejected
+        let state: LearningRunTerminalState
+        let failureReason: String?
+        if cancelledAtIterationBoundary {
+            state = .cancelled
+            failureReason = "cancelled-at-iteration-boundary"
+        } else {
+            state = convergence.accepted ? .completed : .rejected
+            failureReason = convergence.accepted ? nil : convergence.reason
+        }
         return await finish(
             manifest: manifest,
             metrics: metrics,
@@ -395,7 +435,7 @@ public struct TrainingRunOrchestrator {
             artifactDirectory: artifactDirectory,
             checkpointPublicationMode: config.checkpointPublicationMode,
             state: state,
-            failureReason: convergence.accepted ? nil : convergence.reason,
+            failureReason: failureReason,
             onEvent: onEvent
         )
     }

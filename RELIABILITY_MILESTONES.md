@@ -146,7 +146,7 @@ Required gates:
 | Terminal outcome | Completed, cancelled, failed, and paused states write explicit outcomes. |
 | Terminal immutability | Terminal runs cannot accept new control commands, be reopened for writing, appended to, or transitioned back to non-terminal states. |
 | Artifact publication | Rejected candidates never appear at accepted paths. |
-| Event lifecycle | Public run handles finish streams through `shutdown()` and do not hang consumers. |
+| Event lifecycle | Public run handles finish streams on operation completion, cancellation, and `shutdown()` so consumers do not hang. |
 
 Exit criteria:
 
@@ -155,7 +155,7 @@ Exit criteria:
 | Every terminal path writes a durable outcome. | Targeted `TrainingRunContract` and orchestrator tests. |
 | Terminal outcomes are final at reader and writer boundaries. | `submitControlCommandRejectsTerminalRun`, `openRefusesTerminalRun`, `writerRejectsMutationAfterTerminalOutcome`, and `writerRejectsOutcomeTransitionAfterTerminalOutcome`. |
 | Every resumable failure mode is either repaired or rejected with a typed error. | Resume/corruption tests. |
-| Event streams cannot outlive a stopped run. | Handle lifecycle tests. |
+| Event streams cannot outlive a stopped run. | `ManagedTrainingRunHandle` tests for completion, cancellation, and shutdown stream termination. |
 
 ## KT3: Target Split and Import Gates
 

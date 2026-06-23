@@ -5,7 +5,6 @@ import KuyuScenarios
 import KuyuTrainingContracts
 import KuyuEvolution
 import KuyuReinforcement
-import KuyuTrainingValidation
 
 public protocol ReferenceQuadrotorPolicyFactory: Sendable {
     var policyID: String { get }

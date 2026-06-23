@@ -1,6 +1,7 @@
 import Foundation
 import KuyuCore
 import KuyuTrainingContracts
+import KuyuTrainingValidation
 
 public struct WorldModelTrainingTuple: Sendable, Codable, Equatable {
     public enum ValidationError: Error, Equatable {

@@ -2,7 +2,6 @@ import Foundation
 import KuyuCore
 import KuyuPhysics
 import KuyuScenarios
-import KuyuTrainingValidation
 
 public extension AttitudeRecoveryRelabeler {
     func relabelEpisode(

@@ -51,7 +51,7 @@ validator, regression tests, and evidence all agree.
 | KT1 | Scenario truth preservation | Complete for current runtime paths | Preserve task reference, reward descriptor, record count, and terminal boundary semantics across generated and cached datasets. | `TrainingDatasetContractValidator` plus dataset mixer, training orchestrator, and recovery artifact validator tests. |
 | KT2 | Run lifecycle reliability | Complete for current package runtime paths | Make run creation, resume, pause, cancel, failure, and artifact publication auditable and fail-closed under crash windows. | Targeted tests for torn journals, duplicate writers, terminal immutability, cancellation, secondary failure reporting, managed handles, managed executors, and artifact validation after resume. |
 | KT3 | Target split and import gates | Complete for current public facade | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, static import-boundary gate, facade compatibility test, and package-level xcodebuild test. |
-| KT4 | Profile isolation | In progress | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, and rejection of legacy CTBR shortcut compatibility. |
+| KT4 | Profile isolation | Complete for current profile-adapter boundary | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, rejection of legacy CTBR shortcut compatibility, and runtime adapter boundary gate. |
 | KT5 | Downstream adoption readiness | Pending | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
 
 ## Dependency Order
@@ -178,7 +178,7 @@ Target ownership:
 | `KuyuTrainingContracts` | Stable project/run contracts, training plans, bundle references, IDs, tensor shapes, worker snapshots, and domain-neutral enums. |
 | `KuyuEvolution` | Population, selection, mutation/crossover contracts, lineage, quality diversity archive. |
 | `KuyuReinforcement` | RL backend protocols, rollout buffers, rollout health contracts, stability envelopes, vectorized batch specs, and vectorized rollout contracts. |
-| `KuyuTrainingRuntime` | Orchestration, cancellation/resume, scheduling, progress/event streams, rollout episodes, and runtime-only compatibility extensions. |
+| `KuyuTrainingRuntime` | Orchestration, cancellation/resume, scheduling, progress/event streams, runtime tuple builders, and runtime-only compatibility extensions. |
 | `KuyuTrainingValidation` | Artifact, project, template, dataset, checkpoint, convergence, task-profile, and gate validators. |
 | `KuyuTraining` | Facade-only target that re-exports the split public API. |
 
@@ -190,22 +190,22 @@ Exit criteria:
 | Imports follow the package architecture. | Static validation script. |
 | Public API remains available through a stable facade. | `KuyuTrainingFacadeCompatibilityTests`. |
 
-Remaining KT4 debt discovered during the split:
+KT4 follow-up discovered during the split:
 
 | Debt | Next milestone |
 |---|---|
-| Some runtime and validation files still carry broad imports from the mechanical split. | KT4 tightens imports as part of profile isolation and ownership hardening. |
+| Some runtime and validation files still carried broad profile-adapter ownership from the mechanical split. | Resolved for reference-quadrotor rollout/profile adapters by KT4d. |
 
 ## KT4: Profile Isolation
 
-Status: in progress.
+Status: complete for current profile-adapter boundary.
 
 Goal: generic training contracts validate structure; profile validators validate
 robot meaning.
 
-Current focus rule: finish KT4 before expanding `kuyu-training` consumers. KT5
-work may document downstream needs, but it must not depend on generic training
-contracts being profile-safe until all KT4 exit criteria pass.
+Current focus rule: finish KT5 before expanding `kuyu-training` consumers. KT5
+may build on the KT4 profile-adapter boundary, but downstream consumers must
+not depend on runtime internals or profile-shaped compatibility contracts.
 
 KT4 is split into small gates so each change raises reliability without
 pretending the whole profile boundary is complete:
@@ -215,7 +215,7 @@ pretending the whole profile boundary is complete:
 | KT4a. Vectorized rollout quality isolation | Complete | `KuyuReinforcement` owns only `VectorizedTaskQualitySummary`; reference-quadrotor conversion lives in validation/profile code; package tests and boundary gate pass. |
 | KT4b. Generic template acceptance | Complete | A valid non-quadrotor template passes generic structure validation without reference-quadrotor semantics. |
 | KT4c. Legacy shortcut rejection | Complete | Old CTBR shortcut compatibility fails closed unless an explicit profile adapter owns the conversion. |
-| KT4d. Runtime profile import audit | Pending | Runtime orchestration does not import or infer robot-specific profile meaning outside validation/profile adapters. |
+| KT4d. Runtime profile import audit | Complete | Reference-quadrotor rollout/profile adapter implementations live in validation/profile code, and the boundary gate rejects reintroduction into runtime. |
 
 Completed slices:
 
@@ -224,6 +224,7 @@ Completed slices:
 | Vectorized rollout task quality is profile-neutral in `KuyuReinforcement`; reference-quadrotor task-quality conversion lives in validation/profile code. | `VectorizedTaskQualitySummary`, `ReferenceQuadrotorTaskQualitySummary+VectorizedTaskQualitySummary`, `VectorizedTrainingContractsTests`. |
 | RoArm M1 profile validation is owned by profile contracts, not reference-quadrotor defaults. | `TaskEvaluationProfileFamily`, `TaskEvaluationProfileContractValidator`, `TaskEvaluationProfileTests`, `LearningProjectTemplateTests`. |
 | Legacy CTBR shortcuts fail closed unless a reference-quadrotor profile owns the template or runnable stage. | `LearningProjectTemplateValidator`, `LearningProjectTemplateCatalog`, `LearningProjectTemplateTests`. |
+| Reference-quadrotor rollout, relabel, dataset, health, and automated profile pipeline adapters live under validation/profile code rather than the runtime target. | `Sources/KuyuTrainingValidation/ReferenceQuadrotorRuntime`, `TARGET_OWNERSHIP.md`, `../scripts/validate-kuyu-boundaries.sh`. |
 
 Required gates:
 
@@ -233,6 +234,11 @@ Required gates:
 | Generic validator encodes action semantics as global rules. | Tests that action schema and channel semantics remain profile-owned. |
 | Legacy CTBR shortcuts survive silently. | Negative tests for old shortcut compatibility. |
 | Profile-specific requirements leak into runtime orchestration. | Import-boundary and validator responsibility tests. |
+
+KT5 owns the remaining runner-contract upgrade: the current training/probe
+orchestrators still interoperate with existing `KuyAtt1RunOutput`-based scenario
+executors. That compatibility path may orchestrate profile-shaped outputs, but
+new profile adapter implementations must stay outside `KuyuTrainingRuntime`.
 
 ## KT5: Downstream Adoption Readiness
 

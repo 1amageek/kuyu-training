@@ -184,8 +184,8 @@ orchestration can own the five-drive arm/gripper policy lifecycle.
 | **KuyuTrainingContracts** | Foundation | Stable project/run contracts, IDs, plans, capability enums, and neutral DTOs |
 | **KuyuEvolution** | KuyuTrainingContracts | Population, selection, mutation/crossover contracts, lineage, and evolution orchestration |
 | **KuyuReinforcement** | KuyuTrainingContracts | RL backend protocols, rollout buffers, rollout health, stability envelopes, and vectorized rollout contracts |
-| **KuyuTrainingValidation** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuCore, KuyuPhysics, KuyuScenarios | Artifact, project, template, dataset, checkpoint, convergence, and profile validators |
-| **KuyuTrainingRuntime** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuTrainingValidation, KuyuCore, KuyuPhysics, KuyuScenarios | Run/probe orchestration, managed handles, archive contracts, rollout harnesses, and runtime compatibility extensions |
+| **KuyuTrainingValidation** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuCore, KuyuPhysics, KuyuScenarios | Artifact, project, template, dataset, checkpoint, convergence, profile validators, and profile-owned rollout/data adapters |
+| **KuyuTrainingRuntime** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuTrainingValidation, KuyuCore, KuyuPhysics, KuyuScenarios | Run/probe orchestration, managed handles, archive contracts, runtime tuple builders, and runtime compatibility extensions |
 
 Target ownership:
 

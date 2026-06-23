@@ -9,7 +9,7 @@ import KuyuReinforcement
 public extension TrainingDatasetExporter {
     @discardableResult
     func write(
-        output: KuyAtt1RunOutput,
+        output: TrainingScenarioRunOutput,
         to directory: URL,
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
@@ -26,21 +26,27 @@ public extension TrainingDatasetExporter {
         } else {
             provenanceMap = [:]
         }
-        let terminalFactsMap = Dictionary(
-            output.result.evaluations.map { evaluation in
-                (
-                    ScenarioKey(scenarioId: evaluation.scenarioId, seed: evaluation.seed),
-                    ScenarioTerminalFacts(evaluation: evaluation)
-                )
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
         return try write(
             entries: output.logs,
             to: directory,
             observationByScenarioKey: observationMap,
             provenanceByScenarioKey: provenanceMap,
-            terminalFactsByScenarioKey: terminalFactsMap
+            terminalFactsByScenarioKey: output.terminalFactsByScenarioKey
+        )
+    }
+
+    @discardableResult
+    func write(
+        output: KuyAtt1RunOutput,
+        to directory: URL,
+        observation: TrainingObservationMetadata? = nil,
+        provenance: TrainingProvenanceManifest? = nil
+    ) throws -> [ScenarioKey: URL] {
+        return try write(
+            output: TrainingScenarioRunOutput(kuyAtt1: output),
+            to: directory,
+            observation: observation,
+            provenance: provenance
         )
     }
 }

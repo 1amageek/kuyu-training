@@ -85,7 +85,7 @@ public struct TrainingProbeRunSummary: Sendable, Codable, Equatable {
     public let averageHfStabilityScore: Double?
     public let diagnostics: TrainingProbeRunDiagnostics
 
-    public init(stage: TrainingProbeStage, output: KuyAtt1RunOutput) {
+    public init(stage: TrainingProbeStage, output: TrainingScenarioRunOutput) {
         self.stage = stage
         self.score = TrainingRunOrchestrator.score(from: output.summary)
         self.suitePassed = output.summary.suitePassed
@@ -129,7 +129,7 @@ public struct TrainingProbeRunDiagnostics: Sendable, Codable, Equatable {
     public let finalVerticalVelocityZ: Double?
     public let failureReasons: [String]
 
-    public init(output: KuyAtt1RunOutput) {
+    public init(output: TrainingScenarioRunOutput) {
         let events = output.logs.flatMap(\.log.events)
         let driveActivations = events.flatMap { event in
             event.driveIntents.map(\.activation)
@@ -540,10 +540,10 @@ public protocol TrainingProbeScenarioExecuting {
         stage: TrainingProbeStage,
         request: SimulationRunRequest,
         checkpointURL: URL?
-    ) async throws -> KuyAtt1RunOutput
+    ) async throws -> TrainingScenarioRunOutput
 
     func writeRecoveryRelabelDataset(
-        output: KuyAtt1RunOutput,
+        output: TrainingScenarioRunOutput,
         request: SimulationRunRequest,
         to directory: URL,
         includeSuccessfulScenarios: Bool
@@ -552,7 +552,7 @@ public protocol TrainingProbeScenarioExecuting {
 
 public extension TrainingProbeScenarioExecuting {
     func writeRecoveryRelabelDataset(
-        output: KuyAtt1RunOutput,
+        output: TrainingScenarioRunOutput,
         request: SimulationRunRequest,
         to directory: URL,
         includeSuccessfulScenarios: Bool
@@ -661,7 +661,7 @@ public struct TrainingProbeOrchestrator {
         )
 
         var trained: TrainingProbeRunSummary?
-        var trainedOutput: KuyAtt1RunOutput?
+        var trainedOutput: TrainingScenarioRunOutput?
         let evaluationCheckpointURL = training.checkpointDecision.publishedCheckpointURL
             ?? training.checkpointDecision.candidateCheckpointURL
         if training.convergence.accepted || !probeConfig.requireAcceptedCheckpoint {
@@ -903,7 +903,7 @@ public struct TrainingProbeOrchestrator {
 
     private func makeRecoveryRelabelStatus(
         comparison: TrainingProbeComparison,
-        trainedOutput: KuyAtt1RunOutput?,
+        trainedOutput: TrainingScenarioRunOutput?,
         trainingRequest: SimulationRunRequest,
         artifactDirectory: URL
     ) async -> TrainingProbeRecoveryRelabelStatus {
@@ -1163,7 +1163,7 @@ private final class ProbeTrainingScenarioAdapter: TrainingScenarioExecuting {
         self.checkpointURL = checkpointURL
     }
 
-    func runSuiteForTrainingRun(request: SimulationRunRequest) async throws -> KuyAtt1RunOutput {
+    func runSuiteForTrainingRun(request: SimulationRunRequest) async throws -> TrainingScenarioRunOutput {
         try await executor.runProbeSuite(
             stage: .trainingIteration,
             request: request,

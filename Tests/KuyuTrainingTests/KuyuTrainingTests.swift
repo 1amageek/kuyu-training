@@ -483,6 +483,55 @@ struct TrainingDatasetWriterTests {
         #expect(dataset.records.last?.truncated == false)
     }
 
+    @Test func trainingScenarioRunOutputExporterUsesEvaluationTerminalFacts() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let log = try makeSimulationLog(steps: 2)
+        let key = ScenarioKey(scenarioId: log.scenarioId, seed: log.seed)
+        let evaluation = ScenarioEvaluation(
+            scenarioId: log.scenarioId,
+            seed: log.seed,
+            passed: false,
+            maxOmega: 1.0,
+            maxTiltDegrees: 10.0,
+            sustainedViolationSeconds: 0.2,
+            recoveryTimeSeconds: nil,
+            overshootDegrees: nil,
+            hfStabilityScore: nil,
+            failures: [FailureReason.sustainedFall.rawValue],
+            failureReason: .sustainedFall,
+            failureTime: 0.01
+        )
+        let kuyAtt1Output = KuyAtt1RunOutput(
+            result: SuiteRunResult(
+                evaluations: [evaluation],
+                replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
+                passed: false
+            ),
+            summary: ValidationSummary(
+                suitePassed: false,
+                evaluations: [evaluation],
+                replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
+                manifest: [],
+                aggregate: EvaluationAggregate.from(evaluations: [evaluation])
+            ),
+            logs: [ScenarioLogEntry(key: key, log: log)]
+        )
+
+        let output = TrainingScenarioRunOutput(kuyAtt1: kuyAtt1Output)
+        let outputs = try TrainingDatasetExporter().write(output: output, to: dir)
+        let datasetURL = try #require(outputs[key])
+        let dataset = try TrainingDataset.load(from: datasetURL)
+        #expect(output.summary.suitePassed == false)
+        #expect(output.summary.evaluations.first?.scenarioID == log.scenarioId)
+        #expect(dataset.metadata.done == true)
+        #expect(dataset.metadata.truncated == false)
+        #expect(dataset.metadata.terminalReason == FailureReason.sustainedFall.rawValue)
+        #expect(dataset.metadata.failureReason == FailureReason.sustainedFall.rawValue)
+        #expect(dataset.metadata.failureTime == 0.01)
+    }
+
     @Test func legacyV3DatasetRemainsLoadableAfterTaskReferenceSchemaUpgrade() throws {
         let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }

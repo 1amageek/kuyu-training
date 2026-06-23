@@ -9,7 +9,7 @@ import KuyuTrainingValidation
 
 @MainActor
 public protocol TrainingScenarioExecuting {
-    func runSuiteForTrainingRun(request: SimulationRunRequest) async throws -> KuyAtt1RunOutput
+    func runSuiteForTrainingRun(request: SimulationRunRequest) async throws -> TrainingScenarioRunOutput
 }
 
 public struct TrainingRunConfig: Sendable, Equatable {
@@ -65,7 +65,7 @@ public enum TrainingRunEvent: Sendable, Equatable {
     case progress(TrainingRunProgressEvent)
     case log(TrainingRunLogEvent)
     case iterationStarted(Int)
-    case suiteCompleted(iteration: Int, output: KuyAtt1RunOutput, score: Double)
+    case suiteCompleted(iteration: Int, output: TrainingScenarioRunOutput, score: Double)
     case datasetExported(iteration: Int, directory: String, count: Int)
     case trainingCompleted(iteration: Int, result: TrainingBackendResult)
     case reinforcementTrainingCompleted(iteration: Int, result: ReinforcementTrainingBackendResult)
@@ -226,7 +226,7 @@ public struct TrainingRunOrchestrator {
                 }
             }
             onEvent?(.iterationStarted(iteration))
-            let output: KuyAtt1RunOutput
+            let output: TrainingScenarioRunOutput
             do {
                 output = try await scenarioExecutor.runSuiteForTrainingRun(request: runRequest)
             } catch {
@@ -675,7 +675,7 @@ public struct TrainingRunOrchestrator {
     private func suiteMetrics(
         runID: String,
         iteration: Int,
-        output: KuyAtt1RunOutput,
+        output: TrainingScenarioRunOutput,
         score: Double
     ) -> [TrainingMetricRecord] {
         let evaluations = output.summary.evaluations
@@ -693,7 +693,7 @@ public struct TrainingRunOrchestrator {
         ]
     }
 
-    public nonisolated static func score(from summary: ValidationSummary) -> Double {
+    public nonisolated static func score(from summary: TrainingScenarioRunSummary) -> Double {
         var score = summary.suitePassed ? 1.0 : 0.0
         if let worstOvershoot = summary.aggregate.worstOvershootDegrees {
             score -= min(1.0, worstOvershoot / 90.0) * 0.4

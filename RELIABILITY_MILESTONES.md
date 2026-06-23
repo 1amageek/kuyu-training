@@ -52,7 +52,7 @@ validator, regression tests, and evidence all agree.
 | KT2 | Run lifecycle reliability | Complete for current package runtime paths | Make run creation, resume, pause, cancel, failure, and artifact publication auditable and fail-closed under crash windows. | Targeted tests for torn journals, duplicate writers, terminal immutability, cancellation, secondary failure reporting, managed handles, managed executors, and artifact validation after resume. |
 | KT3 | Target split and import gates | Complete for current public facade | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, static import-boundary gate, facade compatibility test, and package-level xcodebuild test. |
 | KT4 | Profile isolation | Complete for current profile-adapter boundary | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, rejection of legacy CTBR shortcut compatibility, and runtime adapter boundary gate. |
-| KT5 | Downstream adoption readiness | Pending | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
+| KT5 | Downstream adoption readiness | In progress | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
 
 ## Dependency Order
 
@@ -235,14 +235,33 @@ Required gates:
 | Legacy CTBR shortcuts survive silently. | Negative tests for old shortcut compatibility. |
 | Profile-specific requirements leak into runtime orchestration. | Import-boundary and validator responsibility tests. |
 
-KT5 owns the remaining runner-contract upgrade: the current training/probe
-orchestrators still interoperate with existing `KuyAtt1RunOutput`-based scenario
-executors. That compatibility path may orchestrate profile-shaped outputs, but
-new profile adapter implementations must stay outside `KuyuTrainingRuntime`.
+KT5a resolves the first runner-contract upgrade by making training/probe
+orchestrators consume `TrainingScenarioRunOutput`. Existing reference-quadrotor
+executors may still produce `KuyAtt1RunOutput`, but that conversion now belongs
+to validation/profile adapter code and consumer compatibility adapters outside
+`KuyuTrainingRuntime`.
 
 ## KT5: Downstream Adoption Readiness
 
-Status: pending.
+Status: in progress.
+
+Goal: downstream packages consume stable public runtime DTOs and generated
+artifacts instead of knowing profile-specific scenario output types or internal
+target layout.
+
+KT5 is split into consumer-facing gates:
+
+| Slice | Status | Completion gate |
+|---|---|---|
+| KT5a. Runtime scenario run output neutrality | Complete | `TrainingScenarioExecuting` and `TrainingProbeScenarioExecuting` return `TrainingScenarioRunOutput`; `KuyuTrainingRuntime` rejects `KuyAtt1RunOutput` reintroduction. |
+| KT5b. Generated artifact compatibility | Pending | Public artifact loaders and writers round-trip generated training/probe artifacts without internal target imports. |
+| KT5c. App/MLX public-consumer smoke | Pending | `kuyu` and `kuyu-mlx` smoke paths consume only public contracts and generated artifacts for training/evaluation entrypoints. |
+
+Completed slices:
+
+| Slice | Evidence |
+|---|---|
+| Runtime scenario execution contracts no longer expose `KuyAtt1RunOutput`; reference-quadrotor conversion lives in validation/profile adapter code. | `TrainingScenarioRunOutput`, `TrainingDatasetExporter+KuyAtt1`, `TrainingRunOrchestrator`, `TrainingProbeOrchestrator`, `../scripts/validate-kuyu-boundaries.sh`. |
 
 Goal: `kuyu-mlx`, CLI, UI, and long-running training harnesses can depend on
 public `kuyu-training` contracts without reading internal runtime state.

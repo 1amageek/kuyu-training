@@ -798,7 +798,10 @@ import Testing
         passed: true,
         log: try trainingContractMultiDriveSimulationLog()
     )
-    let summary = TrainingProbeRunSummary(stage: .teacherActiveAltitudeHold, output: output)
+    let summary = TrainingProbeRunSummary(
+        stage: .teacherActiveAltitudeHold,
+        output: TrainingScenarioRunOutput(kuyAtt1: output)
+    )
 
     #expect(trainingContractClose(summary.diagnostics.averageDriveActivationByIndex, [0.4, 0.6]))
     #expect(summary.diagnostics.maxDriveActivationByIndex == [0.6, 0.8])
@@ -1135,13 +1138,13 @@ private func metric(
 
 @MainActor
 private final class FakeTrainingScenarioExecutor: TrainingScenarioExecuting {
-    let output: KuyAtt1RunOutput
+    let output: TrainingScenarioRunOutput
 
     init(output: KuyAtt1RunOutput) {
-        self.output = output
+        self.output = TrainingScenarioRunOutput(kuyAtt1: output)
     }
 
-    func runSuiteForTrainingRun(request: SimulationRunRequest) async throws -> KuyAtt1RunOutput {
+    func runSuiteForTrainingRun(request: SimulationRunRequest) async throws -> TrainingScenarioRunOutput {
         output
     }
 }
@@ -1254,23 +1257,23 @@ private final class FakeTrainingProbeExecutor: TrainingProbeScenarioExecuting {
         stage: TrainingProbeStage,
         request: SimulationRunRequest,
         checkpointURL: URL?
-    ) async throws -> KuyAtt1RunOutput {
+    ) async throws -> TrainingScenarioRunOutput {
         stages.append(stage)
         switch stage {
         case .teacherActiveAltitudeHold:
-            return try trainingContractRunOutput(passed: true)
+            return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: true))
         case .initialPolicy:
-            return try trainingContractRunOutput(passed: false)
+            return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: false))
         case .trainingIteration:
-            return try trainingContractRunOutput(passed: true)
+            return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: true))
         case .trainedPolicy:
             #expect(checkpointURL != nil)
-            return try trainingContractRunOutput(passed: trainedPasses)
+            return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: trainedPasses))
         }
     }
 
     func writeRecoveryRelabelDataset(
-        output: KuyAtt1RunOutput,
+        output: TrainingScenarioRunOutput,
         request: SimulationRunRequest,
         to directory: URL,
         includeSuccessfulScenarios: Bool

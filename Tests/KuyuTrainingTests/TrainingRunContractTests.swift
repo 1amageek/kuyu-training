@@ -326,6 +326,84 @@ struct TrainingRunContractTests {
         #expect(journal.truncatedTailBytes == 0)
     }
 
+    @Test func openRefusesTerminalRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-terminal-open")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        try writer.writeOutcome(
+            TrainingRunOutcome(
+                status: .completed,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_250),
+                finalIteration: 0,
+                acceptedCheckpointPath: "checkpoints/accepted.manasbundle"
+            )
+        )
+
+        #expect {
+            try TrainingRunArchiveWriter.open(runID: manifest.runID, in: root)
+        } throws: { error in
+            guard case TrainingRunContractError.terminalRunAlreadyFinished(let status) = error else {
+                return false
+            }
+            return status == .completed
+        }
+    }
+
+    @Test func writerRejectsMutationAfterTerminalOutcome() throws {
+        let root = try makeTemporaryRunRoot()
+        var writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-terminal-mutation"),
+            in: root
+        )
+        try writer.appendIteration(makeRecord(iteration: 0))
+        try writer.writeOutcome(
+            TrainingRunOutcome(
+                status: .completed,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_260),
+                finalIteration: 0
+            )
+        )
+
+        #expect {
+            try writer.appendIteration(makeRecord(iteration: 1))
+        } throws: { error in
+            guard case TrainingRunContractError.terminalRunAlreadyFinished(let status) = error else {
+                return false
+            }
+            return status == .completed
+        }
+    }
+
+    @Test func writerRejectsOutcomeTransitionAfterTerminalOutcome() throws {
+        let root = try makeTemporaryRunRoot()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-terminal-transition"),
+            in: root
+        )
+        try writer.writeOutcome(
+            TrainingRunOutcome(
+                status: .cancelled,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_270),
+                finalIteration: 0
+            )
+        )
+
+        #expect {
+            try writer.writeOutcome(
+                TrainingRunOutcome(
+                    status: .running,
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_271),
+                    finalIteration: 0
+                )
+            )
+        } throws: { error in
+            guard case TrainingRunContractError.terminalRunAlreadyFinished(let status) = error else {
+                return false
+            }
+            return status == .cancelled
+        }
+    }
+
     @Test func openRefusesWhileAnotherWriterProcessIsAlive() throws {
         let root = try makeTemporaryRunRoot()
         let sleeper = Process()

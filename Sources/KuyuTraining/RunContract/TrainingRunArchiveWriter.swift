@@ -118,14 +118,15 @@ public struct TrainingRunArchiveWriter: Sendable {
         let reader = TrainingRunArchiveReader(runDirectory: runDirectory)
         let manifest = try reader.loadManifest()
         let outcome = try reader.loadOutcome()
-        if !outcome.status.isTerminal {
-            let heartbeat = try reader.loadHeartbeat()
-            let previousWriter = heartbeat?.processIdentifier ?? manifest.host.processIdentifier
-            let currentProcess = ProcessInfo.processInfo.processIdentifier
-            if previousWriter != currentProcess,
-               TrainingRunArchiveReader.isProcessAlive(previousWriter) {
-                throw TrainingRunContractError.runStillLive(processIdentifier: previousWriter)
-            }
+        if outcome.status.isTerminal {
+            throw TrainingRunContractError.terminalRunAlreadyFinished(status: outcome.status)
+        }
+        let heartbeat = try reader.loadHeartbeat()
+        let previousWriter = heartbeat?.processIdentifier ?? manifest.host.processIdentifier
+        let currentProcess = ProcessInfo.processInfo.processIdentifier
+        if previousWriter != currentProcess,
+           TrainingRunArchiveReader.isProcessAlive(previousWriter) {
+            throw TrainingRunContractError.runStillLive(processIdentifier: previousWriter)
         }
         var repairedTailByteCount: Int?
         var journal = try reader.readJournal()
@@ -166,6 +167,7 @@ public struct TrainingRunArchiveWriter: Sendable {
     /// using one `write(2)` call. Iterations must be appended in strict order
     /// with no gaps.
     public mutating func appendIteration(_ record: TrainingRunIterationRecord) throws {
+        try ensureRunIsMutable()
         guard record.iteration == nextIteration else {
             throw TrainingRunContractError.nonMonotonicIteration(
                 expected: nextIteration,
@@ -195,11 +197,18 @@ public struct TrainingRunArchiveWriter: Sendable {
     // MARK: - Heartbeat / outcome
 
     public func writeHeartbeat(_ heartbeat: TrainingRunHeartbeat) throws {
+        try ensureRunIsMutable()
         try writeDocument(heartbeat, to: heartbeatURL)
     }
 
     public func writeOutcome(_ outcome: TrainingRunOutcome) throws {
         try outcome.validate()
+        if FileManager.default.fileExists(atPath: outcomeURL.path) {
+            let current = try TrainingRunArchiveReader(runDirectory: runDirectory).loadOutcome()
+            if current.status.isTerminal {
+                throw TrainingRunContractError.terminalRunAlreadyFinished(status: current.status)
+            }
+        }
         try writeDocument(outcome, to: outcomeURL)
     }
 
@@ -237,6 +246,7 @@ public struct TrainingRunArchiveWriter: Sendable {
     /// A rejection must carry a non-empty reason; unknown commands are
     /// rejected this way, never silently ignored.
     public func acknowledgeControlCommand(_ acknowledgment: TrainingRunControlAcknowledgment) throws {
+        try ensureRunIsMutable()
         if acknowledgment.rejected {
             guard let reason = acknowledgment.reason, !reason.isEmpty else {
                 throw TrainingRunContractError.invalidControlRecord(
@@ -289,6 +299,15 @@ public struct TrainingRunArchiveWriter: Sendable {
 
     private var controlCommandURL: URL {
         controlDirectoryURL.appendingPathComponent(TrainingRunContractSchema.controlCommandFileName, isDirectory: false)
+    }
+
+    // MARK: - Lifecycle guard
+
+    private func ensureRunIsMutable() throws {
+        let outcome = try TrainingRunArchiveReader(runDirectory: runDirectory).loadOutcome()
+        if outcome.status.isTerminal {
+            throw TrainingRunContractError.terminalRunAlreadyFinished(status: outcome.status)
+        }
     }
 
     // MARK: - Low-level IO

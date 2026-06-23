@@ -17,6 +17,7 @@ public enum TrainingRunContractError: Error, Sendable, Equatable, CustomStringCo
     case staleControlSequence(latest: Int, found: Int)
     case invalidControlRecord(reason: String)
     case runStillLive(processIdentifier: Int32)
+    case terminalRunAlreadyFinished(status: TrainingRunLifecycleStatus)
     case writeFailed(path: String, reason: String)
 
     public var description: String {
@@ -49,6 +50,8 @@ public enum TrainingRunContractError: Error, Sendable, Equatable, CustomStringCo
             return "invalid-control-record: \(reason)"
         case .runStillLive(let processIdentifier):
             return "run-still-live: pid=\(processIdentifier)"
+        case .terminalRunAlreadyFinished(let status):
+            return "terminal-run-already-finished: status=\(status.rawValue)"
         case .writeFailed(let path, let reason):
             return "run-contract-write-failed: \(path) (\(reason))"
         }

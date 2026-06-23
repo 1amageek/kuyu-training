@@ -14,6 +14,10 @@ The generic contract reset is defined in
 consistency only; robot-specific action, observation, privileged-feature, and
 training-profile requirements belong to profile validators.
 
+Package-local reliability milestones are defined in
+`RELIABILITY_MILESTONES.md`. Implementation work should advance the first
+incomplete milestone unless it is fixing a blocking defect in an earlier one.
+
 The package responsibility skeleton is defined in
 `../KUYU_PACKAGE_ARCHITECTURE.md`.
 

@@ -131,6 +131,7 @@ Acceptance evidence:
 | Scenario-run replay evidence survives the training boundary. | `TrainingScenarioRunSummary.replay` preserves `ValidationSummary.replay`, legacy summaries decode as replay-not-performed, and `TrainingScenarioReplayValidator` rejects empty, missing, failed, unexpected, or duplicate replay checks. |
 | Runnable starter templates resolve to scenario-owned coverage. | `RunnableStarterScenarioCoverageValidator` checks every default runnable starter primary stage against `ReferenceQuadrotorScenarioCatalog`, rejecting missing starters, unresolved suites, invalid episode counts, empty coverage, and duplicate scenario keys. |
 | Training run artifacts carry replay evidence for scenario metrics. | `TrainingArtifactWriter` writes `scenario-runs.jsonl`, `TrainingRunOrchestrator` validates replay before accepting suite output, and `TrainingRunArtifactValidator` rejects completed, rejected, metric-bearing, missing, mismatched, duplicate, or replay-not-performed scenario run artifacts. |
+| Default runnable starters can produce validated replay artifacts. | `RunnableStarterScenarioArtifactGenerator` runs every default runnable starter primary stage through scenario-owned replay runtime, writes artifact bundles, and reloads them through `TrainingRunArtifactValidator`. |
 
 Remaining maintenance rule: any new cache-consuming runtime path must call
 `TrainingDatasetContractValidator` or a stricter package-local validator before
@@ -142,7 +143,11 @@ runnable starter template must pass `RunnableStarterScenarioCoverageValidator`
 so task/profile/suite declarations cannot drift away from scenario-owned
 coverage. Training run artifact consumers must load through
 `TrainingRunArtifactValidator` or a stricter package-local gate so
-`scenario-runs.jsonl` replay evidence cannot be bypassed.
+`scenario-runs.jsonl` replay evidence cannot be bypassed. Default runnable
+starter artifact evidence must be produced through
+`RunnableStarterScenarioArtifactGenerator` or a stricter package-local generator
+that both runs scenario replay and reloads the generated bundle through the
+artifact validator.
 
 ## KT2: Run Lifecycle Reliability
 

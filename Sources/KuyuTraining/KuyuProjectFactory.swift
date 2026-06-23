@@ -16,7 +16,7 @@ public struct KuyuProjectFactory: Sendable {
         rootURL: URL,
         name: String,
         template: LearningProjectTemplate,
-        sourceBundleURL: String = "model-bundles/source.manasbundle"
+        sourceBundleURL: String = "model-bundles/source.bundle-ref.json"
     ) throws -> KuyuProjectPackage {
         try KuyuProjectPackageWriter.validatePackageExtension(rootURL)
         let requiresStrictTemplateValidation = template.isRunnableStarter

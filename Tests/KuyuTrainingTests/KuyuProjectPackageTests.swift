@@ -21,6 +21,7 @@ import Testing
     #expect(package.manifest.defaultTemplateID == "aerial-drone-autonomy-starter-v1")
     #expect(package.defaultExperiment.experimentID == "default")
     #expect(package.sourceBundleReference.requiredCompatibility.driveCount == 4)
+    #expect(package.sourceBundleReference.url == "model-bundles/source.bundle-ref.json")
     #expect(package.selectedTemplate.isRunnableStarter)
     #expect(package.selectedTemplate.curriculum.trainingStages.count >= 5)
     #expect(package.manifest.validationPolicy.requiresStrictTemplateValidation)

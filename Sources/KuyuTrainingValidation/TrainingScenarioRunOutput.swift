@@ -125,23 +125,53 @@ public struct TrainingScenarioRunSummary: Sendable, Codable, Equatable {
     public let suitePassed: Bool
     public let evaluations: [TrainingScenarioEvaluationRecord]
     public let aggregate: TrainingScenarioEvaluationAggregate
+    public let replay: ReplayVerification
+
+    private enum CodingKeys: String, CodingKey {
+        case suitePassed
+        case evaluations
+        case aggregate
+        case replay
+    }
 
     public init(
         suitePassed: Bool,
         evaluations: [TrainingScenarioEvaluationRecord],
-        aggregate: TrainingScenarioEvaluationAggregate
+        aggregate: TrainingScenarioEvaluationAggregate,
+        replay: ReplayVerification = .notPerformed(
+            reason: "Training scenario run summary did not record replay verification."
+        )
     ) {
         self.suitePassed = suitePassed
         self.evaluations = evaluations
         self.aggregate = aggregate
+        self.replay = replay
     }
 
     public init(_ summary: ValidationSummary) {
         self.init(
             suitePassed: summary.suitePassed,
             evaluations: summary.evaluations.map(TrainingScenarioEvaluationRecord.init),
-            aggregate: TrainingScenarioEvaluationAggregate(summary.aggregate)
+            aggregate: TrainingScenarioEvaluationAggregate(summary.aggregate),
+            replay: summary.replay
         )
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        suitePassed = try container.decode(Bool.self, forKey: .suitePassed)
+        evaluations = try container.decode([TrainingScenarioEvaluationRecord].self, forKey: .evaluations)
+        aggregate = try container.decode(TrainingScenarioEvaluationAggregate.self, forKey: .aggregate)
+        replay = try container.decodeIfPresent(ReplayVerification.self, forKey: .replay)
+            ?? .notPerformed(reason: "Legacy training scenario run summary did not record replay verification.")
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(suitePassed, forKey: .suitePassed)
+        try container.encode(evaluations, forKey: .evaluations)
+        try container.encode(aggregate, forKey: .aggregate)
+        try container.encode(replay, forKey: .replay)
     }
 }
 

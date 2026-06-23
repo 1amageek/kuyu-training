@@ -128,11 +128,14 @@ Acceptance evidence:
 | Scenario terminal facts cannot be persisted in an inconsistent state. | `TrainingDatasetWriter` calls `ScenarioTerminalFacts.validate()` before writing dataset metadata and records. |
 | New production dataset load paths cannot bypass validation. | Boundary gate rejects `TrainingDataset.load(from:)` outside `TrainingDatasetContractValidator`. |
 | Cached payloads preserve tensor-safe record structure. | `TrainingDatasetContractValidator` rejects negative metadata counts, non-positive or non-finite timing, non-finite payload scalars/vectors, non-monotonic record time, and out-of-range sensor/drive/reflex indices. |
+| Scenario-run replay evidence survives the training boundary. | `TrainingScenarioRunSummary.replay` preserves `ValidationSummary.replay`, legacy summaries decode as replay-not-performed, and `TrainingScenarioReplayValidator` rejects empty, missing, failed, unexpected, or duplicate replay checks. |
 
 Remaining maintenance rule: any new cache-consuming runtime path must call
 `TrainingDatasetContractValidator` or a stricter package-local validator before
 data is reused. Source-level direct loads are allowed in tests and in the
-validator implementation only.
+validator implementation only. Any new scenario-run output consumer that treats
+a suite as accepted must validate `TrainingScenarioRunSummary.replay` through
+`TrainingScenarioReplayValidator` or a stricter package-local gate.
 
 ## KT2: Run Lifecycle Reliability
 

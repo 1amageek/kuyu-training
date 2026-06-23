@@ -40,6 +40,15 @@ public struct TrainingDatasetContractValidator: Sendable {
             recordTruncated: Bool?
         )
         case terminalDatasetRequiresZeroContinueValue(actual: Double?)
+        case negativeMetadataCount(field: String, value: Int)
+        case nonPositiveTimeStep(Double)
+        case nonFiniteMetadataValue(field: String, value: Double)
+        case nonFiniteRecordValue(recordIndex: Int, field: String, value: Double)
+        case nonFiniteRecordVectorValue(recordIndex: Int, field: String, valueIndex: Int, value: Double)
+        case nonMonotonicRecordTime(recordIndex: Int, previous: Double, current: Double)
+        case sensorChannelOutOfRange(recordIndex: Int, channelIndex: UInt32, channelCount: Int)
+        case driveIntentOutOfRange(recordIndex: Int, driveIndex: UInt32, driveCount: Int)
+        case reflexCorrectionOutOfRange(recordIndex: Int, driveIndex: UInt32, driveCount: Int)
     }
 
     public init() {}
@@ -64,12 +73,16 @@ public struct TrainingDatasetContractValidator: Sendable {
             )
         }
 
+        try validateMetadataShape(dataset.metadata)
+
         guard dataset.metadata.recordCount == dataset.records.count else {
             throw ValidationError.recordCountMismatch(
                 expected: dataset.metadata.recordCount,
                 actual: dataset.records.count
             )
         }
+
+        try validateRecordPayloads(dataset)
 
         if let expected = contract.expectedRewardDescriptor {
             guard let actual = dataset.metadata.rewardDescriptor else {
@@ -91,6 +104,130 @@ public struct TrainingDatasetContractValidator: Sendable {
 
         if contract.requiresTerminalFacts {
             try validateTerminalFacts(dataset)
+        }
+    }
+
+    private func validateMetadataShape(_ metadata: TrainingDatasetMetadata) throws {
+        guard metadata.channelCount >= 0 else {
+            throw ValidationError.negativeMetadataCount(field: "channelCount", value: metadata.channelCount)
+        }
+        guard metadata.driveCount >= 0 else {
+            throw ValidationError.negativeMetadataCount(field: "driveCount", value: metadata.driveCount)
+        }
+        guard metadata.recordCount >= 0 else {
+            throw ValidationError.negativeMetadataCount(field: "recordCount", value: metadata.recordCount)
+        }
+        guard metadata.timeStep.isFinite else {
+            throw ValidationError.nonFiniteMetadataValue(field: "timeStep", value: metadata.timeStep)
+        }
+        guard metadata.timeStep > 0 else {
+            throw ValidationError.nonPositiveTimeStep(metadata.timeStep)
+        }
+        if let failureTime = metadata.failureTime {
+            try validateFiniteMetadataValue(failureTime, field: "failureTime")
+        }
+        if let rewardSum = metadata.rewardSum {
+            try validateFiniteMetadataValue(rewardSum, field: "rewardSum")
+        }
+    }
+
+    private func validateRecordPayloads(_ dataset: TrainingDataset) throws {
+        var previousTime: Double?
+        for (recordIndex, record) in dataset.records.enumerated() {
+            try validateFiniteRecordValue(record.time, recordIndex: recordIndex, field: "time")
+            if let previous = previousTime, record.time < previous {
+                throw ValidationError.nonMonotonicRecordTime(
+                    recordIndex: recordIndex,
+                    previous: previous,
+                    current: record.time
+                )
+            }
+            previousTime = record.time
+
+            for sensor in record.sensors {
+                guard Int(sensor.channelIndex) < dataset.metadata.channelCount else {
+                    throw ValidationError.sensorChannelOutOfRange(
+                        recordIndex: recordIndex,
+                        channelIndex: sensor.channelIndex,
+                        channelCount: dataset.metadata.channelCount
+                    )
+                }
+                try validateFiniteRecordValue(sensor.value, recordIndex: recordIndex, field: "sensor.value")
+                try validateFiniteRecordValue(sensor.timestamp, recordIndex: recordIndex, field: "sensor.timestamp")
+            }
+
+            for driveIntent in record.driveIntents {
+                guard Int(driveIntent.driveIndex) < dataset.metadata.driveCount else {
+                    throw ValidationError.driveIntentOutOfRange(
+                        recordIndex: recordIndex,
+                        driveIndex: driveIntent.driveIndex,
+                        driveCount: dataset.metadata.driveCount
+                    )
+                }
+                try validateFiniteRecordValue(driveIntent.value, recordIndex: recordIndex, field: "driveIntent.value")
+                try validateFiniteRecordVectorValue(
+                    driveIntent.parameters,
+                    recordIndex: recordIndex,
+                    field: "driveIntent.parameters"
+                )
+            }
+
+            for correction in record.reflexCorrections {
+                guard Int(correction.driveIndex) < dataset.metadata.driveCount else {
+                    throw ValidationError.reflexCorrectionOutOfRange(
+                        recordIndex: recordIndex,
+                        driveIndex: correction.driveIndex,
+                        driveCount: dataset.metadata.driveCount
+                    )
+                }
+                try validateFiniteRecordValue(correction.clamp, recordIndex: recordIndex, field: "reflexCorrection.clamp")
+                try validateFiniteRecordValue(correction.damping, recordIndex: recordIndex, field: "reflexCorrection.damping")
+                try validateFiniteRecordValue(correction.delta, recordIndex: recordIndex, field: "reflexCorrection.delta")
+            }
+
+            if let physicsState = record.physicsState {
+                try validateFiniteRecordVectorValue(physicsState, recordIndex: recordIndex, field: "physicsState")
+            }
+            if let actualState = record.actualState {
+                try validateFiniteRecordVectorValue(actualState, recordIndex: recordIndex, field: "actualState")
+            }
+            if let actionValues = record.actionValues {
+                try validateFiniteRecordVectorValue(actionValues, recordIndex: recordIndex, field: "actionValues")
+            }
+            if let continueValue = record.continueValue {
+                try validateFiniteRecordValue(continueValue, recordIndex: recordIndex, field: "continueValue")
+            }
+            if let reward = record.reward {
+                try validateFiniteRecordValue(reward, recordIndex: recordIndex, field: "reward")
+            }
+            if let cost = record.cost {
+                try validateFiniteRecordValue(cost, recordIndex: recordIndex, field: "cost")
+            }
+        }
+    }
+
+    private func validateFiniteMetadataValue(_ value: Double, field: String) throws {
+        guard value.isFinite else {
+            throw ValidationError.nonFiniteMetadataValue(field: field, value: value)
+        }
+    }
+
+    private func validateFiniteRecordValue(_ value: Double, recordIndex: Int, field: String) throws {
+        guard value.isFinite else {
+            throw ValidationError.nonFiniteRecordValue(recordIndex: recordIndex, field: field, value: value)
+        }
+    }
+
+    private func validateFiniteRecordVectorValue(_ values: [Double], recordIndex: Int, field: String) throws {
+        for (valueIndex, value) in values.enumerated() {
+            guard value.isFinite else {
+                throw ValidationError.nonFiniteRecordVectorValue(
+                    recordIndex: recordIndex,
+                    field: field,
+                    valueIndex: valueIndex,
+                    value: value
+                )
+            }
         }
     }
 

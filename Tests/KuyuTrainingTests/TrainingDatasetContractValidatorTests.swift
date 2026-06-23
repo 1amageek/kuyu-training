@@ -175,6 +175,142 @@ import Testing
     }
 }
 
+@Test func trainingDatasetContractValidatorRejectsNegativeMetadataCounts() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(channelCount: -1, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [makeRecord()]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(dataset, against: TrainingDatasetContract())
+        Issue.record("Expected negative metadata count to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.negativeMetadataCount(let field, let value) {
+        #expect(field == "channelCount")
+        #expect(value == -1)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsNonPositiveTimeStep() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(timeStep: 0, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [makeRecord()]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(dataset, against: TrainingDatasetContract())
+        Issue.record("Expected non-positive time step to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.nonPositiveTimeStep(let value) {
+        #expect(value == 0)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsNonFinitePayloadValues() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(channelCount: 1, driveCount: 1, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [
+            makeRecord(
+                sensors: [TrainingSensorSample(channelIndex: 0, value: 1, timestamp: 0)],
+                driveIntents: [TrainingDriveIntent(driveIndex: 0, value: 0.1)],
+                actionValues: [Double.nan]
+            )
+        ]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(dataset, against: TrainingDatasetContract())
+        Issue.record("Expected non-finite payload value to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.nonFiniteRecordVectorValue(
+        let recordIndex,
+        let field,
+        let valueIndex,
+        let value
+    ) {
+        #expect(recordIndex == 0)
+        #expect(field == "actionValues")
+        #expect(valueIndex == 0)
+        #expect(value.isNaN)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsOutOfRangeSensorChannel() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(channelCount: 1, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [
+            makeRecord(sensors: [TrainingSensorSample(channelIndex: 1, value: 1, timestamp: 0)])
+        ]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(dataset, against: TrainingDatasetContract())
+        Issue.record("Expected out-of-range sensor channel to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.sensorChannelOutOfRange(
+        let recordIndex,
+        let channelIndex,
+        let channelCount
+    ) {
+        #expect(recordIndex == 0)
+        #expect(channelIndex == 1)
+        #expect(channelCount == 1)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsOutOfRangeDrivePayloads() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(driveCount: 1, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [
+            makeRecord(driveIntents: [TrainingDriveIntent(driveIndex: 1, value: 0.1)])
+        ]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(dataset, against: TrainingDatasetContract())
+        Issue.record("Expected out-of-range drive intent to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.driveIntentOutOfRange(
+        let recordIndex,
+        let driveIndex,
+        let driveCount
+    ) {
+        #expect(recordIndex == 0)
+        #expect(driveIndex == 1)
+        #expect(driveCount == 1)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsNonMonotonicRecordTime() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(recordCount: 2, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [
+            makeRecord(time: 1, continueValue: 1.0, done: false, truncated: false),
+            makeRecord(time: 0, continueValue: 0.0, done: false, truncated: true)
+        ]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(dataset, against: TrainingDatasetContract())
+        Issue.record("Expected non-monotonic record time to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.nonMonotonicRecordTime(
+        let recordIndex,
+        let previous,
+        let current
+    ) {
+        #expect(recordIndex == 1)
+        #expect(previous == 1)
+        #expect(current == 0)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
 private func makeDataset(
     rewardDescriptor: RewardDescriptor?,
     taskReference: TrainingTaskReferenceMetadata? = nil,
@@ -201,9 +337,43 @@ private func makeDataset(
     return TrainingDataset(metadata: metadata, records: [record])
 }
 
+private func makeRecord(
+    time: Double = 0,
+    sensors: [TrainingSensorSample] = [],
+    driveIntents: [TrainingDriveIntent] = [],
+    reflexCorrections: [TrainingReflexCorrection] = [],
+    physicsState: [Double]? = nil,
+    actualState: [Double]? = nil,
+    actionValues: [Double]? = nil,
+    continueValue: Double? = 0.0,
+    reward: Double? = nil,
+    cost: Double? = nil,
+    done: Bool? = false,
+    truncated: Bool? = true
+) -> TrainingDatasetRecord {
+    TrainingDatasetRecord(
+        time: time,
+        sensors: sensors,
+        driveIntents: driveIntents,
+        reflexCorrections: reflexCorrections,
+        physicsState: physicsState,
+        actualState: actualState,
+        actionValues: actionValues,
+        continueValue: continueValue,
+        reward: reward,
+        cost: cost,
+        done: done,
+        truncated: truncated
+    )
+}
+
 private func makeMetadata(
     rewardDescriptor: RewardDescriptor? = nil,
     taskReference: TrainingTaskReferenceMetadata? = nil,
+    timeStep: Double = 0.005,
+    channelCount: Int = 0,
+    driveCount: Int = 0,
+    recordCount: Int = 1,
     done: Bool?,
     truncated: Bool?,
     terminalReason: String?
@@ -211,12 +381,12 @@ private func makeMetadata(
     TrainingDatasetMetadata(
         scenarioId: "scenario",
         seed: 1,
-        timeStep: 0.005,
+        timeStep: timeStep,
         determinismTier: "tier0",
         configHash: "config",
-        channelCount: 0,
-        driveCount: 0,
-        recordCount: 1,
+        channelCount: channelCount,
+        driveCount: driveCount,
+        recordCount: recordCount,
         done: done,
         truncated: truncated,
         terminalReason: terminalReason,

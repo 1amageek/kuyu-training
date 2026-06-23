@@ -21,7 +21,7 @@ import Testing
     #expect(package.manifest.defaultTemplateID == "aerial-drone-autonomy-starter-v1")
     #expect(package.defaultExperiment.experimentID == "default")
     #expect(package.sourceBundleReference.requiredCompatibility.driveCount == 4)
-    #expect(package.sourceBundleReference.url == "model-bundles/source.bundle-ref.json")
+    #expect(package.sourceBundleReference.url == "model-bundles/source.bundle")
     #expect(package.selectedTemplate.isRunnableStarter)
     #expect(package.selectedTemplate.curriculum.trainingStages.count >= 5)
     #expect(package.manifest.validationPolicy.requiresStrictTemplateValidation)
@@ -99,6 +99,45 @@ import Testing
         Issue.record("Expected invalid package extension to throw.")
     } catch KuyuProjectPackageError.invalidPackageExtension(let path) {
         #expect(path.hasSuffix(".folder"))
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func kuyuProjectPackageValidatorRejectsBundleReferenceFileAsBundleURL() throws {
+    let rootURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("bundle-file-url-project-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathExtension("kuyu")
+    let package = try KuyuProjectFactory().makeRunnableStarterProject(
+        rootURL: rootURL,
+        name: "Drone Autonomy",
+        template: .droneAutonomyStarter
+    )
+    let invalidBundle = KuyuProjectBundleReference(
+        bundleID: package.sourceBundleReference.bundleID,
+        role: package.sourceBundleReference.role,
+        url: "model-bundles/source.bundle-ref.json",
+        contentHash: package.sourceBundleReference.contentHash,
+        requiredCompatibility: package.sourceBundleReference.requiredCompatibility
+    )
+    let invalidPackage = KuyuProjectPackage(
+        rootURL: package.rootURL,
+        manifest: package.manifest,
+        selectedTemplate: package.selectedTemplate,
+        defaultExperiment: package.defaultExperiment,
+        robotManifestReference: package.robotManifestReference,
+        environmentReference: package.environmentReference,
+        sourceBundleReference: invalidBundle
+    )
+
+    do {
+        try KuyuProjectPackageValidator().validate(invalidPackage)
+        Issue.record("Expected source bundle reference file URL to throw.")
+    } catch KuyuProjectPackageError.mismatchedReference(let file, let field, let expected, let actual) {
+        #expect(file == "model-bundles/source.bundle-ref.json")
+        #expect(field == "url")
+        #expect(expected == "model bundle directory")
+        #expect(actual == "model-bundles/source.bundle-ref.json")
     } catch {
         Issue.record("Unexpected error: \(error)")
     }

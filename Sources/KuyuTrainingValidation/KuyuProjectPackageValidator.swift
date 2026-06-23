@@ -99,6 +99,15 @@ public struct KuyuProjectPackageValidator: Sendable {
             )
         }
         try requireContains(manifest.modelBundleRefs, bundle.bundleID, file: "project.json")
+        try requireNonEmpty(bundle.url, file: "model-bundles/source.bundle-ref.json", field: "url")
+        if bundle.url.hasSuffix(".json") {
+            throw KuyuProjectPackageError.mismatchedReference(
+                file: "model-bundles/source.bundle-ref.json",
+                field: "url",
+                expected: "model bundle directory",
+                actual: bundle.url
+            )
+        }
         try requireMatch(
             bundle.requiredCompatibility.robotManifestID,
             template.robotManifest.robotManifestID,

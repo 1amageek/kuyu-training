@@ -52,7 +52,7 @@ validator, regression tests, and evidence all agree.
 | KT2 | Run lifecycle reliability | Complete for current package runtime paths | Make run creation, resume, pause, cancel, failure, and artifact publication auditable and fail-closed under crash windows. | Targeted tests for torn journals, duplicate writers, terminal immutability, cancellation, secondary failure reporting, managed handles, managed executors, and artifact validation after resume. |
 | KT3 | Target split and import gates | Complete for current public facade | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, static import-boundary gate, facade compatibility test, and package-level xcodebuild test. |
 | KT4 | Profile isolation | Complete for current profile-adapter boundary | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, rejection of legacy CTBR shortcut compatibility, and runtime adapter boundary gate. |
-| KT5 | Downstream adoption readiness | In progress | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
+| KT5 | Downstream adoption readiness | Complete for current public-consumer paths | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
 
 ## Dependency Order
 
@@ -243,7 +243,7 @@ to validation/profile adapter code and consumer compatibility adapters outside
 
 ## KT5: Downstream Adoption Readiness
 
-Status: in progress.
+Status: complete for current public-consumer paths.
 
 Goal: downstream packages consume stable public runtime DTOs and generated
 artifacts instead of knowing profile-specific scenario output types or internal
@@ -255,7 +255,7 @@ KT5 is split into consumer-facing gates:
 |---|---|---|
 | KT5a. Runtime scenario run output neutrality | Complete | `TrainingScenarioExecuting` and `TrainingProbeScenarioExecuting` return `TrainingScenarioRunOutput`; `KuyuTrainingRuntime` rejects `KuyAtt1RunOutput` reintroduction. |
 | KT5b. Generated artifact compatibility | Complete | Public artifact loaders and writers round-trip generated training/probe/checkpoint artifacts through the facade without internal target imports. |
-| KT5c. App/MLX public-consumer smoke | Pending | `kuyu` and `kuyu-mlx` smoke paths consume only public contracts and generated artifacts for training/evaluation entrypoints. |
+| KT5c. App/MLX public-consumer smoke | Complete | `kuyu` and `kuyu-mlx` smoke paths consume only public contracts and generated artifacts for training/evaluation entrypoints. |
 
 Completed slices:
 
@@ -263,6 +263,7 @@ Completed slices:
 |---|---|
 | Runtime scenario execution contracts no longer expose `KuyAtt1RunOutput`; reference-quadrotor conversion lives in validation/profile adapter code. | `TrainingScenarioRunOutput`, `TrainingDatasetExporter+KuyAtt1`, `TrainingRunOrchestrator`, `TrainingProbeOrchestrator`, `../scripts/validate-kuyu-boundaries.sh`. |
 | Generated training, probe, and checkpoint evaluation artifacts can be loaded and validated through a public compatibility verifier. | `GeneratedTrainingArtifactCompatibilityVerifier`, `GeneratedTrainingArtifactCompatibilityTests`, `TrainingScenarioRunOutput`, `TrainingRunArtifactValidator`, `TrainingProbeArtifactValidator`, `CheckpointEvaluationArtifactValidator`. |
+| Current app and MLX consumers load generated training run, probe, and checkpoint evaluation artifacts through public compatibility verification rather than internal validators or file-layout knowledge. | `GeneratedTrainingArtifactCompatibilityVerifier`, `TrainingRunStore`, `KuyuCLI`, `LearningCampaignArtifactValidator`, `LearningCampaignOrchestrator`, `ReferenceQuadrotorCheckpointRegressionEvidenceResolver`, `../scripts/validate-kuyu-boundaries.sh`. |
 
 Goal: `kuyu-mlx`, CLI, UI, and long-running training harnesses can depend on
 public `kuyu-training` contracts without reading internal runtime state.
@@ -274,6 +275,10 @@ Required gates:
 | `kuyu-mlx` | Backend implementations use typed protocols and public artifact compatibility verification. |
 | CLI/UI | Commands and views consume type-erased facades and generated artifacts. |
 | Long-running training | Generated run, probe, and checkpoint evaluation artifacts can be validated without ad hoc state. |
+
+Current KT5 completion does not claim that the MLX backend is fully split, that
+world-model imagination is adopted, or that long-horizon reference-quadrotor
+training is solved. Those remain separate capability milestones.
 
 ## Stop Rules
 

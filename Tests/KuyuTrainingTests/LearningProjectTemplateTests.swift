@@ -149,6 +149,65 @@ import Testing
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "dynamic-simulation-regression" && $0.kind == .regression })
 }
 
+@Test func designOnlyDroneBlueprintsDoNotUseLegacyCTBRShortcuts() throws {
+    let templates = [
+        LearningProjectTemplate.droneHoverStabilization,
+        LearningProjectTemplate.droneWaypointNavigation,
+    ]
+
+    for template in templates {
+        try LearningProjectTemplateValidator(requiresKnownTaskProfile: false).validate(template)
+        #expect(template.taskProfileID == nil)
+        #expect(template.policy.actionEncoding == .directMotor)
+        #expect(!template.observation.schemaID.contains("reference-quadrotor"))
+        #expect(!template.action.schemaID.contains("reference-quadrotor"))
+    }
+}
+
+@Test func learningProjectTemplateRejectsCTBRWithoutReferenceQuadrotorProfileOwner() throws {
+    let base = LearningProjectTemplate.droneHoverStabilization
+    let template = LearningProjectTemplate(
+        templateID: base.templateID,
+        displayName: base.displayName,
+        summary: base.summary,
+        domain: base.domain,
+        task: base.task,
+        taskProfileID: nil,
+        robotManifest: base.robotManifest,
+        modelBundlePolicy: base.modelBundlePolicy,
+        trainingStrategy: base.trainingStrategy,
+        curriculum: base.curriculum,
+        evaluationGate: base.evaluationGate,
+        observation: ReferenceQuadrotorLearningContracts.temporalCTBRObservationContract(),
+        action: ReferenceQuadrotorLearningContracts.bodyRateActionContract(),
+        policy: ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract(),
+        compute: base.compute,
+        tags: base.tags
+    )
+
+    do {
+        try LearningProjectTemplateValidator(requiresKnownTaskProfile: false).validate(template)
+        Issue.record("Expected CTBR without a reference-quadrotor profile owner to throw.")
+    } catch LearningProjectTemplateValidationError.invalidPolicyContract(let reason) {
+        #expect(reason == "ctbr-requires-reference-quadrotor-profile")
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func learningProjectTemplateAllowsCTBRWhenRunnableStageOwnsReferenceQuadrotorProfile() throws {
+    let template = LearningProjectTemplate.droneAutonomyStarter
+    let stage = try #require(template.primaryRunnableTrainingStage)
+    let profileID = try #require(stage.taskProfileID)
+    let profile = try TaskEvaluationProfile.profile(profileID: profileID)
+
+    try LearningProjectTemplateValidator(requiresKnownTaskProfile: true).validate(template)
+
+    #expect(template.taskProfileID == nil)
+    #expect(template.policy.actionEncoding == .ctbr)
+    #expect(profile.family == .referenceQuadrotor)
+}
+
 @Test func learningProjectTemplateRejectsProfileRobotClassMismatch() throws {
     let base = LearningProjectTemplate.roArmM1ArmGripperTargetTracking
     let template = LearningProjectTemplate(

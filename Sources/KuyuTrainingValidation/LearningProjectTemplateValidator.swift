@@ -17,6 +17,7 @@ public struct LearningProjectTemplateValidator: Sendable {
         try validateObservation(template.observation)
         try validateAction(template.action)
         try validatePolicy(template.policy, observation: template.observation, action: template.action)
+        try validateProfileOwnedPolicySemantics(template)
         try validateCurriculum(
             template.curriculum,
             strategy: template.trainingStrategy,
@@ -282,6 +283,27 @@ public struct LearningProjectTemplateValidator: Sendable {
                 reason: reason
             )
         }
+    }
+
+    private func validateProfileOwnedPolicySemantics(_ template: LearningProjectTemplate) throws {
+        guard template.policy.actionEncoding == .ctbr else { return }
+        guard let profile = try effectiveProfileOwner(for: template),
+              profile.family == .referenceQuadrotor else {
+            throw LearningProjectTemplateValidationError.invalidPolicyContract(
+                reason: "ctbr-requires-reference-quadrotor-profile"
+            )
+        }
+    }
+
+    private func effectiveProfileOwner(for template: LearningProjectTemplate) throws -> TaskEvaluationProfile? {
+        if let taskProfileID = template.taskProfileID {
+            return try TaskEvaluationProfile.profile(profileID: taskProfileID)
+        }
+        if let runnableStage = template.primaryRunnableTrainingStage,
+           let taskProfileID = runnableStage.taskProfileID {
+            return try TaskEvaluationProfile.profile(profileID: taskProfileID)
+        }
+        return nil
     }
 
     private func validateStageKindOrder(_ stages: [LearningProjectTrainingStage]) throws {

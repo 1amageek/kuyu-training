@@ -363,7 +363,7 @@ public extension LearningProjectTemplate {
     static let droneHoverStabilization = LearningProjectTemplate(
         templateID: "aerial-drone-hover-stabilization-v1",
         displayName: "Drone Hover Stabilization Blueprint",
-        summary: "Design blueprint for CTBR hover stabilization after the corresponding task profile and runtime stage are available.",
+        summary: "Design blueprint for hover stabilization after the corresponding task profile and runtime stage are available.",
         domain: .aerialDrone,
         task: "hoverStabilization",
         taskProfileID: nil,
@@ -399,9 +399,15 @@ public extension LearningProjectTemplate {
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
-        observation: ReferenceQuadrotorLearningContracts.temporalCTBRObservationContract(),
-        action: ReferenceQuadrotorLearningContracts.bodyRateActionContract(),
-        policy: ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract(),
+        observation: multirotorBlueprintObservationContract(
+            schemaID: "multirotor-hover-observation-v1"
+        ),
+        action: multirotorBlueprintDirectDriveActionContract(),
+        policy: .simpleFeedForward(
+            observationDimension: 16,
+            actionDimension: 4,
+            actionEncoding: .directMotor
+        ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["aerial", "drone", "hover", "stabilization", "blueprint", "hybrid"]
     )
@@ -409,7 +415,7 @@ public extension LearningProjectTemplate {
     static let droneWaypointNavigation = LearningProjectTemplate(
         templateID: "aerial-drone-waypoint-navigation-v1",
         displayName: "Drone Waypoint Navigation Blueprint",
-        summary: "Design blueprint for CTBR waypoint tracking after hover stability and navigation task profiles are implemented.",
+        summary: "Design blueprint for waypoint tracking after hover stability and navigation task profiles are implemented.",
         domain: .aerialDrone,
         task: "waypointNavigation",
         taskProfileID: nil,
@@ -445,9 +451,15 @@ public extension LearningProjectTemplate {
             maxStepCount: nil
         ),
         evaluationGate: genericSafetyGate(failOnTruncation: true),
-        observation: ReferenceQuadrotorLearningContracts.temporalCTBRObservationContract(),
-        action: ReferenceQuadrotorLearningContracts.bodyRateActionContract(),
-        policy: ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract(),
+        observation: multirotorBlueprintObservationContract(
+            schemaID: "multirotor-waypoint-observation-v1"
+        ),
+        action: multirotorBlueprintDirectDriveActionContract(),
+        policy: .simpleFeedForward(
+            observationDimension: 16,
+            actionDimension: 4,
+            actionEncoding: .directMotor
+        ),
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["aerial", "drone", "waypoint", "navigation", "blueprint", "hybrid"]
     )
@@ -884,6 +896,49 @@ public extension LearningProjectTemplate {
                 .telemetryComplete,
                 .artifactLineageComplete
             ]
+        )
+    }
+
+    private static func multirotorBlueprintObservationContract(schemaID: String) -> LearningProjectObservationContract {
+        LearningProjectObservationContract(
+            schemaID: schemaID,
+            channelCount: 16,
+            channels: [
+                LearningProjectObservationChannel(index: 0, name: "roll", unit: "rad", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 1, name: "pitch", unit: "rad", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 2, name: "yawRate", unit: "rad/s", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 3, name: "velocityX", unit: "m/s", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 4, name: "velocityY", unit: "m/s", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 5, name: "velocityZ", unit: "m/s", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 6, name: "targetDeltaX", unit: "m", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 7, name: "targetDeltaY", unit: "m", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 8, name: "targetDeltaZ", unit: "m", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 9, name: "constraintPressure", unit: nil, isStateChannel: false, isStressable: true),
+                LearningProjectObservationChannel(index: 10, name: "windEstimateX", unit: "m/s", isStateChannel: false, isStressable: true),
+                LearningProjectObservationChannel(index: 11, name: "windEstimateY", unit: "m/s", isStateChannel: false, isStressable: true),
+                LearningProjectObservationChannel(index: 12, name: "previousMotor0", unit: "normalized", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 13, name: "previousMotor1", unit: "normalized", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 14, name: "previousMotor2", unit: "normalized", isStateChannel: true, isStressable: true),
+                LearningProjectObservationChannel(index: 15, name: "previousMotor3", unit: "normalized", isStateChannel: true, isStressable: true),
+            ]
+        )
+    }
+
+    private static func multirotorBlueprintDirectDriveActionContract() -> LearningProjectActionContract {
+        LearningProjectActionContract(
+            schemaID: "multirotor-direct-drive-action-v1",
+            kind: .continuous,
+            driveCount: 4,
+            actuatorCount: 4,
+            isBounded: true,
+            channels: LearningProjectActionContract.indexedBoundedChannels(
+                prefix: "motorDrive",
+                count: 4,
+                unit: "normalized",
+                lowerBound: 0,
+                upperBound: 1,
+                transform: .sigmoid
+            )
         )
     }
 

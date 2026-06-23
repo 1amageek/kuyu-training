@@ -165,6 +165,11 @@ For non-quadrotor profiles, the profile contract must own its evaluator IDs and
 must not fall back to `ReferenceQuadrotorScenarioEvaluator` or
 `ReferenceQuadrotorTaskQualityEvaluator`.
 
+`ctbr` is a profile-owned action encoding. Template validation accepts it only
+when the template root or runnable stage has an explicit reference-quadrotor
+profile owner. Design-only blueprints without that owner must use neutral
+observation/action contracts until a profile adapter exists.
+
 ## Type Direction
 
 The enforced type direction is:

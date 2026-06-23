@@ -149,6 +149,8 @@ Each profile declares its profile family, expected robot class, and evaluator
 ownership so non-quadrotor profiles cannot silently inherit reference-quadrotor
 evaluators. Future robot tasks can still be represented by the same format and
 validated in non-strict mode until their task profile is added.
+CTBR policies are not a generic fallback: they require an explicit
+reference-quadrotor profile owner at the template root or runnable stage.
 
 Default project templates currently cover multi-stage robot training plans.
 Executable stages may be narrower than the full curriculum while task profiles

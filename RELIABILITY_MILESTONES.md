@@ -129,13 +129,17 @@ Acceptance evidence:
 | New production dataset load paths cannot bypass validation. | Boundary gate rejects `TrainingDataset.load(from:)` outside `TrainingDatasetContractValidator`. |
 | Cached payloads preserve tensor-safe record structure. | `TrainingDatasetContractValidator` rejects negative metadata counts, non-positive or non-finite timing, non-finite payload scalars/vectors, non-monotonic record time, and out-of-range sensor/drive/reflex indices. |
 | Scenario-run replay evidence survives the training boundary. | `TrainingScenarioRunSummary.replay` preserves `ValidationSummary.replay`, legacy summaries decode as replay-not-performed, and `TrainingScenarioReplayValidator` rejects empty, missing, failed, unexpected, or duplicate replay checks. |
+| Runnable starter templates resolve to scenario-owned coverage. | `RunnableStarterScenarioCoverageValidator` checks every default runnable starter primary stage against `ReferenceQuadrotorScenarioCatalog`, rejecting missing starters, unresolved suites, invalid episode counts, empty coverage, and duplicate scenario keys. |
 
 Remaining maintenance rule: any new cache-consuming runtime path must call
 `TrainingDatasetContractValidator` or a stricter package-local validator before
 data is reused. Source-level direct loads are allowed in tests and in the
 validator implementation only. Any new scenario-run output consumer that treats
 a suite as accepted must validate `TrainingScenarioRunSummary.replay` through
-`TrainingScenarioReplayValidator` or a stricter package-local gate.
+`TrainingScenarioReplayValidator` or a stricter package-local gate. Any new
+runnable starter template must pass `RunnableStarterScenarioCoverageValidator`
+so task/profile/suite declarations cannot drift away from scenario-owned
+coverage.
 
 ## KT2: Run Lifecycle Reliability
 

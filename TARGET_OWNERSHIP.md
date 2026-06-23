@@ -1,31 +1,75 @@
 # Kuyu Training Target Ownership
 
-This file defines the pre-split ownership map for the current single-target
-`KuyuTraining` package. The package still exposes one facade target, but new
-source files must fit one of these future target responsibilities before the
-physical split is performed.
+This file defines the physical SwiftPM target ownership for `kuyu-training`.
+`KuyuTraining` is now a facade target; implementation must live in one of the
+smaller targets below.
 
-## Future Targets
+## Target Graph
 
-| Future target | Owns | Import posture before split |
+```mermaid
+flowchart LR
+  Contracts["KuyuTrainingContracts"]
+  Evolution["KuyuEvolution"]
+  Reinforcement["KuyuReinforcement"]
+  Validation["KuyuTrainingValidation"]
+  Runtime["KuyuTrainingRuntime"]
+  Facade["KuyuTraining facade"]
+
+  Contracts --> Evolution
+  Contracts --> Reinforcement
+  Contracts --> Validation
+  Evolution --> Validation
+  Reinforcement --> Validation
+  Contracts --> Runtime
+  Evolution --> Runtime
+  Reinforcement --> Runtime
+  Validation --> Runtime
+  Contracts --> Facade
+  Evolution --> Facade
+  Reinforcement --> Facade
+  Validation --> Facade
+  Runtime --> Facade
+```
+
+The graph is intentionally one-way. `KuyuTrainingContracts` must remain the
+lowest target. `KuyuEvolution` and `KuyuReinforcement` may consume contracts but
+must not consume runtime or validation. `KuyuTrainingValidation` may consume
+contracts and backend-domain DTOs. `KuyuTrainingRuntime` composes the lower
+targets into executable run, rollout, probe, resume, and artifact workflows.
+
+## Ownership
+
+| Target | Owns | Import posture |
 |---|---|---|
-| `KuyuTrainingContracts` | Plans, project manifests, task/profile contracts, model bundle references, run requests, run summaries, IDs, tensor shapes, and stable facade protocol types. | Must stay independent of `KuyuPhysics`, `KuyuScenarios`, MLX, and Manas internals. |
-| `KuyuEvolution` | Candidate evaluation, population seed requests, reproduction requests, selection, mutation, evolution artifacts, resume state, lineage, and quality diversity. | Must stay independent of `KuyuPhysics`, `KuyuScenarios`, MLX, and Manas internals. |
-| `KuyuReinforcement` | Reinforcement backend protocols, rollout health contracts, world-model tuples, online buffers, vectorized batch specs, and vectorized collectors. | Core protocols and data structures must stay independent of `KuyuPhysics`, `KuyuScenarios`, MLX, and Manas internals. Runtime harnesses may depend on scenario/world protocols until the split. |
-| `KuyuTrainingRuntime` | Orchestration, probe execution, managed run handles, standard executors, archive driver lifecycle, cancellation/resume, control commands, progress, and event streams. | May depend on scenario execution and durable run contract types. Must not depend on MLX or Manas internals. |
-| `KuyuTrainingValidation` | Artifact validation, project validation, dataset validation, convergence gates, checkpoint gates, relabeling validators, action codecs, and profile-specific acceptance helpers. | May depend on domain contracts required to validate artifacts. Must not depend on MLX or Manas internals. |
+| `KuyuTrainingContracts` | Stable project/run contracts, task/curriculum plans, capability and safety-gate enums, model/checkpoint references, run requests, run summaries, tensor shapes, worker snapshots, and facade protocol DTOs. | May import Foundation. Must not import Kuyu runtime/domain targets, physics, scenarios, MLX, or Manas internals. |
+| `KuyuEvolution` | Candidate evaluation, population seed requests, reproduction requests, typed evolution backend adapters, selection, mutation, resume state, lineage, artifacts, quality diversity, and evolution run orchestration. | May import `KuyuTrainingContracts`. Must not import validation, runtime, physics, scenarios, MLX, or Manas internals. |
+| `KuyuReinforcement` | Reinforcement backend protocols, rollout buffers, rollout health contracts, stability envelopes, vectorized batch specs, vectorized rollout contracts, and vectorized collectors. | May import `KuyuTrainingContracts`. Current vectorized rollout summaries still carry reference scenario task-quality summaries; KT4 owns extracting profile-specific quality from generic reinforcement contracts. Must not import validation, runtime, MLX, or Manas internals. |
+| `KuyuTrainingValidation` | Dataset schemas and writers, project/package/template validation, artifact validation, checkpoint gates, convergence gates, task profiles, action codecs, relabelers, and profile-specific validators. | May import contracts, evolution, reinforcement, KuyuCore, KuyuPhysics, and KuyuScenarios as needed to validate artifacts. Must not import runtime, MLX, or Manas internals. |
+| `KuyuTrainingRuntime` | Managed run handles, standard executors, archive contracts, training/probe orchestration, automated training pipeline planning, rollout harnesses, episode-specific dataset conversion, and runtime-only compatibility extensions. | May import contracts, evolution, reinforcement, validation, KuyuCore, KuyuPhysics, and KuyuScenarios. Must not import MLX or Manas internals. |
+| `KuyuTraining` | Facade-only re-export target. | Must contain only re-exports of the split targets. No implementation belongs here. |
 
 ## Gate
 
 `/Users/1amageek/Desktop/Robot/unconscious/scripts/validate-kuyu-boundaries.sh`
-enforces this map while the package is still a single target:
+enforces the target graph:
 
 | Gate | Failure condition |
 |---|---|
-| File ownership | A new `Sources/KuyuTraining/**/*.swift` file is not classified into a future target responsibility. |
-| Contract imports | A future contract file imports physics, scenarios, MLX, or Manas internals. |
-| Evolution imports | A future evolution file imports physics, scenarios, MLX, or Manas internals. |
-| Reinforcement core imports | A future reinforcement protocol/data file imports physics, scenarios, MLX, or Manas internals. |
+| Target presence | `Package.swift` does not expose all split products and targets. |
+| Facade-only target | `Sources/KuyuTraining` contains implementation files or misses a split target re-export. |
+| Contract imports | `KuyuTrainingContracts` imports any higher target, physics, scenarios, MLX, or Manas internals. |
+| Evolution imports | `KuyuEvolution` imports validation, runtime, physics, scenarios, MLX, or Manas internals. |
+| Reinforcement imports | `KuyuReinforcement` imports validation, runtime, MLX, or Manas internals. |
+| Validation imports | `KuyuTrainingValidation` imports runtime, MLX, or Manas internals. |
+| Runtime imports | `KuyuTrainingRuntime` imports MLX or Manas internals. |
 
-The physical target split should happen only after these gates pass and the
-facade API compatibility tests are in place.
+## Migration Rule
+
+New code must enter the target that owns its runtime responsibility. If a new
+type appears to need a higher target from a lower one, extract the shared DTO to
+`KuyuTrainingContracts` only when it is stable and domain-neutral. Otherwise,
+move the feature up to `KuyuTrainingRuntime` or `KuyuTrainingValidation`.
+
+KT4 owns the remaining profile-isolation work: reference-quadrotor task-quality
+details must eventually leave generic reinforcement contracts or be wrapped in a
+profile-owned validation adapter.

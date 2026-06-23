@@ -49,8 +49,8 @@ validator, regression tests, and evidence all agree.
 |---|---|---|---|---|
 | KT0 | Responsibility baseline | Complete | Keep `kuyu-training` scoped to generic training contracts and runtime infrastructure. | README boundary, root package architecture, boundary validation script, clean package status. |
 | KT1 | Scenario truth preservation | Complete for current runtime paths | Preserve task reference, reward descriptor, record count, and terminal boundary semantics across generated and cached datasets. | `TrainingDatasetContractValidator` plus dataset mixer, training orchestrator, and recovery artifact validator tests. |
-| KT2 | Run lifecycle reliability | In progress | Make run creation, resume, pause, cancel, failure, and artifact publication auditable and fail-closed under crash windows. | Targeted tests for torn journals, duplicate writers, terminal immutability, cancellation, secondary failure reporting, and artifact validation after resume. |
-| KT3 | Target split and import gates | Pending | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, import-boundary tests, and no dependency cycle from validators/runtime back into backend-specific code. |
+| KT2 | Run lifecycle reliability | Complete for current package runtime paths | Make run creation, resume, pause, cancel, failure, and artifact publication auditable and fail-closed under crash windows. | Targeted tests for torn journals, duplicate writers, terminal immutability, cancellation, secondary failure reporting, managed handles, managed executors, and artifact validation after resume. |
+| KT3 | Target split and import gates | Complete for current public facade | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, static import-boundary gate, facade compatibility test, and package-level xcodebuild test. |
 | KT4 | Profile isolation | Pending | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, and rejection of legacy CTBR shortcut compatibility. |
 | KT5 | Downstream adoption readiness | Pending | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
 
@@ -132,7 +132,7 @@ data is reused.
 
 ## KT2: Run Lifecycle Reliability
 
-Status: in progress.
+Status: complete for current package runtime paths.
 
 Goal: a training run must be inspectable and recoverable even when it is paused,
 cancelled, interrupted, or fails while writing artifacts.
@@ -161,33 +161,41 @@ Exit criteria:
 
 ## KT3: Target Split and Import Gates
 
-Status: in progress.
+Status: complete for current public facade.
 
-Goal: split `KuyuTraining` into smaller targets only after KT2 makes runtime
-behavior trustworthy.
+Goal: keep `KuyuTraining` split into smaller targets only after KT2 makes
+runtime behavior trustworthy.
 
-Current gate: `TARGET_OWNERSHIP.md` defines the pre-split ownership map, and
-`/Users/1amageek/Desktop/Robot/unconscious/scripts/validate-kuyu-boundaries.sh`
-fails when new source files are not classified or when future pure contracts,
-evolution, or reinforcement-core files import runtime-heavy dependencies.
+Current gate: `TARGET_OWNERSHIP.md` defines the physical target ownership map,
+and `/Users/1amageek/Desktop/Robot/unconscious/scripts/validate-kuyu-boundaries.sh`
+fails when the facade stops being re-export only, a split product/target is
+missing, or a lower target imports a higher target.
 
 Target ownership:
 
 | Target | Owns |
 |---|---|
-| `KuyuTrainingContracts` | Plans, profiles, bundle references, dataset and artifact schemas. |
+| `KuyuTrainingContracts` | Stable project/run contracts, training plans, bundle references, IDs, tensor shapes, worker snapshots, and domain-neutral enums. |
 | `KuyuEvolution` | Population, selection, mutation/crossover contracts, lineage, quality diversity archive. |
-| `KuyuReinforcement` | RL backend protocols, rollout buffers, fine-tuning contracts. |
-| `KuyuTrainingRuntime` | Orchestration, cancellation/resume, scheduling, progress/event streams. |
-| `KuyuTrainingValidation` | Artifact, project, template, dataset, and gate validators. |
+| `KuyuReinforcement` | RL backend protocols, rollout buffers, rollout health contracts, stability envelopes, vectorized batch specs, and vectorized rollout contracts. |
+| `KuyuTrainingRuntime` | Orchestration, cancellation/resume, scheduling, progress/event streams, rollout episodes, and runtime-only compatibility extensions. |
+| `KuyuTrainingValidation` | Artifact, project, template, dataset, checkpoint, convergence, task-profile, and gate validators. |
+| `KuyuTraining` | Facade-only target that re-exports the split public API. |
 
 Exit criteria:
 
 | Criterion | Evidence |
 |---|---|
 | Package products expose the split targets. | `Package.swift` target graph and build output. |
-| Imports follow the package architecture. | Import-boundary tests or static validation script. |
-| Public API remains available through a stable facade. | Compatibility tests for app/MLX entrypoints. |
+| Imports follow the package architecture. | Static validation script. |
+| Public API remains available through a stable facade. | `KuyuTrainingFacadeCompatibilityTests`. |
+
+Remaining KT4 debt discovered during the split:
+
+| Debt | Next milestone |
+|---|---|
+| `KuyuReinforcement` vectorized rollout summaries still carry reference scenario task-quality summaries. | KT4 extracts profile-specific quality into validation/profile adapters. |
+| Some runtime and validation files still carry broad imports from the mechanical split. | KT4 tightens imports as part of profile isolation and ownership hardening. |
 
 ## KT4: Profile Isolation
 

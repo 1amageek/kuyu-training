@@ -174,11 +174,16 @@ orchestration can own the five-drive arm/gripper policy lifecycle.
 
 | Module | Dependencies | Description |
 |--------|-------------|-------------|
-| **KuyuTraining** | KuyuCore, KuyuPhysics, KuyuScenarios | Current monolithic training contract/runtime target |
+| **KuyuTraining** | Split training targets | Facade-only public re-export target |
+| **KuyuTrainingContracts** | Foundation | Stable project/run contracts, IDs, plans, capability enums, and neutral DTOs |
+| **KuyuEvolution** | KuyuTrainingContracts | Population, selection, mutation/crossover contracts, lineage, and evolution orchestration |
+| **KuyuReinforcement** | KuyuTrainingContracts, KuyuCore, KuyuPhysics, KuyuScenarios | RL backend protocols, rollout buffers, rollout health, stability envelopes, and vectorized rollout contracts |
+| **KuyuTrainingValidation** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuCore, KuyuPhysics, KuyuScenarios | Artifact, project, template, dataset, checkpoint, convergence, and profile validators |
+| **KuyuTrainingRuntime** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuTrainingValidation, KuyuCore, KuyuPhysics, KuyuScenarios | Run/probe orchestration, managed handles, archive contracts, rollout harnesses, and runtime compatibility extensions |
 
-Planned target skeleton:
+Target ownership:
 
-| Future target | Responsibility |
+| Target | Responsibility |
 |---|---|
 | `KuyuTrainingContracts` | Plans, profiles, model references, artifact schemas |
 | `KuyuEvolution` | Population, selection, mutation/crossover contracts, lineage |

@@ -9,13 +9,33 @@ public protocol MetricsWriting {
         metrics: [TrainingMetricRecord],
         convergence: ConvergenceSummary,
         checkpointDecision: CheckpointDecision,
+        scenarioRuns: [TrainingScenarioRunArtifact],
         to directory: URL
     ) throws
 }
 
+public extension MetricsWriting {
+    func write(
+        manifest: LearningRunManifest,
+        metrics: [TrainingMetricRecord],
+        convergence: ConvergenceSummary,
+        checkpointDecision: CheckpointDecision,
+        to directory: URL
+    ) throws {
+        try write(
+            manifest: manifest,
+            metrics: metrics,
+            convergence: convergence,
+            checkpointDecision: checkpointDecision,
+            scenarioRuns: [],
+            to: directory
+        )
+    }
+}
+
 public struct TrainingRunArtifactContract: Sendable, Codable, Equatable {
     public static let currentSchemaVersion = 1
-    public static let currentContractVersion = 1
+    public static let currentContractVersion = 2
     public static let fileName = "artifact-contract.json"
 
     public let schemaVersion: Int
@@ -30,6 +50,7 @@ public struct TrainingRunArtifactContract: Sendable, Codable, Equatable {
         requiredFiles: [String] = [
             "manifest.json",
             "metrics.jsonl",
+            TrainingScenarioRunArtifact.fileName,
             "convergence.json",
             "checkpoint-decision.json",
         ]
@@ -49,6 +70,7 @@ public struct TrainingArtifactWriter: MetricsWriting {
         metrics: [TrainingMetricRecord],
         convergence: ConvergenceSummary,
         checkpointDecision: CheckpointDecision,
+        scenarioRuns: [TrainingScenarioRunArtifact],
         to directory: URL
     ) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -84,6 +106,19 @@ public struct TrainingArtifactWriter: MetricsWriting {
         }
         try (records.joined(separator: "\n") + (records.isEmpty ? "" : "\n")).write(
             to: directory.appendingPathComponent("metrics.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let scenarioRecords = try scenarioRuns.map { scenarioRun in
+            let data = try jsonlEncoder.encode(scenarioRun)
+            guard let line = String(data: data, encoding: .utf8) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            return line
+        }
+        try (scenarioRecords.joined(separator: "\n") + (scenarioRecords.isEmpty ? "" : "\n")).write(
+            to: directory.appendingPathComponent(TrainingScenarioRunArtifact.fileName),
             atomically: true,
             encoding: .utf8
         )

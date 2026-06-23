@@ -198,6 +198,7 @@ public struct TrainingRunOrchestrator {
         var finalCheckpointID: String?
         var finalCheckpointURL: URL?
         var currentSourceSnapshot = trainingTemplate.sourceSnapshot
+        var scenarioRuns: [TrainingScenarioRunArtifact] = []
 
         var cancelledAtIterationBoundary = false
 
@@ -214,6 +215,7 @@ public struct TrainingRunOrchestrator {
                         bestCheckpointURL: bestCheckpointURL,
                         finalCheckpointID: finalCheckpointID,
                         finalCheckpointURL: finalCheckpointURL,
+                        scenarioRuns: scenarioRuns,
                         artifactDirectory: artifactDirectory,
                         state: .failed,
                         failureReason: "iteration-boundary-failed: \(error)",
@@ -237,12 +239,35 @@ public struct TrainingRunOrchestrator {
                     bestCheckpointURL: bestCheckpointURL,
                     finalCheckpointID: finalCheckpointID,
                     finalCheckpointURL: finalCheckpointURL,
+                    scenarioRuns: scenarioRuns,
                     artifactDirectory: artifactDirectory,
                     state: .failed,
                     failureReason: "scenario-run-failed: \(error)",
                     onEvent: onEvent
                 )
             }
+            do {
+                try TrainingScenarioReplayValidator().validate(output)
+            } catch {
+                return await finish(
+                    manifest: manifest,
+                    metrics: metrics,
+                    bestCheckpointID: bestCheckpointID,
+                    bestCheckpointURL: bestCheckpointURL,
+                    finalCheckpointID: finalCheckpointID,
+                    finalCheckpointURL: finalCheckpointURL,
+                    scenarioRuns: scenarioRuns,
+                    artifactDirectory: artifactDirectory,
+                    state: .failed,
+                    failureReason: "scenario-replay-validation-failed: \(error)",
+                    onEvent: onEvent
+                )
+            }
+            scenarioRuns.append(TrainingScenarioRunArtifact(
+                runID: config.runID,
+                iteration: iteration,
+                output: output
+            ))
 
             if manifest.seedSet.isEmpty {
                 manifest = LearningRunManifest(
@@ -291,6 +316,7 @@ public struct TrainingRunOrchestrator {
                         bestCheckpointURL: bestCheckpointURL,
                         finalCheckpointID: finalCheckpointID,
                         finalCheckpointURL: finalCheckpointURL,
+                        scenarioRuns: scenarioRuns,
                         artifactDirectory: artifactDirectory,
                         state: .failed,
                         failureReason: "dataset-export-failed: \(error)",
@@ -332,6 +358,7 @@ public struct TrainingRunOrchestrator {
                         bestCheckpointURL: bestCheckpointURL,
                         finalCheckpointID: finalCheckpointID,
                         finalCheckpointURL: finalCheckpointURL,
+                        scenarioRuns: scenarioRuns,
                         artifactDirectory: artifactDirectory,
                         state: .failed,
                         failureReason: "backend-failed: \(error)",
@@ -372,6 +399,7 @@ public struct TrainingRunOrchestrator {
             convergence: convergence,
             finalCheckpointID: finalCheckpointID,
             finalCheckpointURL: finalCheckpointURL,
+            scenarioRuns: scenarioRuns,
             artifactDirectory: artifactDirectory,
             checkpointPublicationMode: config.checkpointPublicationMode,
             state: state,
@@ -535,6 +563,7 @@ public struct TrainingRunOrchestrator {
         bestCheckpointURL: URL?,
         finalCheckpointID: String?,
         finalCheckpointURL: URL?,
+        scenarioRuns: [TrainingScenarioRunArtifact] = [],
         artifactDirectory: URL,
         state: LearningRunTerminalState,
         failureReason: String?,
@@ -564,6 +593,7 @@ public struct TrainingRunOrchestrator {
             ),
             finalCheckpointID: finalCheckpointID,
             finalCheckpointURL: finalCheckpointURL,
+            scenarioRuns: scenarioRuns,
             artifactDirectory: artifactDirectory,
             checkpointPublicationMode: .immediate,
             state: state,
@@ -578,6 +608,7 @@ public struct TrainingRunOrchestrator {
         convergence: ConvergenceSummary,
         finalCheckpointID: String?,
         finalCheckpointURL: URL?,
+        scenarioRuns: [TrainingScenarioRunArtifact],
         artifactDirectory: URL,
         checkpointPublicationMode: TrainingRunConfig.CheckpointPublicationMode,
         state: LearningRunTerminalState,
@@ -604,6 +635,7 @@ public struct TrainingRunOrchestrator {
                 metrics: metrics,
                 convergence: convergence,
                 checkpointDecision: checkpointDecision,
+                scenarioRuns: scenarioRuns,
                 to: artifactDirectory
             )
         } catch {

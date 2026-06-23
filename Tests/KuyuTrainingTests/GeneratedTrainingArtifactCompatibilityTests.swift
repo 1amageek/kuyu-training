@@ -1,4 +1,7 @@
 import Foundation
+import KuyuCore
+import KuyuPhysics
+import KuyuScenarios
 import Testing
 import KuyuTraining
 
@@ -12,6 +15,7 @@ import KuyuTraining
         metrics: result.metrics,
         convergence: result.convergence,
         checkpointDecision: result.checkpointDecision,
+        scenarioRuns: try generatedArtifactScenarioRuns(runID: result.manifest.runID),
         to: directory
     )
 
@@ -36,6 +40,7 @@ import KuyuTraining
         metrics: training.metrics,
         convergence: training.convergence,
         checkpointDecision: training.checkpointDecision,
+        scenarioRuns: try generatedArtifactScenarioRuns(runID: training.manifest.runID),
         to: trainingDirectory
     )
 
@@ -239,12 +244,60 @@ private func generatedArtifactProbeSummary(
                     averageRecoveryTime: passed ? 0.1 : nil,
                     worstOvershootDegrees: passed ? 1 : 30,
                     averageHfStabilityScore: passed ? 0.9 : 0.1
-                )
+                ),
+                replay: try generatedArtifactReplayVerification(passed: true)
             ),
             logs: [],
             terminalFactsByScenarioKey: [:]
         )
     )
+}
+
+private func generatedArtifactScenarioRuns(runID: String) throws -> [TrainingScenarioRunArtifact] {
+    [
+        TrainingScenarioRunArtifact(
+            runID: runID,
+            iteration: 1,
+            summary: TrainingScenarioRunSummary(
+                suitePassed: true,
+                evaluations: [
+                    try TrainingScenarioEvaluationRecord(
+                        scenarioID: "scenario-public-artifact",
+                        seed: 1,
+                        passed: true,
+                        maxOmega: 0.1,
+                        maxTiltDegrees: 1,
+                        sustainedViolationSeconds: 0,
+                        recoveryTimeSeconds: 0.1,
+                        overshootDegrees: 1,
+                        hfStabilityScore: 0.9,
+                        failures: []
+                    )
+                ],
+                aggregate: TrainingScenarioEvaluationAggregate(
+                    averageRecoveryTime: 0.1,
+                    worstOvershootDegrees: 1,
+                    averageHfStabilityScore: 0.9
+                ),
+                replay: try generatedArtifactReplayVerification(passed: true)
+            ),
+            logCount: 1,
+            terminalFactCount: 1
+        )
+    ]
+}
+
+private func generatedArtifactReplayVerification(passed: Bool) throws -> ReplayVerification {
+    .performed([
+        ReplayCheckResult(
+            scenarioId: try ScenarioID("scenario-public-artifact"),
+            seed: ScenarioSeed(1),
+            tier: .tier0,
+            passed: passed,
+            issues: passed ? [] : ["failed"],
+            residuals: .zero
+        )
+    ])
 }
 
 private func generatedArtifactTemporaryDirectory() throws -> URL {

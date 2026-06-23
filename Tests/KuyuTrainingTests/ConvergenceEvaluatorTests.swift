@@ -124,12 +124,20 @@ import Testing
         publishedCheckpointURL: directory.appendingPathComponent("checkpoints/accepted"),
         decidedAt: Date(timeIntervalSince1970: 3)
     )
+    let scenarioRuns = [
+        TrainingScenarioRunArtifact(
+            runID: "run-artifact",
+            iteration: 1,
+            output: TrainingScenarioRunOutput(kuyAtt1: try trainingContractRunOutput(passed: true))
+        )
+    ]
 
     try TrainingArtifactWriter().write(
         manifest: manifest,
         metrics: metrics,
         convergence: convergence,
         checkpointDecision: checkpointDecision,
+        scenarioRuns: scenarioRuns,
         to: directory
     )
 
@@ -161,6 +169,7 @@ import Testing
     #expect(artifactBundle.contract.schemaVersion == TrainingRunArtifactContract.currentSchemaVersion)
     #expect(artifactBundle.manifest.runID == manifest.runID)
     #expect(artifactBundle.metrics.count == metrics.count)
+    #expect(artifactBundle.scenarioRuns.count == scenarioRuns.count)
 }
 
 @Test func trainingRunArtifactValidatorRejectsRunIDMismatch() throws {
@@ -1515,17 +1524,27 @@ private func trainingContractRunOutput(passed: Bool, log: SimulationLog) throws 
         hfStabilityScore: passed ? 0.9 : 0.1,
         failures: passed ? [] : ["failed"]
     )
+    let replay = ReplayVerification.performed([
+        ReplayCheckResult(
+            scenarioId: evaluation.scenarioId,
+            seed: evaluation.seed,
+            tier: .tier0,
+            passed: true,
+            issues: [],
+            residuals: .zero
+        )
+    ])
     let summary = ValidationSummary(
         suitePassed: passed,
         evaluations: [evaluation],
-        replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
+        replay: replay,
         manifest: [],
         aggregate: EvaluationAggregate.from(evaluations: [evaluation])
     )
     return KuyAtt1RunOutput(
         result: SuiteRunResult(
             evaluations: [evaluation],
-            replay: .notPerformed(reason: "Test fixture does not execute replay verification."),
+            replay: replay,
             passed: passed
         ),
         summary: summary,

@@ -130,6 +130,7 @@ Acceptance evidence:
 | Cached payloads preserve tensor-safe record structure. | `TrainingDatasetContractValidator` rejects negative metadata counts, non-positive or non-finite timing, non-finite payload scalars/vectors, non-monotonic record time, and out-of-range sensor/drive/reflex indices. |
 | Scenario-run replay evidence survives the training boundary. | `TrainingScenarioRunSummary.replay` preserves `ValidationSummary.replay`, legacy summaries decode as replay-not-performed, and `TrainingScenarioReplayValidator` rejects empty, missing, failed, unexpected, or duplicate replay checks. |
 | Runnable starter templates resolve to scenario-owned coverage. | `RunnableStarterScenarioCoverageValidator` checks every default runnable starter primary stage against `ReferenceQuadrotorScenarioCatalog`, rejecting missing starters, unresolved suites, invalid episode counts, empty coverage, and duplicate scenario keys. |
+| Training run artifacts carry replay evidence for scenario metrics. | `TrainingArtifactWriter` writes `scenario-runs.jsonl`, `TrainingRunOrchestrator` validates replay before accepting suite output, and `TrainingRunArtifactValidator` rejects completed, rejected, metric-bearing, missing, mismatched, duplicate, or replay-not-performed scenario run artifacts. |
 
 Remaining maintenance rule: any new cache-consuming runtime path must call
 `TrainingDatasetContractValidator` or a stricter package-local validator before
@@ -139,7 +140,9 @@ a suite as accepted must validate `TrainingScenarioRunSummary.replay` through
 `TrainingScenarioReplayValidator` or a stricter package-local gate. Any new
 runnable starter template must pass `RunnableStarterScenarioCoverageValidator`
 so task/profile/suite declarations cannot drift away from scenario-owned
-coverage.
+coverage. Training run artifact consumers must load through
+`TrainingRunArtifactValidator` or a stricter package-local gate so
+`scenario-runs.jsonl` replay evidence cannot be bypassed.
 
 ## KT2: Run Lifecycle Reliability
 

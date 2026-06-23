@@ -8,6 +8,7 @@ public struct TrainingRunArtifactBundle: Sendable, Equatable {
     public let contract: TrainingRunArtifactContract
     public let manifest: LearningRunManifest
     public let metrics: [TrainingMetricRecord]
+    public let scenarioRuns: [TrainingScenarioRunArtifact]
     public let convergence: ConvergenceSummary
     public let checkpointDecision: CheckpointDecision
 
@@ -16,6 +17,7 @@ public struct TrainingRunArtifactBundle: Sendable, Equatable {
         contract: TrainingRunArtifactContract,
         manifest: LearningRunManifest,
         metrics: [TrainingMetricRecord],
+        scenarioRuns: [TrainingScenarioRunArtifact] = [],
         convergence: ConvergenceSummary,
         checkpointDecision: CheckpointDecision
     ) {
@@ -23,6 +25,7 @@ public struct TrainingRunArtifactBundle: Sendable, Equatable {
         self.contract = contract
         self.manifest = manifest
         self.metrics = metrics
+        self.scenarioRuns = scenarioRuns
         self.convergence = convergence
         self.checkpointDecision = checkpointDecision
     }
@@ -34,10 +37,15 @@ public struct TrainingRunArtifactValidator: Sendable {
         case unsupportedSchemaVersion(Int)
         case unsupportedContractVersion(Int)
         case invalidMetricLine(Int)
+        case invalidScenarioRunLine(Int)
         case emptyRunID
         case runIDMismatch(file: String, expected: String, actual: String)
         case nonFiniteMetric(kind: TrainingMetricKind, iteration: Int)
         case invalidWorkerMetric(kind: TrainingMetricKind, iteration: Int)
+        case invalidScenarioRunIteration(Int)
+        case duplicateScenarioRunIteration(Int)
+        case missingScenarioRunEvidence
+        case scenarioReplayValidationFailed(iteration: Int, reason: String)
         case nonTerminalManifestState(LearningRunTerminalState)
         case checkpointDecisionConvergenceMismatch(state: CheckpointDecisionState, accepted: Bool)
         case acceptedCheckpointMissingCandidateID
@@ -83,10 +91,15 @@ public struct TrainingRunArtifactValidator: Sendable {
             from: artifactDirectory.appendingPathComponent("metrics.jsonl"),
             decoder: decoder
         )
+        let scenarioRuns = try loadScenarioRuns(
+            from: artifactDirectory.appendingPathComponent(TrainingScenarioRunArtifact.fileName),
+            decoder: decoder
+        )
 
         try validate(
             manifest: manifest,
             metrics: metrics,
+            scenarioRuns: scenarioRuns,
             convergence: convergence,
             checkpointDecision: checkpointDecision
         )
@@ -95,6 +108,7 @@ public struct TrainingRunArtifactValidator: Sendable {
             contract: contract,
             manifest: manifest,
             metrics: metrics,
+            scenarioRuns: scenarioRuns,
             convergence: convergence,
             checkpointDecision: checkpointDecision
         )
@@ -118,6 +132,7 @@ public struct TrainingRunArtifactValidator: Sendable {
     private func validate(
         manifest: LearningRunManifest,
         metrics: [TrainingMetricRecord],
+        scenarioRuns: [TrainingScenarioRunArtifact],
         convergence: ConvergenceSummary,
         checkpointDecision: CheckpointDecision
     ) throws {
@@ -166,6 +181,63 @@ public struct TrainingRunArtifactValidator: Sendable {
                     throw ValidationError.invalidWorkerMetric(kind: metric.kind, iteration: metric.iteration)
                 }
             }
+        }
+        try validateScenarioRuns(
+            manifest: manifest,
+            metrics: metrics,
+            scenarioRuns: scenarioRuns
+        )
+    }
+
+    private func validateScenarioRuns(
+        manifest: LearningRunManifest,
+        metrics: [TrainingMetricRecord],
+        scenarioRuns: [TrainingScenarioRunArtifact]
+    ) throws {
+        var observedIterations = Set<Int>()
+        let replayValidator = TrainingScenarioReplayValidator()
+        for scenarioRun in scenarioRuns {
+            guard scenarioRun.runID == manifest.runID else {
+                throw ValidationError.runIDMismatch(
+                    file: TrainingScenarioRunArtifact.fileName,
+                    expected: manifest.runID,
+                    actual: scenarioRun.runID
+                )
+            }
+            guard scenarioRun.iteration > 0 else {
+                throw ValidationError.invalidScenarioRunIteration(scenarioRun.iteration)
+            }
+            let (inserted, _) = observedIterations.insert(scenarioRun.iteration)
+            guard inserted else {
+                throw ValidationError.duplicateScenarioRunIteration(scenarioRun.iteration)
+            }
+            do {
+                try replayValidator.validate(summary: scenarioRun.summary)
+            } catch {
+                throw ValidationError.scenarioReplayValidationFailed(
+                    iteration: scenarioRun.iteration,
+                    reason: "\(error)"
+                )
+            }
+        }
+
+        let scenarioMetricIterations = Set(metrics.filter { metric in
+            metric.kind == .score
+                || metric.kind == .passRate
+                || metric.kind == .failureRate
+                || metric.kind == .safetyViolation
+        }.map(\.iteration))
+        if !scenarioMetricIterations.isEmpty && observedIterations.isEmpty {
+            throw ValidationError.missingScenarioRunEvidence
+        }
+        for iteration in scenarioMetricIterations {
+            guard observedIterations.contains(iteration) else {
+                throw ValidationError.invalidScenarioRunIteration(iteration)
+            }
+        }
+        if (manifest.terminalState == .completed || manifest.terminalState == .rejected)
+            && observedIterations.isEmpty {
+            throw ValidationError.missingScenarioRunEvidence
         }
     }
 
@@ -249,6 +321,28 @@ public struct TrainingRunArtifactValidator: Sendable {
                 records.append(try decoder.decode(TrainingMetricRecord.self, from: data))
             } catch {
                 throw ValidationError.invalidMetricLine(index + 1)
+            }
+        }
+        return records
+    }
+
+    private func loadScenarioRuns(
+        from url: URL,
+        decoder: JSONDecoder
+    ) throws -> [TrainingScenarioRunArtifact] {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ValidationError.missingFile(TrainingScenarioRunArtifact.fileName)
+        }
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        var records: [TrainingScenarioRunArtifact] = []
+        for (index, line) in raw.split(separator: "\n").enumerated() {
+            guard let data = String(line).data(using: .utf8) else {
+                throw ValidationError.invalidScenarioRunLine(index + 1)
+            }
+            do {
+                records.append(try decoder.decode(TrainingScenarioRunArtifact.self, from: data))
+            } catch {
+                throw ValidationError.invalidScenarioRunLine(index + 1)
             }
         }
         return records

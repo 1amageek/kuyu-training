@@ -587,6 +587,24 @@ struct TrainingDatasetWriterTests {
         #expect(meta.driveCount == 3)
     }
 
+    @Test func writerRejectsInvalidScenarioTerminalFacts() throws {
+        let dir = try makeTemporaryDirectory()
+        defer { cleanup(dir) }
+
+        let log = try makeSimulationLog(steps: 2)
+        let invalidFacts = ScenarioTerminalFacts(
+            done: false,
+            truncated: true,
+            terminalReason: FailureReason.sustainedFall.rawValue,
+            failureReason: .sustainedFall,
+            failureTime: 0.01
+        )
+
+        #expect(throws: ScenarioTerminalFacts.ValidationError.failureRequiresDone(reason: .sustainedFall)) {
+            try TrainingDatasetWriter().write(log: log, to: dir, terminalFacts: invalidFacts)
+        }
+    }
+
     @Test func actuatorOnlyTeacherActionsBecomeTrainingDriveTargets() throws {
         let dir = try makeTemporaryDirectory()
         defer { cleanup(dir) }

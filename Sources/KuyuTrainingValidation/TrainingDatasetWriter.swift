@@ -36,6 +36,7 @@ public struct TrainingDatasetWriter {
         taskReference: TrainingTaskReferenceMetadata? = nil
     ) throws -> URL {
         let resolvedTerminalFacts = terminalFacts ?? ScenarioTerminalFacts(log: log)
+        try resolvedTerminalFacts.validate()
         let records = buildRecords(from: log, terminalFacts: resolvedTerminalFacts)
         let metadata = TrainingDatasetMetadata(
             scenarioId: log.scenarioId.rawValue,

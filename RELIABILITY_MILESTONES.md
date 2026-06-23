@@ -161,10 +161,15 @@ Exit criteria:
 
 ## KT3: Target Split and Import Gates
 
-Status: pending.
+Status: in progress.
 
 Goal: split `KuyuTraining` into smaller targets only after KT2 makes runtime
 behavior trustworthy.
+
+Current gate: `TARGET_OWNERSHIP.md` defines the pre-split ownership map, and
+`/Users/1amageek/Desktop/Robot/unconscious/scripts/validate-kuyu-boundaries.sh`
+fails when new source files are not classified or when future pure contracts,
+evolution, or reinforcement-core files import runtime-heavy dependencies.
 
 Target ownership:
 

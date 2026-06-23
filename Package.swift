@@ -52,9 +52,6 @@ let package = Package(
             name: "KuyuReinforcement",
             dependencies: [
                 "KuyuTrainingContracts",
-                .product(name: "KuyuCore", package: "kuyu-core"),
-                .product(name: "KuyuPhysics", package: "kuyu-physics"),
-                .product(name: "KuyuScenarios", package: "kuyu-scenarios"),
             ]
         ),
         .target(

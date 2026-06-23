@@ -1,5 +1,4 @@
 import Foundation
-import KuyuScenarios
 import KuyuTrainingContracts
 
 public struct VectorizedCandidateReference<Candidate: Sendable>: Sendable {
@@ -59,7 +58,7 @@ public struct VectorizedCandidateRolloutSummary: Sendable, Codable, Equatable {
     public let taskPassRate: Double
     public let safetyViolationRate: Double
     public let rolloutCount: Int
-    public let taskQuality: [ReferenceQuadrotorTaskQualitySummary]
+    public let taskQuality: [VectorizedTaskQualitySummary]
 
     public init(
         candidateID: String,
@@ -68,7 +67,7 @@ public struct VectorizedCandidateRolloutSummary: Sendable, Codable, Equatable {
         taskPassRate: Double,
         safetyViolationRate: Double,
         rolloutCount: Int,
-        taskQuality: [ReferenceQuadrotorTaskQualitySummary] = []
+        taskQuality: [VectorizedTaskQualitySummary] = []
     ) throws {
         guard !candidateID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw VectorizedCandidateRolloutSummaryError.emptyCandidateID

@@ -51,7 +51,7 @@ validator, regression tests, and evidence all agree.
 | KT1 | Scenario truth preservation | Complete for current runtime paths | Preserve task reference, reward descriptor, record count, and terminal boundary semantics across generated and cached datasets. | `TrainingDatasetContractValidator` plus dataset mixer, training orchestrator, and recovery artifact validator tests. |
 | KT2 | Run lifecycle reliability | Complete for current package runtime paths | Make run creation, resume, pause, cancel, failure, and artifact publication auditable and fail-closed under crash windows. | Targeted tests for torn journals, duplicate writers, terminal immutability, cancellation, secondary failure reporting, managed handles, managed executors, and artifact validation after resume. |
 | KT3 | Target split and import gates | Complete for current public facade | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, static import-boundary gate, facade compatibility test, and package-level xcodebuild test. |
-| KT4 | Profile isolation | Pending | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, and rejection of legacy CTBR shortcut compatibility. |
+| KT4 | Profile isolation | In progress | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, and rejection of legacy CTBR shortcut compatibility. |
 | KT5 | Downstream adoption readiness | Pending | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
 
 ## Dependency Order
@@ -194,15 +194,34 @@ Remaining KT4 debt discovered during the split:
 
 | Debt | Next milestone |
 |---|---|
-| `KuyuReinforcement` vectorized rollout summaries still carry reference scenario task-quality summaries. | KT4 extracts profile-specific quality into validation/profile adapters. |
 | Some runtime and validation files still carry broad imports from the mechanical split. | KT4 tightens imports as part of profile isolation and ownership hardening. |
 
 ## KT4: Profile Isolation
 
-Status: pending.
+Status: in progress.
 
 Goal: generic training contracts validate structure; profile validators validate
 robot meaning.
+
+Current focus rule: finish KT4 before expanding `kuyu-training` consumers. KT5
+work may document downstream needs, but it must not depend on generic training
+contracts being profile-safe until all KT4 exit criteria pass.
+
+KT4 is split into small gates so each change raises reliability without
+pretending the whole profile boundary is complete:
+
+| Slice | Status | Completion gate |
+|---|---|---|
+| KT4a. Vectorized rollout quality isolation | Complete | `KuyuReinforcement` owns only `VectorizedTaskQualitySummary`; reference-quadrotor conversion lives in validation/profile code; package tests and boundary gate pass. |
+| KT4b. Generic template acceptance | Pending | A valid non-quadrotor template passes generic structure validation without reference-quadrotor semantics. |
+| KT4c. Legacy shortcut rejection | Pending | Old CTBR shortcut compatibility fails closed unless an explicit profile adapter owns the conversion. |
+| KT4d. Runtime profile import audit | Pending | Runtime orchestration does not import or infer robot-specific profile meaning outside validation/profile adapters. |
+
+Completed slices:
+
+| Slice | Evidence |
+|---|---|
+| Vectorized rollout task quality is profile-neutral in `KuyuReinforcement`; reference-quadrotor task-quality conversion lives in validation/profile code. | `VectorizedTaskQualitySummary`, `ReferenceQuadrotorTaskQualitySummary+VectorizedTaskQualitySummary`, `VectorizedTrainingContractsTests`. |
 
 Required gates:
 

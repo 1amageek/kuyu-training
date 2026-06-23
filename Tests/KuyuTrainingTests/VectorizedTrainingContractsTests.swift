@@ -1,5 +1,6 @@
 import Foundation
 import KuyuTraining
+import KuyuScenarios
 import Testing
 
 @Test func vectorizedBatchSpecDefinesPopulationWorldAndTensorShapes() throws {
@@ -84,6 +85,84 @@ import Testing
     } catch {
         Issue.record("Unexpected error: \(error)")
     }
+}
+
+@Test func vectorizedTaskQualitySummaryIsProfileNeutral() throws {
+    let quality = try VectorizedTaskQualitySummary(
+        profileID: "manipulator",
+        task: "joint-target-tracking",
+        scenarioID: "arm-target-a",
+        seed: 7,
+        passed: true,
+        failureReasons: [],
+        evaluatorID: "profile-owned-evaluator",
+        metrics: [
+            "targetError": 0.01,
+            "gripperError": 0.02,
+        ]
+    )
+    let summary = try VectorizedCandidateRolloutSummary(
+        candidateID: "arm-policy",
+        rewardAverage: 1,
+        fitness: 1,
+        taskPassRate: 1,
+        safetyViolationRate: 0,
+        rolloutCount: 1,
+        taskQuality: [quality]
+    )
+
+    #expect(summary.taskQuality.first?.profileID == "manipulator")
+    #expect(summary.taskQuality.first?.metrics["targetError"] == 0.01)
+}
+
+@Test func vectorizedTaskQualitySummaryRejectsInvalidMetricContracts() {
+    #expect(throws: VectorizedTaskQualitySummaryError.emptyMetricID) {
+        _ = try VectorizedTaskQualitySummary(
+            task: "joint-target-tracking",
+            scenarioID: "arm-target-a",
+            seed: 7,
+            passed: false,
+            failureReasons: ["bad-metric"],
+            evaluatorID: "profile-owned-evaluator",
+            metrics: [" ": 1]
+        )
+    }
+    #expect(throws: VectorizedTaskQualitySummaryError.nonFiniteMetric("targetError")) {
+        _ = try VectorizedTaskQualitySummary(
+            task: "joint-target-tracking",
+            scenarioID: "arm-target-a",
+            seed: 7,
+            passed: false,
+            failureReasons: ["bad-metric"],
+            evaluatorID: "profile-owned-evaluator",
+            metrics: ["targetError": .nan]
+        )
+    }
+}
+
+@Test func referenceQuadrotorTaskQualityUsesValidationAdapter() throws {
+    let reference = ReferenceQuadrotorTaskQualitySummary(
+        task: "lift",
+        scenarioID: "lift-hover",
+        seed: 1,
+        passed: true,
+        failureReasons: [],
+        evaluatorID: "reference-quadrotor-lift",
+        targetZ: 1.2,
+        tolerance: 0.1,
+        warmupTime: 0.5,
+        requiredHoldTime: 2.0,
+        achievedHoldTime: 2.5,
+        maxAltitudeErrorAfterWarmup: 0.04,
+        maxVerticalVelocityAfterWarmup: 0.02
+    )
+
+    let quality = try VectorizedTaskQualitySummary(referenceQuadrotor: reference)
+
+    #expect(quality.profileID == "referenceQuadrotor")
+    #expect(quality.task == "lift")
+    #expect(quality.metrics["targetZ"] == 1.2)
+    #expect(quality.metrics["maxVerticalVelocityAfterWarmup"] == 0.02)
 }
 
 @Test func defaultVectorizedRolloutCollectorRunsPolicyWorldLoop() async throws {

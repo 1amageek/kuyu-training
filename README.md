@@ -177,7 +177,7 @@ orchestration can own the five-drive arm/gripper policy lifecycle.
 | **KuyuTraining** | Split training targets | Facade-only public re-export target |
 | **KuyuTrainingContracts** | Foundation | Stable project/run contracts, IDs, plans, capability enums, and neutral DTOs |
 | **KuyuEvolution** | KuyuTrainingContracts | Population, selection, mutation/crossover contracts, lineage, and evolution orchestration |
-| **KuyuReinforcement** | KuyuTrainingContracts, KuyuCore, KuyuPhysics, KuyuScenarios | RL backend protocols, rollout buffers, rollout health, stability envelopes, and vectorized rollout contracts |
+| **KuyuReinforcement** | KuyuTrainingContracts | RL backend protocols, rollout buffers, rollout health, stability envelopes, and vectorized rollout contracts |
 | **KuyuTrainingValidation** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuCore, KuyuPhysics, KuyuScenarios | Artifact, project, template, dataset, checkpoint, convergence, and profile validators |
 | **KuyuTrainingRuntime** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuTrainingValidation, KuyuCore, KuyuPhysics, KuyuScenarios | Run/probe orchestration, managed handles, archive contracts, rollout harnesses, and runtime compatibility extensions |
 
@@ -187,7 +187,7 @@ Target ownership:
 |---|---|
 | `KuyuTrainingContracts` | Plans, profiles, model references, artifact schemas |
 | `KuyuEvolution` | Population, selection, mutation/crossover contracts, lineage |
-| `KuyuReinforcement` | RL backend protocols and rollout buffers |
+| `KuyuReinforcement` | RL backend protocols, rollout buffers, rollout health, stability envelopes, and profile-neutral vectorized rollout contracts |
 | `KuyuTrainingRuntime` | Stage orchestration, cancellation/resume, resource scheduling |
 | `KuyuTrainingValidation` | Artifact, project, template, and gate validators |
 

@@ -56,7 +56,7 @@ public struct TrainingDatasetMixer: Sendable {
         sources: [URL],
         to outputDirectory: URL,
         createdAt: Date = Date(),
-        datasetContract: TrainingDatasetContract? = nil
+        datasetContract: TrainingDatasetContract? = TrainingDatasetContract()
     ) throws -> TrainingDatasetMixManifest {
         guard !sources.isEmpty else {
             throw MixError.noSources
@@ -71,6 +71,7 @@ public struct TrainingDatasetMixer: Sendable {
             throw MixError.noDatasetsFound(sources.map(\.path))
         }
 
+        let enforcedDatasetContract = datasetContract ?? TrainingDatasetContract()
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
@@ -86,13 +87,14 @@ public struct TrainingDatasetMixer: Sendable {
                 guard !fileManager.fileExists(atPath: destination.path) else {
                     throw MixError.destinationAlreadyExists(destination.path)
                 }
-                let loaded = try TrainingDataset.load(from: dataset)
-                if let datasetContract {
-                    do {
-                        try TrainingDatasetContractValidator().validate(loaded, against: datasetContract)
-                    } catch let error as TrainingDatasetContractValidator.ValidationError {
-                        throw MixError.datasetContractViolation(path: dataset.path, reason: error)
-                    }
+                let loaded: TrainingDataset
+                do {
+                    loaded = try TrainingDatasetContractValidator().loadAndValidate(
+                        from: dataset,
+                        against: enforcedDatasetContract
+                    )
+                } catch let error as TrainingDatasetContractValidator.ValidationError {
+                    throw MixError.datasetContractViolation(path: dataset.path, reason: error)
                 }
                 try fileManager.copyItem(at: dataset, to: destination)
                 copiedRecordCount += loaded.metadata.recordCount

@@ -10,9 +10,33 @@ struct TrainingDatasetMixerTests {
         let single = root.appendingPathComponent("single", isDirectory: true)
         let nested = root.appendingPathComponent("nested", isDirectory: true)
         let output = root.appendingPathComponent("mixed", isDirectory: true)
-        try writeDataset(to: single, scenarioID: "single", seed: 1, recordCount: 2)
-        try writeDataset(to: nested.appendingPathComponent("child-a", isDirectory: true), scenarioID: "child-a", seed: 2, recordCount: 3)
-        try writeDataset(to: nested.appendingPathComponent("child-b", isDirectory: true), scenarioID: "child-b", seed: 3, recordCount: 4)
+        try writeDataset(
+            to: single,
+            scenarioID: "single",
+            seed: 1,
+            recordCount: 2,
+            done: false,
+            truncated: true,
+            terminalReason: "time-limit"
+        )
+        try writeDataset(
+            to: nested.appendingPathComponent("child-a", isDirectory: true),
+            scenarioID: "child-a",
+            seed: 2,
+            recordCount: 3,
+            done: false,
+            truncated: true,
+            terminalReason: "time-limit"
+        )
+        try writeDataset(
+            to: nested.appendingPathComponent("child-b", isDirectory: true),
+            scenarioID: "child-b",
+            seed: 3,
+            recordCount: 4,
+            done: false,
+            truncated: true,
+            terminalReason: "time-limit"
+        )
 
         let manifest = try TrainingDatasetMixer().mix(sources: [single, nested], to: output)
 
@@ -85,6 +109,27 @@ struct TrainingDatasetMixerTests {
                 datasetContract: TrainingDatasetContract()
             )
             Issue.record("Expected missing terminal facts to fail.")
+        } catch TrainingDatasetMixer.MixError.datasetContractViolation(let path, let reason) {
+            #expect(path == source.path)
+            #expect(reason == .missingTerminalFacts)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test func mixTreatsNilDatasetContractAsDefaultContract() throws {
+        let root = temporaryDirectory("training-dataset-mixer-nil-contract")
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let output = root.appendingPathComponent("mixed", isDirectory: true)
+        try writeDataset(to: source, scenarioID: "nil-contract", seed: 1, recordCount: 2)
+
+        do {
+            _ = try TrainingDatasetMixer().mix(
+                sources: [source],
+                to: output,
+                datasetContract: nil
+            )
+            Issue.record("Expected nil dataset contract to still enforce the default contract.")
         } catch TrainingDatasetMixer.MixError.datasetContractViolation(let path, let reason) {
             #expect(path == source.path)
             #expect(reason == .missingTerminalFacts)

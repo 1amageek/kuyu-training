@@ -1,3 +1,4 @@
+import Foundation
 import KuyuCore
 import KuyuTrainingContracts
 import KuyuEvolution
@@ -42,6 +43,15 @@ public struct TrainingDatasetContractValidator: Sendable {
     }
 
     public init() {}
+
+    public func loadAndValidate(
+        from directory: URL,
+        against contract: TrainingDatasetContract = TrainingDatasetContract()
+    ) throws -> TrainingDataset {
+        let dataset = try TrainingDataset.load(from: directory)
+        try validate(dataset, against: contract)
+        return dataset
+    }
 
     public func validate(
         _ dataset: TrainingDataset,

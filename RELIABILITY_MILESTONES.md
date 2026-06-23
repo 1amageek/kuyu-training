@@ -97,7 +97,7 @@ Acceptance evidence:
 
 ## KT1: Scenario Truth Preservation
 
-Status: complete for current runtime paths.
+Status: complete for current runtime paths and production source load gates.
 
 Scenario truth must survive every dataset reuse boundary:
 
@@ -125,10 +125,12 @@ Acceptance evidence:
 | Missing terminal facts invalidate cached data. | `TrainingDatasetMixer` and orchestrator negative tests. |
 | Recovery relabel artifacts cannot carry stale datasets. | `TrainingProbeArtifactValidator` negative tests. |
 | Terminal `continueValue` is zero at true episode boundaries. | Dataset contract validator tests. |
+| New production dataset load paths cannot bypass validation. | Boundary gate rejects `TrainingDataset.load(from:)` outside `TrainingDatasetContractValidator`. |
 
 Remaining maintenance rule: any new cache-consuming runtime path must call
 `TrainingDatasetContractValidator` or a stricter package-local validator before
-data is reused.
+data is reused. Source-level direct loads are allowed in tests and in the
+validator implementation only.
 
 ## KT2: Run Lifecycle Reliability
 

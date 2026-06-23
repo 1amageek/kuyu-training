@@ -255,9 +255,9 @@ public struct TrainingProbeArtifactValidator: Sendable {
             throw ValidationError.invalidRecoveryRelabelStatus("recovery dataset count does not match report")
         }
         for dataset in datasets {
-            let loaded = try TrainingDataset.load(from: dataset)
+            let loaded: TrainingDataset
             do {
-                try TrainingDatasetContractValidator().validate(loaded, against: TrainingDatasetContract())
+                loaded = try TrainingDatasetContractValidator().loadAndValidate(from: dataset)
             } catch let error as TrainingDatasetContractValidator.ValidationError {
                 throw ValidationError.invalidRecoveryRelabelStatus("recovery dataset contract violation: \(error)")
             }

@@ -1,3 +1,4 @@
+import Foundation
 import KuyuCore
 import KuyuPhysics
 import KuyuTraining
@@ -27,6 +28,33 @@ import Testing
             expectedTaskReference: taskReference
         )
     )
+}
+
+@Test func trainingDatasetContractValidatorLoadAndValidateRejectsStaleDiskDataset() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("training-dataset-contract-\(UUID().uuidString)", isDirectory: true)
+    let actual = RewardDescriptor(id: "reward", version: "1", configHash: "hash-a")
+    let expected = RewardDescriptor(id: "reward", version: "2", configHash: "hash-b")
+    let dataset = makeDataset(
+        rewardDescriptor: actual,
+        done: false,
+        truncated: true,
+        terminalReason: "time-limit"
+    )
+    try TrainingDatasetWriter().write(dataset: dataset, to: directory)
+
+    do {
+        _ = try TrainingDatasetContractValidator().loadAndValidate(
+            from: directory,
+            against: TrainingDatasetContract(expectedRewardDescriptor: expected)
+        )
+        Issue.record("Expected disk dataset reward descriptor mismatch to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.rewardDescriptorMismatch(let expectedError, let actualError) {
+        #expect(expectedError == expected)
+        #expect(actualError == actual)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @Test func trainingDatasetContractValidatorRejectsRewardDescriptorMismatch() throws {

@@ -168,6 +168,16 @@ import KuyuTraining
     }
 }
 
+@Test func generatedArtifactCompatibilityVerifierRejectsEmptyRequest() throws {
+    do {
+        _ = try GeneratedTrainingArtifactCompatibilityVerifier().verify(
+            GeneratedTrainingArtifactCompatibilityRequest()
+        )
+        Issue.record("Expected empty generated artifact verification request to fail closed.")
+    } catch GeneratedTrainingArtifactCompatibilityVerifier.VerificationError.emptyRequest {
+    }
+}
+
 private func generatedArtifactRunResult(directory: URL) -> TrainingRunResult {
     let manifest = LearningRunManifest(
         runID: "run-public-artifact",

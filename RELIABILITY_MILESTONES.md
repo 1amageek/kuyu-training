@@ -166,6 +166,7 @@ Required gates:
 | Terminal immutability | Terminal runs cannot accept new control commands, be reopened for writing, appended to, or transitioned back to non-terminal states. |
 | Artifact publication | Rejected candidates never appear at accepted paths. |
 | Artifact acceptance consistency | Training run artifacts cannot claim accepted convergence without an accepted/staged checkpoint decision and required checkpoint evidence. |
+| Artifact lifecycle consistency | Terminal manifests must have completion time, completed runs must match accepted convergence, and rejected/skipped/failed decisions cannot expose an output checkpoint ID. |
 | Event lifecycle | Public run handles finish streams on operation completion, cancellation, and `shutdown()` so consumers do not hang. |
 | Standard executor lifecycle | Package-provided executors wrap `start` and `resume` operations in managed handles instead of exposing stream ownership to training backends. |
 
@@ -176,6 +177,7 @@ Exit criteria:
 | Every terminal path writes a durable outcome. | Targeted `TrainingRunContract` and orchestrator tests. |
 | Terminal outcomes are final at reader and writer boundaries. | `submitControlCommandRejectsTerminalRun`, `openRefusesTerminalRun`, `writerRejectsMutationAfterTerminalOutcome`, and `writerRejectsOutcomeTransitionAfterTerminalOutcome`. |
 | Published artifact acceptance is internally consistent. | `trainingRunArtifactValidatorRejectsAcceptedConvergenceWithoutAcceptedCheckpointDecision`, `trainingRunArtifactValidatorRejectsAcceptedCheckpointDecisionWithoutAcceptedConvergence`, `trainingRunArtifactValidatorRejectsAcceptedCheckpointWithoutPublishedEvidence`, `trainingRunArtifactValidatorRejectsStagedCheckpointWithoutCandidateEvidence`, and `trainingRunArtifactValidatorRejectsAcceptedCheckpointIDMismatch`. |
+| Published artifact lifecycle facts are internally consistent. | `trainingRunArtifactValidatorRejectsCompletedManifestWithoutAcceptedConvergence`, `trainingRunArtifactValidatorRejectsRejectedManifestWithOutputCheckpoint`, and `trainingRunArtifactValidatorRejectsTerminalManifestWithoutCompletionTime`. |
 | Every resumable failure mode is either repaired or rejected with a typed error. | Resume/corruption tests. |
 | Event streams cannot outlive a stopped run. | `ManagedTrainingRunHandle` tests for completion, cancellation, and shutdown stream termination. |
 | Standard executor entry points preserve the managed lifecycle. | `ManagedTrainingRunExecutor` tests for start/resume event forwarding, start/resume validation rejection, and continuation selection. |
@@ -283,7 +285,7 @@ Completed slices:
 | Slice | Evidence |
 |---|---|
 | Runtime scenario execution contracts no longer expose `KuyAtt1RunOutput`; reference-quadrotor conversion lives in validation/profile adapter code. | `TrainingScenarioRunOutput`, `TrainingDatasetExporter+KuyAtt1`, `TrainingRunOrchestrator`, `TrainingProbeOrchestrator`, `../scripts/validate-kuyu-boundaries.sh`. |
-| Generated training, probe, and checkpoint evaluation artifacts can be loaded and validated through a public compatibility verifier. | `GeneratedTrainingArtifactCompatibilityVerifier`, `GeneratedTrainingArtifactCompatibilityTests`, `TrainingScenarioRunOutput`, `TrainingRunArtifactValidator`, `TrainingProbeArtifactValidator`, `CheckpointEvaluationArtifactValidator`. |
+| Generated training, probe, and checkpoint evaluation artifacts can be loaded and validated through a public compatibility verifier. | `GeneratedTrainingArtifactCompatibilityVerifier`, `GeneratedTrainingArtifactCompatibilityTests`, `TrainingScenarioRunOutput`, `TrainingRunArtifactValidator`, `TrainingProbeArtifactValidator`, `CheckpointEvaluationArtifactValidator`; empty verification requests fail closed. |
 | Current app and MLX consumers load generated training run, probe, and checkpoint evaluation artifacts through public compatibility verification rather than internal validators or file-layout knowledge. | `GeneratedTrainingArtifactCompatibilityVerifier`, `TrainingRunStore`, `KuyuCLI`, `LearningCampaignArtifactValidator`, `LearningCampaignOrchestrator`, `ReferenceQuadrotorCheckpointRegressionEvidenceResolver`, `../scripts/validate-kuyu-boundaries.sh`. |
 
 Goal: `kuyu-mlx`, CLI, UI, and long-running training harnesses can depend on

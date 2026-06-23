@@ -54,6 +54,7 @@ public struct GeneratedTrainingArtifactCompatibilityReport: Sendable, Equatable 
 
 public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
     public enum VerificationError: Error, Sendable, Equatable {
+        case emptyRequest
         case missingCheckpointEvaluationArtifact(String)
     }
 
@@ -71,6 +72,11 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
     public func verify(
         _ request: GeneratedTrainingArtifactCompatibilityRequest
     ) throws -> GeneratedTrainingArtifactCompatibilityReport {
+        guard request.runArtifactDirectory != nil
+            || request.probeArtifactDirectory != nil
+            || request.checkpointEvaluation != nil else {
+            throw VerificationError.emptyRequest
+        }
         let runArtifacts = try request.runArtifactDirectory.map(loadRunArtifacts)
         let probeArtifacts = try request.probeArtifactDirectory.map(loadProbeArtifacts)
         let checkpointEvaluationArtifact = try request.checkpointEvaluation.map(loadCheckpointEvaluationArtifact)

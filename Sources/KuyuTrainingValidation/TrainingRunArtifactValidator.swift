@@ -46,13 +46,16 @@ public struct TrainingRunArtifactValidator: Sendable {
         case duplicateScenarioRunIteration(Int)
         case missingScenarioRunEvidence
         case scenarioReplayValidationFailed(iteration: Int, reason: String)
+        case missingTerminalCompletionTime(LearningRunTerminalState)
         case nonTerminalManifestState(LearningRunTerminalState)
+        case manifestConvergenceMismatch(state: LearningRunTerminalState, accepted: Bool)
         case checkpointDecisionConvergenceMismatch(state: CheckpointDecisionState, accepted: Bool)
         case acceptedCheckpointMissingCandidateID
         case acceptedCheckpointMissingCandidateURL
         case acceptedCheckpointMissingPublishedURL
         case stagedCheckpointMissingCandidateID
         case stagedCheckpointMissingCandidateURL
+        case unexpectedOutputCheckpointID(state: CheckpointDecisionState, outputCheckpointID: String)
         case outputCheckpointMismatch(expected: String, actual: String?)
     }
 
@@ -142,6 +145,9 @@ public struct TrainingRunArtifactValidator: Sendable {
         guard manifest.terminalState != .running else {
             throw ValidationError.nonTerminalManifestState(manifest.terminalState)
         }
+        guard manifest.completedAt != nil else {
+            throw ValidationError.missingTerminalCompletionTime(manifest.terminalState)
+        }
         guard convergence.runID == manifest.runID else {
             throw ValidationError.runIDMismatch(
                 file: "convergence.json",
@@ -156,6 +162,7 @@ public struct TrainingRunArtifactValidator: Sendable {
                 actual: checkpointDecision.runID
             )
         }
+        try validateManifestConvergence(manifest: manifest, convergence: convergence)
         try validateCheckpointDecision(
             manifest: manifest,
             convergence: convergence,
@@ -241,6 +248,19 @@ public struct TrainingRunArtifactValidator: Sendable {
         }
     }
 
+    private func validateManifestConvergence(
+        manifest: LearningRunManifest,
+        convergence: ConvergenceSummary
+    ) throws {
+        let completedSuccessfully = manifest.terminalState == .completed
+        guard completedSuccessfully == convergence.accepted else {
+            throw ValidationError.manifestConvergenceMismatch(
+                state: manifest.terminalState,
+                accepted: convergence.accepted
+            )
+        }
+    }
+
     private func validateCheckpointDecision(
         manifest: LearningRunManifest,
         convergence: ConvergenceSummary,
@@ -278,7 +298,13 @@ public struct TrainingRunArtifactValidator: Sendable {
             }
             try validateOutputCheckpointID(manifest: manifest, candidateCheckpointID: candidateCheckpointID)
         case .rejected, .skipped, .failed:
-            break
+            if let outputCheckpointID = manifest.outputCheckpointID,
+               !outputCheckpointID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw ValidationError.unexpectedOutputCheckpointID(
+                    state: checkpointDecision.state,
+                    outputCheckpointID: outputCheckpointID
+                )
+            }
         }
     }
 

@@ -194,8 +194,8 @@ public struct RunnableStarterScenarioArtifactGenerator: Sendable {
             workerCount: 1,
             startedAt: generatedAt,
             completedAt: generatedAt,
-            terminalState: .completed,
-            failureReason: nil
+            terminalState: .rejected,
+            failureReason: "scenario-replay-evidence-only-no-checkpoint"
         )
         let checkpointDecision = CheckpointDecision(
             runID: runID,

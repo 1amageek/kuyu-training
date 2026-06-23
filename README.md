@@ -59,6 +59,10 @@ flowchart LR
 - `continueValue` is a world-model sequence boundary signal, not a value
   bootstrap policy. RL loaders must use `done`, `truncated`, and
   `terminalReason` to decide whether bootstrapping is allowed.
+- Generated artifact validation must reject empty compatibility requests,
+  terminal manifests without completion time, completed runs without accepted
+  convergence, and rejected/skipped/failed checkpoint decisions that expose an
+  output checkpoint ID.
 - Training code must consume typed scenario APIs for task references and gates;
   fallback target heights or reward constants must not be duplicated here.
 - Backend-specific acceleration and checkpoint serialization belong in

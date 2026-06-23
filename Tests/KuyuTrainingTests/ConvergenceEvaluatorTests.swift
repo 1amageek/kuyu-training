@@ -241,15 +241,15 @@ import Testing
         workerCount: 2,
         startedAt: Date(timeIntervalSince1970: 1),
         completedAt: Date(timeIntervalSince1970: 2),
-        terminalState: .completed,
-        failureReason: nil
+        terminalState: .failed,
+        failureReason: "worker-metric-invalid"
     )
     let convergence = ConvergenceSummary(
         runID: "run-worker-metric",
-        accepted: true,
-        reason: "accepted",
-        passRate: 1.0,
-        failureRate: 0.0,
+        accepted: false,
+        reason: "worker-metric-invalid",
+        passRate: 0.0,
+        failureRate: 1.0,
         safetyRegressionDetected: false,
         plateauDetected: false,
         overfitRiskDetected: false
@@ -281,8 +281,11 @@ import Testing
         to: directory
     )
 
-    #expect(throws: TrainingRunArtifactValidator.ValidationError.self) {
+    do {
         _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected partial worker metric identity to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .invalidWorkerMetric(kind: .workerThroughput, iteration: 1))
     }
 }
 
@@ -398,6 +401,74 @@ import Testing
         Issue.record("Expected accepted checkpoint with mismatched manifest output ID to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .outputCheckpointMismatch(expected: "ckpt-decision", actual: "ckpt-manifest"))
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsCompletedManifestWithoutAcceptedConvergence() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: false,
+        checkpointState: .skipped,
+        candidateCheckpointID: nil,
+        candidateCheckpointURL: nil,
+        publishedCheckpointURL: nil,
+        outputCheckpointID: nil,
+        terminalState: .completed
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected completed manifest without accepted convergence to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .manifestConvergenceMismatch(state: .completed, accepted: false))
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsRejectedManifestWithOutputCheckpoint() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: false,
+        checkpointState: .skipped,
+        candidateCheckpointID: nil,
+        candidateCheckpointURL: nil,
+        publishedCheckpointURL: nil,
+        outputCheckpointID: "stale-output"
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected rejected manifest with output checkpoint to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .unexpectedOutputCheckpointID(state: .skipped, outputCheckpointID: "stale-output"))
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsTerminalManifestWithoutCompletionTime() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: false,
+        checkpointState: .skipped,
+        candidateCheckpointID: nil,
+        candidateCheckpointURL: nil,
+        publishedCheckpointURL: nil,
+        outputCheckpointID: nil,
+        completedAt: nil
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected terminal manifest without completion time to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .missingTerminalCompletionTime(.rejected))
     }
 }
 
@@ -1267,7 +1338,9 @@ private func writeTrainingRunArtifact(
     candidateCheckpointID: String?,
     candidateCheckpointURL: URL?,
     publishedCheckpointURL: URL?,
-    outputCheckpointID: String?
+    outputCheckpointID: String?,
+    terminalState: LearningRunTerminalState? = nil,
+    completedAt: Date? = Date(timeIntervalSince1970: 2)
 ) throws {
     let runID = "run-artifact-gate"
     let manifest = LearningRunManifest(
@@ -1280,8 +1353,8 @@ private func writeTrainingRunArtifact(
         outputCheckpointID: outputCheckpointID,
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),
-        completedAt: Date(timeIntervalSince1970: 2),
-        terminalState: convergenceAccepted ? .completed : .rejected,
+        completedAt: completedAt,
+        terminalState: terminalState ?? (convergenceAccepted ? .completed : .rejected),
         failureReason: convergenceAccepted ? nil : "not-accepted"
     )
     let convergence = ConvergenceSummary(

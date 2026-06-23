@@ -45,6 +45,36 @@ public struct TrainingScenarioEvaluationRecord: Sendable, Codable, Equatable {
         self.failureTime = failureTime
     }
 
+    public init(
+        scenarioID: String,
+        seed: UInt64,
+        passed: Bool,
+        maxOmega: Double,
+        maxTiltDegrees: Double,
+        sustainedViolationSeconds: Double,
+        recoveryTimeSeconds: Double?,
+        overshootDegrees: Double?,
+        hfStabilityScore: Double?,
+        failures: [String],
+        failureReason: FailureReason? = nil,
+        failureTime: Double? = nil
+    ) throws {
+        try self.init(
+            scenarioID: ScenarioID(scenarioID),
+            seed: ScenarioSeed(seed),
+            passed: passed,
+            maxOmega: maxOmega,
+            maxTiltDegrees: maxTiltDegrees,
+            sustainedViolationSeconds: sustainedViolationSeconds,
+            recoveryTimeSeconds: recoveryTimeSeconds,
+            overshootDegrees: overshootDegrees,
+            hfStabilityScore: hfStabilityScore,
+            failures: failures,
+            failureReason: failureReason,
+            failureTime: failureTime
+        )
+    }
+
     public init(_ evaluation: ScenarioEvaluation) {
         self.init(
             scenarioID: evaluation.scenarioId,

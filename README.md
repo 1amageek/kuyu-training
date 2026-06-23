@@ -115,6 +115,7 @@ the generic typed protocols directly.
 - **`AutoLabeler`** — Automatic labeling of rollouts with rewards and success criteria.
 - **`EvolutionRunOrchestrator`** — Backend-agnostic evolutionary run orchestration over candidate genomes.
 - **`TrainingRunOrchestrator`** — Backend-agnostic training run orchestration and checkpoint decision artifacts.
+- **`GeneratedTrainingArtifactCompatibilityVerifier`** — Public facade for downstream consumers to load and validate generated run, probe, and checkpoint evaluation artifacts without depending on internal target layout.
 
 ### Learning Project Templates
 
@@ -185,7 +186,7 @@ orchestration can own the five-drive arm/gripper policy lifecycle.
 | **KuyuEvolution** | KuyuTrainingContracts | Population, selection, mutation/crossover contracts, lineage, and evolution orchestration |
 | **KuyuReinforcement** | KuyuTrainingContracts | RL backend protocols, rollout buffers, rollout health, stability envelopes, and vectorized rollout contracts |
 | **KuyuTrainingValidation** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuCore, KuyuPhysics, KuyuScenarios | Artifact, project, template, dataset, scenario-output, checkpoint, convergence, profile validators, and profile-owned rollout/data adapters |
-| **KuyuTrainingRuntime** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuTrainingValidation, KuyuCore, KuyuPhysics, KuyuScenarios | Run/probe orchestration, managed handles, archive contracts, runtime tuple builders, and runtime compatibility extensions |
+| **KuyuTrainingRuntime** | KuyuTrainingContracts, KuyuEvolution, KuyuReinforcement, KuyuTrainingValidation, KuyuCore, KuyuPhysics, KuyuScenarios | Run/probe orchestration, managed handles, archive contracts, runtime tuple builders, generated artifact compatibility, and runtime compatibility extensions |
 
 Target ownership:
 

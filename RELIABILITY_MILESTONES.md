@@ -254,7 +254,7 @@ KT5 is split into consumer-facing gates:
 | Slice | Status | Completion gate |
 |---|---|---|
 | KT5a. Runtime scenario run output neutrality | Complete | `TrainingScenarioExecuting` and `TrainingProbeScenarioExecuting` return `TrainingScenarioRunOutput`; `KuyuTrainingRuntime` rejects `KuyAtt1RunOutput` reintroduction. |
-| KT5b. Generated artifact compatibility | Pending | Public artifact loaders and writers round-trip generated training/probe artifacts without internal target imports. |
+| KT5b. Generated artifact compatibility | Complete | Public artifact loaders and writers round-trip generated training/probe/checkpoint artifacts through the facade without internal target imports. |
 | KT5c. App/MLX public-consumer smoke | Pending | `kuyu` and `kuyu-mlx` smoke paths consume only public contracts and generated artifacts for training/evaluation entrypoints. |
 
 Completed slices:
@@ -262,6 +262,7 @@ Completed slices:
 | Slice | Evidence |
 |---|---|
 | Runtime scenario execution contracts no longer expose `KuyAtt1RunOutput`; reference-quadrotor conversion lives in validation/profile adapter code. | `TrainingScenarioRunOutput`, `TrainingDatasetExporter+KuyAtt1`, `TrainingRunOrchestrator`, `TrainingProbeOrchestrator`, `../scripts/validate-kuyu-boundaries.sh`. |
+| Generated training, probe, and checkpoint evaluation artifacts can be loaded and validated through a public compatibility verifier. | `GeneratedTrainingArtifactCompatibilityVerifier`, `GeneratedTrainingArtifactCompatibilityTests`, `TrainingScenarioRunOutput`, `TrainingRunArtifactValidator`, `TrainingProbeArtifactValidator`, `CheckpointEvaluationArtifactValidator`. |
 
 Goal: `kuyu-mlx`, CLI, UI, and long-running training harnesses can depend on
 public `kuyu-training` contracts without reading internal runtime state.
@@ -270,9 +271,9 @@ Required gates:
 
 | Consumer | Required proof |
 |---|---|
-| `kuyu-mlx` | Backend implementations use typed protocols and artifact validators. |
+| `kuyu-mlx` | Backend implementations use typed protocols and public artifact compatibility verification. |
 | CLI/UI | Commands and views consume type-erased facades and generated artifacts. |
-| Long-running training | Generated run artifacts can be validated and resumed without ad hoc state. |
+| Long-running training | Generated run, probe, and checkpoint evaluation artifacts can be validated without ad hoc state. |
 
 ## Stop Rules
 

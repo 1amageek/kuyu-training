@@ -144,7 +144,7 @@ Required gates:
 | Journal integrity | Torn tail repair, corrupted middle-line rejection, monotonic iteration enforcement. |
 | Writer ownership | Duplicate live writer rejection and dead-writer resume behavior. |
 | Terminal outcome | Completed, cancelled, failed, and paused states write explicit outcomes. |
-| Terminal immutability | Terminal runs cannot be reopened for writing, appended to, or transitioned back to non-terminal states. |
+| Terminal immutability | Terminal runs cannot accept new control commands, be reopened for writing, appended to, or transitioned back to non-terminal states. |
 | Artifact publication | Rejected candidates never appear at accepted paths. |
 | Event lifecycle | Public run handles finish streams through `shutdown()` and do not hang consumers. |
 
@@ -153,7 +153,7 @@ Exit criteria:
 | Criterion | Evidence |
 |---|---|
 | Every terminal path writes a durable outcome. | Targeted `TrainingRunContract` and orchestrator tests. |
-| Terminal outcomes are final at the writer boundary. | `openRefusesTerminalRun`, `writerRejectsMutationAfterTerminalOutcome`, and `writerRejectsOutcomeTransitionAfterTerminalOutcome`. |
+| Terminal outcomes are final at reader and writer boundaries. | `submitControlCommandRejectsTerminalRun`, `openRefusesTerminalRun`, `writerRejectsMutationAfterTerminalOutcome`, and `writerRejectsOutcomeTransitionAfterTerminalOutcome`. |
 | Every resumable failure mode is either repaired or rejected with a typed error. | Resume/corruption tests. |
 | Event streams cannot outlive a stopped run. | Handle lifecycle tests. |
 

@@ -547,6 +547,41 @@ struct TrainingRunContractTests {
         #expect(try reader.latestControlSequence() == 1)
     }
 
+    @Test func submitControlCommandRejectsTerminalRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-control-terminal"),
+            in: root
+        )
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        try writer.writeOutcome(
+            TrainingRunOutcome(
+                status: .completed,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_550),
+                finalIteration: 2,
+                acceptedCheckpointPath: "checkpoints/accepted.manasbundle"
+            )
+        )
+
+        #expect {
+            try reader.submitControlCommand(TrainingRunControlCommand(
+                sequence: 1,
+                action: .stop,
+                requestedAt: Date(timeIntervalSince1970: 1_700_000_551),
+                requestedBy: "kuyu-cli"
+            ))
+        } throws: { error in
+            guard case TrainingRunContractError.terminalRunAlreadyFinished(let status) = error else {
+                return false
+            }
+            return status == .completed
+        }
+        let commandURL = writer.runDirectory
+            .appendingPathComponent(TrainingRunContractSchema.controlDirectoryName, isDirectory: true)
+            .appendingPathComponent(TrainingRunContractSchema.controlCommandFileName, isDirectory: false)
+        #expect(!FileManager.default.fileExists(atPath: commandURL.path))
+    }
+
     @Test func submitRefusesSecondPendingCommand() throws {
         let root = try makeTemporaryRunRoot()
         let writer = try TrainingRunArchiveWriter.create(

@@ -184,6 +184,10 @@ public struct TrainingRunArchiveReader: Sendable {
                 runID: runID.rawValue
             )
         }
+        let outcome = try loadOutcome()
+        if outcome.status.isTerminal {
+            throw TrainingRunContractError.terminalRunAlreadyFinished(status: outcome.status)
+        }
         let commandURL = controlCommandURL
         if FileManager.default.fileExists(atPath: commandURL.path) {
             let pending: TrainingRunControlCommand = try decodeDocument(

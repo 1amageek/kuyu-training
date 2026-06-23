@@ -39,6 +39,13 @@ public struct TrainingRunArtifactValidator: Sendable {
         case nonFiniteMetric(kind: TrainingMetricKind, iteration: Int)
         case invalidWorkerMetric(kind: TrainingMetricKind, iteration: Int)
         case nonTerminalManifestState(LearningRunTerminalState)
+        case checkpointDecisionConvergenceMismatch(state: CheckpointDecisionState, accepted: Bool)
+        case acceptedCheckpointMissingCandidateID
+        case acceptedCheckpointMissingCandidateURL
+        case acceptedCheckpointMissingPublishedURL
+        case stagedCheckpointMissingCandidateID
+        case stagedCheckpointMissingCandidateURL
+        case outputCheckpointMismatch(expected: String, actual: String?)
     }
 
     public init() {}
@@ -134,6 +141,11 @@ public struct TrainingRunArtifactValidator: Sendable {
                 actual: checkpointDecision.runID
             )
         }
+        try validateCheckpointDecision(
+            manifest: manifest,
+            convergence: convergence,
+            checkpointDecision: checkpointDecision
+        )
         for metric in metrics {
             guard metric.runID == manifest.runID else {
                 throw ValidationError.runIDMismatch(
@@ -154,6 +166,59 @@ public struct TrainingRunArtifactValidator: Sendable {
                     throw ValidationError.invalidWorkerMetric(kind: metric.kind, iteration: metric.iteration)
                 }
             }
+        }
+    }
+
+    private func validateCheckpointDecision(
+        manifest: LearningRunManifest,
+        convergence: ConvergenceSummary,
+        checkpointDecision: CheckpointDecision
+    ) throws {
+        let acceptsOrStagesCheckpoint = checkpointDecision.state == .accepted
+            || checkpointDecision.state == .staged
+        guard convergence.accepted == acceptsOrStagesCheckpoint else {
+            throw ValidationError.checkpointDecisionConvergenceMismatch(
+                state: checkpointDecision.state,
+                accepted: convergence.accepted
+            )
+        }
+
+        switch checkpointDecision.state {
+        case .accepted:
+            guard let candidateCheckpointID = checkpointDecision.candidateCheckpointID,
+                  !candidateCheckpointID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ValidationError.acceptedCheckpointMissingCandidateID
+            }
+            guard checkpointDecision.candidateCheckpointURL != nil else {
+                throw ValidationError.acceptedCheckpointMissingCandidateURL
+            }
+            guard checkpointDecision.publishedCheckpointURL != nil else {
+                throw ValidationError.acceptedCheckpointMissingPublishedURL
+            }
+            try validateOutputCheckpointID(manifest: manifest, candidateCheckpointID: candidateCheckpointID)
+        case .staged:
+            guard let candidateCheckpointID = checkpointDecision.candidateCheckpointID,
+                  !candidateCheckpointID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ValidationError.stagedCheckpointMissingCandidateID
+            }
+            guard checkpointDecision.candidateCheckpointURL != nil else {
+                throw ValidationError.stagedCheckpointMissingCandidateURL
+            }
+            try validateOutputCheckpointID(manifest: manifest, candidateCheckpointID: candidateCheckpointID)
+        case .rejected, .skipped, .failed:
+            break
+        }
+    }
+
+    private func validateOutputCheckpointID(
+        manifest: LearningRunManifest,
+        candidateCheckpointID: String
+    ) throws {
+        guard manifest.outputCheckpointID == candidateCheckpointID else {
+            throw ValidationError.outputCheckpointMismatch(
+                expected: candidateCheckpointID,
+                actual: manifest.outputCheckpointID
+            )
         }
     }
 

@@ -277,6 +277,121 @@ import Testing
     }
 }
 
+@Test func trainingRunArtifactValidatorRejectsAcceptedConvergenceWithoutAcceptedCheckpointDecision() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: true,
+        checkpointState: .skipped,
+        candidateCheckpointID: nil,
+        candidateCheckpointURL: nil,
+        publishedCheckpointURL: nil,
+        outputCheckpointID: nil
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected accepted convergence with skipped checkpoint decision to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .checkpointDecisionConvergenceMismatch(state: .skipped, accepted: true))
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsAcceptedCheckpointDecisionWithoutAcceptedConvergence() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+    let candidate = directory.appendingPathComponent("candidate", isDirectory: true)
+    let published = directory.appendingPathComponent("checkpoints/accepted", isDirectory: true)
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: false,
+        checkpointState: .accepted,
+        candidateCheckpointID: "ckpt-out",
+        candidateCheckpointURL: candidate,
+        publishedCheckpointURL: published,
+        outputCheckpointID: "ckpt-out"
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected accepted checkpoint decision without accepted convergence to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .checkpointDecisionConvergenceMismatch(state: .accepted, accepted: false))
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsAcceptedCheckpointWithoutPublishedEvidence() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+    let candidate = directory.appendingPathComponent("candidate", isDirectory: true)
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: true,
+        checkpointState: .accepted,
+        candidateCheckpointID: "ckpt-out",
+        candidateCheckpointURL: candidate,
+        publishedCheckpointURL: nil,
+        outputCheckpointID: "ckpt-out"
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected accepted checkpoint without published evidence to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .acceptedCheckpointMissingPublishedURL)
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsStagedCheckpointWithoutCandidateEvidence() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: true,
+        checkpointState: .staged,
+        candidateCheckpointID: "ckpt-out",
+        candidateCheckpointURL: nil,
+        publishedCheckpointURL: nil,
+        outputCheckpointID: "ckpt-out"
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected staged checkpoint without candidate URL to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .stagedCheckpointMissingCandidateURL)
+    }
+}
+
+@Test func trainingRunArtifactValidatorRejectsAcceptedCheckpointIDMismatch() throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+    let candidate = directory.appendingPathComponent("candidate", isDirectory: true)
+    let published = directory.appendingPathComponent("checkpoints/accepted", isDirectory: true)
+
+    try writeTrainingRunArtifact(
+        to: directory,
+        convergenceAccepted: true,
+        checkpointState: .accepted,
+        candidateCheckpointID: "ckpt-decision",
+        candidateCheckpointURL: candidate,
+        publishedCheckpointURL: published,
+        outputCheckpointID: "ckpt-manifest"
+    )
+
+    do {
+        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected accepted checkpoint with mismatched manifest output ID to fail closed.")
+    } catch let error as TrainingRunArtifactValidator.ValidationError {
+        #expect(error == .outputCheckpointMismatch(expected: "ckpt-decision", actual: "ckpt-manifest"))
+    }
+}
+
 @MainActor
 @Test func TrainingRunOrchestratorWritesArtifactsForSuccessfulRun() async throws {
     let directory = try trainingContractTemporaryDirectory()
@@ -1134,6 +1249,62 @@ private func metric(
     value: Double
 ) -> TrainingMetricRecord {
     TrainingMetricRecord(runID: runID, iteration: iteration, kind: kind, value: value)
+}
+
+private func writeTrainingRunArtifact(
+    to directory: URL,
+    convergenceAccepted: Bool,
+    checkpointState: CheckpointDecisionState,
+    candidateCheckpointID: String?,
+    candidateCheckpointURL: URL?,
+    publishedCheckpointURL: URL?,
+    outputCheckpointID: String?
+) throws {
+    let runID = "run-artifact-gate"
+    let manifest = LearningRunManifest(
+        runID: runID,
+        mode: .supervised,
+        configHash: "config-hash",
+        suiteID: "Lift",
+        seedSet: [1],
+        policyID: "manasMLX",
+        outputCheckpointID: outputCheckpointID,
+        workerCount: 1,
+        startedAt: Date(timeIntervalSince1970: 1),
+        completedAt: Date(timeIntervalSince1970: 2),
+        terminalState: convergenceAccepted ? .completed : .rejected,
+        failureReason: convergenceAccepted ? nil : "not-accepted"
+    )
+    let convergence = ConvergenceSummary(
+        runID: runID,
+        accepted: convergenceAccepted,
+        reason: convergenceAccepted ? "accepted" : "not-accepted",
+        bestCheckpointID: convergenceAccepted ? candidateCheckpointID : nil,
+        finalTrainingLoss: 0.2,
+        finalValidationLoss: nil,
+        rewardMovingAverage: nil,
+        passRate: convergenceAccepted ? 1.0 : 0.0,
+        failureRate: convergenceAccepted ? 0.0 : 1.0,
+        safetyRegressionDetected: false,
+        plateauDetected: false,
+        overfitRiskDetected: false
+    )
+    let checkpointDecision = CheckpointDecision(
+        runID: runID,
+        state: checkpointState,
+        reason: checkpointState == .accepted ? "accepted" : "not-accepted",
+        candidateCheckpointID: candidateCheckpointID,
+        candidateCheckpointURL: candidateCheckpointURL,
+        publishedCheckpointURL: publishedCheckpointURL,
+        decidedAt: Date(timeIntervalSince1970: 3)
+    )
+    try TrainingArtifactWriter().write(
+        manifest: manifest,
+        metrics: [metric(runID: runID, iteration: 1, kind: .score, value: convergenceAccepted ? 1.0 : 0.0)],
+        convergence: convergence,
+        checkpointDecision: checkpointDecision,
+        to: directory
+    )
 }
 
 @MainActor

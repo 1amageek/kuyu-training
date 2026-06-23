@@ -17,7 +17,11 @@ public struct LearningProjectTemplateValidator: Sendable {
         try validateObservation(template.observation)
         try validateAction(template.action)
         try validatePolicy(template.policy, observation: template.observation, action: template.action)
-        try validateCurriculum(template.curriculum, strategy: template.trainingStrategy)
+        try validateCurriculum(
+            template.curriculum,
+            strategy: template.trainingStrategy,
+            robotManifest: template.robotManifest
+        )
         try validateEvaluationGate(template.evaluationGate)
         try validateCompute(template.compute)
         try validateTemplateConsistency(template)
@@ -58,6 +62,7 @@ public struct LearningProjectTemplateValidator: Sendable {
     private func validateTaskProfile(_ template: LearningProjectTemplate) throws {
         do {
             let profile = try TaskEvaluationProfile.profile(task: template.task)
+            try validateTaskProfileContract(profile, robotClass: template.robotManifest.robotClass)
             if template.taskProfileID != profile.profileID {
                 throw LearningProjectTemplateValidationError.invalidTaskProfile(
                     expected: profile.profileID,
@@ -150,7 +155,8 @@ public struct LearningProjectTemplateValidator: Sendable {
 
     private func validateCurriculum(
         _ curriculum: LearningProjectCurriculum,
-        strategy: LearningProjectTrainingStrategy
+        strategy: LearningProjectTrainingStrategy,
+        robotManifest: LearningProjectRobotManifestReference
     ) throws {
         if curriculum.suiteIDs.isEmpty {
             throw LearningProjectTemplateValidationError.invalidCurriculum(reason: "empty-suite-ids")
@@ -239,6 +245,7 @@ public struct LearningProjectTemplateValidator: Sendable {
             if let taskProfileID = stage.taskProfileID {
                 do {
                     let profile = try TaskEvaluationProfile.profile(task: stage.task)
+                    try validateTaskProfileContract(profile, robotClass: robotManifest.robotClass)
                     if taskProfileID != profile.profileID {
                         throw LearningProjectTemplateValidationError.invalidCurriculum(reason: "stage-task-profile-mismatch")
                     }
@@ -260,6 +267,20 @@ public struct LearningProjectTemplateValidator: Sendable {
                     throw LearningProjectTemplateValidationError.invalidCurriculum(reason: "unknown-stage-dependency")
                 }
             }
+        }
+    }
+
+    private func validateTaskProfileContract(
+        _ profile: TaskEvaluationProfile,
+        robotClass: LearningProjectRobotClass
+    ) throws {
+        do {
+            try TaskEvaluationProfileContractValidator().validate(profile, robotClass: robotClass)
+        } catch TaskEvaluationProfileContractValidationError.invalidProfile(let profileID, let reason) {
+            throw LearningProjectTemplateValidationError.invalidTaskProfileContract(
+                profileID: profileID,
+                reason: reason
+            )
         }
     }
 

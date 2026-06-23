@@ -8,6 +8,7 @@ public enum LearningProjectTemplateValidationError: Error, Sendable, Equatable, 
     case emptyRobotManifestID
     case robotManifestPathRequired(source: LearningProjectRobotManifestSource)
     case invalidTaskProfile(expected: String, actual: String?)
+    case invalidTaskProfileContract(profileID: String, reason: String)
     case unsupportedTaskProfile(task: String)
     case invalidObservationChannelCount(expected: Int, actual: Int)
     case emptyObservationSchemaID
@@ -36,6 +37,8 @@ public enum LearningProjectTemplateValidationError: Error, Sendable, Equatable, 
             return "robot-manifest-path-required source=\(source.rawValue)"
         case let .invalidTaskProfile(expected, actual):
             return "invalid-task-profile expected=\(expected) actual=\(actual ?? "nil")"
+        case let .invalidTaskProfileContract(profileID, reason):
+            return "invalid-task-profile-contract profile=\(profileID) reason=\(reason)"
         case let .unsupportedTaskProfile(task):
             return "unsupported-task-profile task=\(task)"
         case let .invalidObservationChannelCount(expected, actual):

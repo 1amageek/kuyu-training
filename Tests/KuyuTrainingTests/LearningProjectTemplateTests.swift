@@ -124,6 +124,7 @@ import Testing
 
 @Test func roArmM1TemplateDefinesCameraFreeArmGripperTrainingDesign() throws {
     let template = LearningProjectTemplate.roArmM1ArmGripperTargetTracking
+    let profile = try TaskEvaluationProfile.profile(task: template.task)
 
     try LearningProjectTemplateValidator(requiresKnownTaskProfile: true).validate(template)
 
@@ -133,6 +134,8 @@ import Testing
     #expect(template.robotManifest.robotManifestID == "roarm-m1-v0")
     #expect(template.task == "roArmM1ArmGripperTargetTracking")
     #expect(template.taskProfileID == "roArmM1ArmGripperTargetTracking-v1")
+    #expect(profile.family == .roArmM1ArmGripper)
+    #expect(profile.referenceEvaluatorID == "RoArmM1ArmGripperTargetTrackingEvaluator")
     #expect(template.observation.channelCount == 25)
     #expect(template.observation.channels.map(\.name).contains("gripperClampPosition"))
     #expect(template.action.driveCount == 5)
@@ -144,6 +147,44 @@ import Testing
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "hindsight-goal-relabeling" })
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "dynamics-domain-randomization" && $0.kind == .stress })
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "dynamic-simulation-regression" && $0.kind == .regression })
+}
+
+@Test func learningProjectTemplateRejectsProfileRobotClassMismatch() throws {
+    let base = LearningProjectTemplate.roArmM1ArmGripperTargetTracking
+    let template = LearningProjectTemplate(
+        templateID: base.templateID,
+        displayName: base.displayName,
+        summary: base.summary,
+        domain: base.domain,
+        task: base.task,
+        taskProfileID: base.taskProfileID,
+        robotManifest: LearningProjectRobotManifestReference(
+            robotManifestID: base.robotManifest.robotManifestID,
+            source: base.robotManifest.source,
+            path: base.robotManifest.path,
+            contentHash: base.robotManifest.contentHash,
+            robotClass: .aerialVehicle
+        ),
+        modelBundlePolicy: base.modelBundlePolicy,
+        trainingStrategy: base.trainingStrategy,
+        curriculum: base.curriculum,
+        evaluationGate: base.evaluationGate,
+        observation: base.observation,
+        action: base.action,
+        policy: base.policy,
+        compute: base.compute,
+        tags: base.tags
+    )
+
+    do {
+        try LearningProjectTemplateValidator(requiresKnownTaskProfile: true).validate(template)
+        Issue.record("Expected profile robot class mismatch to throw.")
+    } catch LearningProjectTemplateValidationError.invalidTaskProfileContract(let profileID, let reason) {
+        #expect(profileID == "roArmM1ArmGripperTargetTracking-v1")
+        #expect(reason == "robot-class-mismatch")
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @Test func nonRunnableTemplatesDoNotRequestModelBundles() throws {

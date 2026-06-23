@@ -19,6 +19,7 @@ public struct TaskMotorNerveSettings: Sendable, Codable, Equatable {
 }
 
 public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
+    public let family: TaskEvaluationProfileFamily
     public let profileID: String
     public let task: String
     public let observationChannelCount: Int
@@ -39,6 +40,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
     public let stabilityLimitEnvelope: RolloutStabilityLimitEnvelope
 
     public init(
+        family: TaskEvaluationProfileFamily,
         profileID: String,
         task: String,
         observationChannelCount: Int,
@@ -58,6 +60,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         liftThresholdSource: String? = nil,
         stabilityLimitEnvelope: RolloutStabilityLimitEnvelope = .unbounded
     ) {
+        self.family = family
         self.profileID = profileID
         self.task = task
         self.observationChannelCount = observationChannelCount
@@ -82,6 +85,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         switch task {
         case "attitude":
             return TaskEvaluationProfile(
+                family: .referenceQuadrotor,
                 profileID: "attitude-v1",
                 task: "attitude",
                 // 16-channel privileged body-rate observation (euler angles +
@@ -116,6 +120,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
             )
         case RoArmM1JointTargetTrainingGoal.canonical.task:
             return TaskEvaluationProfile(
+                family: .roArmM1ArmGripper,
                 profileID: RoArmM1JointTargetTrainingGoal.canonical.taskProfileID,
                 task: RoArmM1JointTargetTrainingGoal.canonical.task,
                 observationChannelCount: 25,
@@ -185,6 +190,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         )
     ) -> TaskEvaluationProfile {
         TaskEvaluationProfile(
+            family: .referenceQuadrotor,
             profileID: profileID,
             task: task,
             observationChannelCount: observationChannelCount,

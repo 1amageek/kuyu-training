@@ -213,7 +213,7 @@ pretending the whole profile boundary is complete:
 | Slice | Status | Completion gate |
 |---|---|---|
 | KT4a. Vectorized rollout quality isolation | Complete | `KuyuReinforcement` owns only `VectorizedTaskQualitySummary`; reference-quadrotor conversion lives in validation/profile code; package tests and boundary gate pass. |
-| KT4b. Generic template acceptance | Pending | A valid non-quadrotor template passes generic structure validation without reference-quadrotor semantics. |
+| KT4b. Generic template acceptance | Complete | A valid non-quadrotor template passes generic structure validation without reference-quadrotor semantics. |
 | KT4c. Legacy shortcut rejection | Pending | Old CTBR shortcut compatibility fails closed unless an explicit profile adapter owns the conversion. |
 | KT4d. Runtime profile import audit | Pending | Runtime orchestration does not import or infer robot-specific profile meaning outside validation/profile adapters. |
 
@@ -222,6 +222,7 @@ Completed slices:
 | Slice | Evidence |
 |---|---|
 | Vectorized rollout task quality is profile-neutral in `KuyuReinforcement`; reference-quadrotor task-quality conversion lives in validation/profile code. | `VectorizedTaskQualitySummary`, `ReferenceQuadrotorTaskQualitySummary+VectorizedTaskQualitySummary`, `VectorizedTrainingContractsTests`. |
+| RoArm M1 profile validation is owned by profile contracts, not reference-quadrotor defaults. | `TaskEvaluationProfileFamily`, `TaskEvaluationProfileContractValidator`, `TaskEvaluationProfileTests`, `LearningProjectTemplateTests`. |
 
 Required gates:
 

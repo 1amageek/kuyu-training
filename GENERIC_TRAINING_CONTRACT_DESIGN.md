@@ -138,6 +138,9 @@ Those checks belong to the relevant profile validator.
 ## Profile Validator
 
 Each executable profile may provide a validator that knows the robot body.
+Built-in executable profiles must also declare a `TaskEvaluationProfileFamily`
+so template validation can reject robot-class mismatches and evaluator ownership
+leaks before a run is launched.
 
 ```mermaid
 flowchart LR
@@ -157,6 +160,10 @@ For quadrotor attitude training, the profile validator may require:
 - Attitude task safety envelope and curriculum settings.
 
 Those requirements must be expressed as profile requirements, not global rules.
+
+For non-quadrotor profiles, the profile contract must own its evaluator IDs and
+must not fall back to `ReferenceQuadrotorScenarioEvaluator` or
+`ReferenceQuadrotorTaskQualityEvaluator`.
 
 ## Type Direction
 

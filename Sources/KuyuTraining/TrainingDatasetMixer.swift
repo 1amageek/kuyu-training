@@ -43,6 +43,7 @@ public struct TrainingDatasetMixer: Sendable {
         case noSources
         case noDatasetsFound([String])
         case destinationAlreadyExists(String)
+        case datasetContractViolation(path: String, reason: TrainingDatasetContractValidator.ValidationError)
     }
 
     public init() {}
@@ -51,7 +52,8 @@ public struct TrainingDatasetMixer: Sendable {
     public func mix(
         sources: [URL],
         to outputDirectory: URL,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        datasetContract: TrainingDatasetContract? = nil
     ) throws -> TrainingDatasetMixManifest {
         guard !sources.isEmpty else {
             throw MixError.noSources
@@ -81,8 +83,15 @@ public struct TrainingDatasetMixer: Sendable {
                 guard !fileManager.fileExists(atPath: destination.path) else {
                     throw MixError.destinationAlreadyExists(destination.path)
                 }
+                let loaded = try TrainingDataset.load(from: dataset)
+                if let datasetContract {
+                    do {
+                        try TrainingDatasetContractValidator().validate(loaded, against: datasetContract)
+                    } catch let error as TrainingDatasetContractValidator.ValidationError {
+                        throw MixError.datasetContractViolation(path: dataset.path, reason: error)
+                    }
+                }
                 try fileManager.copyItem(at: dataset, to: destination)
-                let loaded = try TrainingDataset.load(from: destination)
                 copiedRecordCount += loaded.metadata.recordCount
             }
             totalRecordCount += copiedRecordCount

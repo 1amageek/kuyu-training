@@ -376,6 +376,46 @@ import Testing
 }
 
 @MainActor
+@Test func TrainingRunOrchestratorRejectsAdditionalDatasetsWithoutTerminalFacts() async throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+    let output = try trainingContractRunOutput(passed: true)
+    let invalidDataset = directory.appendingPathComponent("invalid-extra-dataset", isDirectory: true)
+    try writeTrainingContractDatasetWithoutTerminalFacts(to: invalidDataset)
+    let executor = FakeTrainingScenarioExecutor(output: output)
+    let backend = FakeTrainingBackend(result: TrainingBackendResult(finalLoss: 0.2, epochs: 1))
+    let orchestrator = TrainingRunOrchestrator(scenarioExecutor: executor, backend: backend)
+
+    let result = await orchestrator.run(
+        config: TrainingRunConfig(
+            runID: "run-invalid-additional-dataset",
+            mode: .supervised,
+            maxIterations: 1,
+            minDelta: 0.01,
+            enableDatasetExport: true,
+            enableTraining: true,
+            policyID: "manasMLX"
+        ),
+        runRequest: try trainingContractRunRequest(),
+        trainingTemplate: TrainingBackendRequest(
+            datasetURL: directory,
+            additionalDatasetURLs: [invalidDataset],
+            sequenceLength: 2,
+            epochs: 1,
+            learningRate: 0.001,
+            useAux: false,
+            useQualityGating: true,
+            maxBatches: 1
+        ),
+        artifactDirectory: directory.appendingPathComponent("run", isDirectory: true)
+    )
+
+    #expect(result.manifest.terminalState == .failed)
+    #expect(result.manifest.failureReason?.contains("datasetContractViolation") == true)
+    #expect(backend.requests.isEmpty)
+}
+
+@MainActor
 @Test func TrainingRunOrchestratorRejectsBackendFailureWithoutPublishingCandidate() async throws {
     let directory = try trainingContractTemporaryDirectory()
     defer { trainingContractCleanup(directory) }
@@ -822,6 +862,32 @@ import Testing
     #expect(probeArtifacts.probeCheckpointDecision.state == .rejected)
     #expect(probeArtifacts.recoveryRelabelStatus.attempted)
     #expect(probeArtifacts.recoveryRelabelStatus.report?.relabeledEntryCount == 1)
+
+    let recoveryRoot = try #require(probeArtifacts.recoveryRelabelStatus.datasetDirectory)
+    let recoveryDataset = try firstTrainingContractDatasetDirectory(in: recoveryRoot)
+    let corruptedMetadata = TrainingDatasetMetadata(
+        scenarioId: "corrupted-recovery",
+        seed: 1,
+        timeStep: 0.01,
+        determinismTier: "tier0",
+        configHash: "corrupted",
+        channelCount: 0,
+        driveCount: 0,
+        recordCount: 1
+    )
+    try JSONEncoder().encode(corruptedMetadata).write(
+        to: recoveryDataset.appendingPathComponent("meta.json"),
+        options: [.atomic]
+    )
+
+    do {
+        _ = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+        Issue.record("Expected corrupted recovery dataset contract to fail.")
+    } catch TrainingProbeArtifactValidator.ValidationError.invalidRecoveryRelabelStatus(let reason) {
+        #expect(reason.contains("recovery dataset contract violation"))
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
 }
 
 @MainActor
@@ -1336,6 +1402,50 @@ private func trainingContractSimulationLog() throws -> SimulationLog {
         configHash: "contract-config",
         events: [step]
     )
+}
+
+private func writeTrainingContractDatasetWithoutTerminalFacts(to directory: URL) throws {
+    let record = TrainingDatasetRecord(
+        time: 0,
+        sensors: [],
+        driveIntents: [],
+        reflexCorrections: [],
+        continueValue: 1.0
+    )
+    let dataset = TrainingDataset(
+        metadata: TrainingDatasetMetadata(
+            scenarioId: "invalid-extra",
+            seed: 1,
+            timeStep: 0.01,
+            determinismTier: "tier0",
+            configHash: "invalid-extra-config",
+            channelCount: 0,
+            driveCount: 0,
+            recordCount: 1
+        ),
+        records: [record]
+    )
+    try TrainingDatasetWriter().write(dataset: dataset, to: directory)
+}
+
+private func firstTrainingContractDatasetDirectory(in directory: URL) throws -> URL {
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: directory.appendingPathComponent("meta.json").path),
+       fileManager.fileExists(atPath: directory.appendingPathComponent("records.jsonl").path) {
+        return directory
+    }
+    let children = try fileManager.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+    )
+    let datasets = try children.filter { child in
+        let values = try child.resourceValues(forKeys: [.isDirectoryKey])
+        return values.isDirectory == true
+            && fileManager.fileExists(atPath: child.appendingPathComponent("meta.json").path)
+            && fileManager.fileExists(atPath: child.appendingPathComponent("records.jsonl").path)
+    }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    return try #require(datasets.first)
 }
 
 private func trainingContractWorldStep(

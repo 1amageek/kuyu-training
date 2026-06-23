@@ -582,7 +582,8 @@ public struct TrainingRunOrchestrator {
             .appendingPathComponent("iter-\(iteration)-mixed", isDirectory: true)
         _ = try TrainingDatasetMixer().mix(
             sources: repeatedAdditionalDatasetURLs + [exportedDatasetDirectory],
-            to: mixedDirectory
+            to: mixedDirectory,
+            datasetContract: TrainingDatasetContract()
         )
         return mixedDirectory
     }

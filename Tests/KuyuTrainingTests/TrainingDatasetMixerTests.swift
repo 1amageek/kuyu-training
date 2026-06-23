@@ -1,4 +1,5 @@
 import Foundation
+import KuyuCore
 import KuyuTraining
 import Testing
 
@@ -42,6 +43,85 @@ struct TrainingDatasetMixerTests {
                 sources: [source],
                 to: root.appendingPathComponent("mixed", isDirectory: true)
             )
+        }
+    }
+
+    @Test func mixAcceptsDatasetsThatSatisfyContract() throws {
+        let root = temporaryDirectory("training-dataset-mixer-contract")
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let output = root.appendingPathComponent("mixed", isDirectory: true)
+        let reward = RewardDescriptor(id: "reward", version: "1", configHash: "hash-a")
+        try writeDataset(
+            to: source,
+            scenarioID: "contract-valid",
+            seed: 1,
+            recordCount: 2,
+            rewardDescriptor: reward,
+            done: false,
+            truncated: true,
+            terminalReason: "time-limit"
+        )
+
+        let manifest = try TrainingDatasetMixer().mix(
+            sources: [source],
+            to: output,
+            datasetContract: TrainingDatasetContract(expectedRewardDescriptor: reward)
+        )
+
+        #expect(manifest.datasetCount == 1)
+        #expect(manifest.totalRecordCount == 2)
+    }
+
+    @Test func mixRejectsDatasetsWithoutRequiredTerminalFacts() throws {
+        let root = temporaryDirectory("training-dataset-mixer-missing-terminal")
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let output = root.appendingPathComponent("mixed", isDirectory: true)
+        try writeDataset(to: source, scenarioID: "missing-terminal", seed: 1, recordCount: 2)
+
+        do {
+            _ = try TrainingDatasetMixer().mix(
+                sources: [source],
+                to: output,
+                datasetContract: TrainingDatasetContract()
+            )
+            Issue.record("Expected missing terminal facts to fail.")
+        } catch TrainingDatasetMixer.MixError.datasetContractViolation(let path, let reason) {
+            #expect(path == source.path)
+            #expect(reason == .missingTerminalFacts)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test func mixRejectsDatasetsWithStaleRewardDescriptor() throws {
+        let root = temporaryDirectory("training-dataset-mixer-stale-reward")
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let output = root.appendingPathComponent("mixed", isDirectory: true)
+        let actual = RewardDescriptor(id: "reward", version: "1", configHash: "hash-a")
+        let expected = RewardDescriptor(id: "reward", version: "2", configHash: "hash-b")
+        try writeDataset(
+            to: source,
+            scenarioID: "stale-reward",
+            seed: 1,
+            recordCount: 2,
+            rewardDescriptor: actual,
+            done: false,
+            truncated: true,
+            terminalReason: "time-limit"
+        )
+
+        do {
+            _ = try TrainingDatasetMixer().mix(
+                sources: [source],
+                to: output,
+                datasetContract: TrainingDatasetContract(expectedRewardDescriptor: expected)
+            )
+            Issue.record("Expected reward descriptor mismatch to fail.")
+        } catch TrainingDatasetMixer.MixError.datasetContractViolation(let path, let reason) {
+            #expect(path == source.path)
+            #expect(reason == .rewardDescriptorMismatch(expected: expected, actual: actual))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
     }
 
@@ -118,7 +198,11 @@ private func writeDataset(
     to directory: URL,
     scenarioID: String,
     seed: UInt64,
-    recordCount: Int
+    recordCount: Int,
+    rewardDescriptor: RewardDescriptor? = nil,
+    done: Bool? = nil,
+    truncated: Bool? = nil,
+    terminalReason: String? = nil
 ) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let metadata = TrainingDatasetMetadata(
@@ -129,14 +213,22 @@ private func writeDataset(
         configHash: "test",
         channelCount: 1,
         driveCount: 1,
-        recordCount: recordCount
+        recordCount: recordCount,
+        done: done,
+        truncated: truncated,
+        terminalReason: terminalReason,
+        rewardDescriptor: rewardDescriptor
     )
     let records = (0..<recordCount).map { index in
-        TrainingDatasetRecord(
+        let isLast = index == recordCount - 1
+        return TrainingDatasetRecord(
             time: Double(index) * 0.01,
             sensors: [TrainingSensorSample(channelIndex: 0, value: Double(index), timestamp: Double(index) * 0.01)],
             driveIntents: [TrainingDriveIntent(driveIndex: 0, value: 0.5)],
-            reflexCorrections: []
+            reflexCorrections: [],
+            continueValue: isLast && (done == true || truncated == true) ? 0.0 : 1.0,
+            done: isLast ? done : false,
+            truncated: isLast ? truncated : false
         )
     }
     let encoder = JSONEncoder()

@@ -252,6 +252,11 @@ public struct TrainingProbeArtifactValidator: Sendable {
         }
         for dataset in datasets {
             let loaded = try TrainingDataset.load(from: dataset)
+            do {
+                try TrainingDatasetContractValidator().validate(loaded, against: TrainingDatasetContract())
+            } catch let error as TrainingDatasetContractValidator.ValidationError {
+                throw ValidationError.invalidRecoveryRelabelStatus("recovery dataset contract violation: \(error)")
+            }
             if loaded.metadata.recordCount <= 0 || loaded.records.isEmpty {
                 throw ValidationError.invalidRecoveryRelabelStatus("recovery dataset is empty")
             }

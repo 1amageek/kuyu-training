@@ -147,6 +147,36 @@ import KuyuTraining
     #expect(report.checkpointEvaluationArtifact?.profileID == profile.profileID)
 }
 
+@Test func generatedArtifactCompatibilityVerifierRoundTripsEvolutionArtifactsThroughFacade() throws {
+    let directory = try generatedArtifactTemporaryDirectory()
+    defer { generatedArtifactCleanup(directory) }
+
+    try generatedEvolutionArtifact(directory: directory)
+
+    let report = try GeneratedTrainingArtifactCompatibilityVerifier().verify(
+        GeneratedTrainingArtifactCompatibilityRequest(evolutionArtifactDirectory: directory)
+    )
+
+    #expect(report.runArtifacts == nil)
+    #expect(report.probeArtifacts == nil)
+    #expect(report.evolutionArtifacts?.manifest.runID == "evolution-public-artifact")
+    #expect(report.evolutionArtifacts?.acceptedCheckpoint.accepted == true)
+}
+
+@Test func generatedArtifactCompatibilityVerifierRejectsMissingEvolutionArtifacts() throws {
+    let directory = try generatedArtifactTemporaryDirectory()
+    defer { generatedArtifactCleanup(directory) }
+
+    do {
+        _ = try GeneratedTrainingArtifactCompatibilityVerifier().verify(
+            GeneratedTrainingArtifactCompatibilityRequest(evolutionArtifactDirectory: directory)
+        )
+        Issue.record("Expected missing evolution artifact to fail closed.")
+    } catch EvolutionRunArtifactValidator.ValidationError.missingFile(let fileName) {
+        #expect(fileName == EvolutionRunArtifactContract.fileName)
+    }
+}
+
 @Test func generatedArtifactCompatibilityVerifierRejectsMissingCheckpointEvaluationArtifact() throws {
     let directory = try generatedArtifactTemporaryDirectory()
     defer { generatedArtifactCleanup(directory) }
@@ -255,6 +285,104 @@ private func generatedArtifactRunResult(directory: URL) -> TrainingRunResult {
         metrics: metrics,
         convergence: convergence,
         checkpointDecision: checkpointDecision
+    )
+}
+
+private func generatedEvolutionArtifact(directory: URL) throws {
+    let runID = "evolution-public-artifact"
+    let candidateID = "candidate-0"
+    let checkpointURL = directory.appendingPathComponent("checkpoint-0")
+    let manifest = EvolutionRunManifest(
+        runID: runID,
+        taskID: "lift",
+        configHash: "config-hash",
+        policyID: "manasMLX",
+        populationSize: 1,
+        generationCount: 1,
+        eliteCount: 1,
+        workerCount: 1,
+        startedAt: Date(timeIntervalSince1970: 1),
+        completedAt: Date(timeIntervalSince1970: 2),
+        terminalState: .completed
+    )
+    let generation = PopulationGenerationRecord(
+        runID: runID,
+        generationIndex: 0,
+        candidateCount: 1,
+        evaluatedCandidateCount: 1,
+        eliteCandidateIDs: [candidateID],
+        bestCandidateID: candidateID,
+        bestFitness: 1,
+        accepted: true,
+        rejectionReasons: [],
+        createdAt: Date(timeIntervalSince1970: 2)
+    )
+    let candidate = GenomeCandidate(
+        runID: runID,
+        generationIndex: 0,
+        candidateID: candidateID,
+        genomeID: "genome-0",
+        checkpointID: "checkpoint-0",
+        checkpointURL: checkpointURL
+    )
+    let fitness = FitnessSummary(
+        runID: runID,
+        generationIndex: 0,
+        candidateID: candidateID,
+        taskID: "lift",
+        scalarFitness: 1,
+        rewardAverage: 1,
+        taskPassRate: 1,
+        safetyViolationRate: 0,
+        holdTimeRatio: 1,
+        altitudeErrorRatio: 0,
+        behaviorDescriptor: ["taskPassRate": 1]
+    )
+    try EvolutionArtifactWriter().write(
+        manifest: manifest,
+        generations: [generation],
+        candidates: [candidate],
+        fitness: [fitness],
+        eliteArchive: EvolutionEliteArchive(
+            runID: runID,
+            eliteCandidateIDs: [candidateID],
+            bestCandidateID: candidateID,
+            bestFitness: 1
+        ),
+        qualityDiversityArchive: EvolutionQualityDiversityArchive(
+            runID: runID,
+            descriptorKeys: ["taskPassRate"],
+            cells: [
+                EvolutionQualityDiversityCell(
+                    cellID: "taskPassRate=1",
+                    candidateID: candidateID,
+                    generationIndex: 0,
+                    fitness: 1,
+                    behaviorDescriptor: ["taskPassRate": 1]
+                )
+            ]
+        ),
+        lineage: [
+            EvolutionLineageRecord(
+                runID: runID,
+                generationIndex: 0,
+                candidateID: candidateID,
+                genomeID: "genome-0",
+                parentCandidateIDs: []
+            )
+        ],
+        evaluationTraces: [
+            EvolutionCandidateEvaluationTrace(
+                runID: runID,
+                generationIndex: 0,
+                candidateID: candidateID,
+                requestedConcurrency: 1,
+                activeEvaluationCountAtStart: 1,
+                startedAt: Date(timeIntervalSince1970: 1),
+                completedAt: Date(timeIntervalSince1970: 2)
+            )
+        ],
+        to: directory
     )
 }
 

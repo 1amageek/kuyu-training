@@ -1,4 +1,5 @@
 import Foundation
+import KuyuEvolution
 import KuyuTrainingValidation
 
 public struct CheckpointEvaluationArtifactCompatibilityRequest: Sendable, Equatable {
@@ -23,15 +24,18 @@ public struct CheckpointEvaluationArtifactCompatibilityRequest: Sendable, Equata
 public struct GeneratedTrainingArtifactCompatibilityRequest: Sendable, Equatable {
     public let runArtifactDirectory: URL?
     public let probeArtifactDirectory: URL?
+    public let evolutionArtifactDirectory: URL?
     public let checkpointEvaluation: CheckpointEvaluationArtifactCompatibilityRequest?
 
     public init(
         runArtifactDirectory: URL? = nil,
         probeArtifactDirectory: URL? = nil,
+        evolutionArtifactDirectory: URL? = nil,
         checkpointEvaluation: CheckpointEvaluationArtifactCompatibilityRequest? = nil
     ) {
         self.runArtifactDirectory = runArtifactDirectory
         self.probeArtifactDirectory = probeArtifactDirectory
+        self.evolutionArtifactDirectory = evolutionArtifactDirectory
         self.checkpointEvaluation = checkpointEvaluation
     }
 }
@@ -39,15 +43,18 @@ public struct GeneratedTrainingArtifactCompatibilityRequest: Sendable, Equatable
 public struct GeneratedTrainingArtifactCompatibilityReport: Sendable, Equatable {
     public let runArtifacts: TrainingRunArtifactBundle?
     public let probeArtifacts: TrainingProbeArtifactBundle?
+    public let evolutionArtifacts: EvolutionRunArtifactBundle?
     public let checkpointEvaluationArtifact: CheckpointEvaluationArtifact?
 
     public init(
         runArtifacts: TrainingRunArtifactBundle? = nil,
         probeArtifacts: TrainingProbeArtifactBundle? = nil,
+        evolutionArtifacts: EvolutionRunArtifactBundle? = nil,
         checkpointEvaluationArtifact: CheckpointEvaluationArtifact? = nil
     ) {
         self.runArtifacts = runArtifacts
         self.probeArtifacts = probeArtifacts
+        self.evolutionArtifacts = evolutionArtifacts
         self.checkpointEvaluationArtifact = checkpointEvaluationArtifact
     }
 }
@@ -60,13 +67,16 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
 
     private let runValidator: TrainingRunArtifactValidator
     private let probeValidator: TrainingProbeArtifactValidator
+    private let evolutionValidator: EvolutionRunArtifactValidator
 
     public init(
         runValidator: TrainingRunArtifactValidator = TrainingRunArtifactValidator(),
-        probeValidator: TrainingProbeArtifactValidator = TrainingProbeArtifactValidator()
+        probeValidator: TrainingProbeArtifactValidator = TrainingProbeArtifactValidator(),
+        evolutionValidator: EvolutionRunArtifactValidator = EvolutionRunArtifactValidator()
     ) {
         self.runValidator = runValidator
         self.probeValidator = probeValidator
+        self.evolutionValidator = evolutionValidator
     }
 
     public func verify(
@@ -74,15 +84,18 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
     ) throws -> GeneratedTrainingArtifactCompatibilityReport {
         guard request.runArtifactDirectory != nil
             || request.probeArtifactDirectory != nil
+            || request.evolutionArtifactDirectory != nil
             || request.checkpointEvaluation != nil else {
             throw VerificationError.emptyRequest
         }
         let runArtifacts = try request.runArtifactDirectory.map(loadRunArtifacts)
         let probeArtifacts = try request.probeArtifactDirectory.map(loadProbeArtifacts)
+        let evolutionArtifacts = try request.evolutionArtifactDirectory.map(loadEvolutionArtifacts)
         let checkpointEvaluationArtifact = try request.checkpointEvaluation.map(loadCheckpointEvaluationArtifact)
         return GeneratedTrainingArtifactCompatibilityReport(
             runArtifacts: runArtifacts,
             probeArtifacts: probeArtifacts,
+            evolutionArtifacts: evolutionArtifacts,
             checkpointEvaluationArtifact: checkpointEvaluationArtifact
         )
     }
@@ -93,6 +106,10 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
 
     public func loadProbeArtifacts(from artifactDirectory: URL) throws -> TrainingProbeArtifactBundle {
         try probeValidator.loadAndValidate(from: artifactDirectory)
+    }
+
+    public func loadEvolutionArtifacts(from artifactDirectory: URL) throws -> EvolutionRunArtifactBundle {
+        try evolutionValidator.loadAndValidate(from: artifactDirectory)
     }
 
     public func loadCheckpointEvaluationArtifact(

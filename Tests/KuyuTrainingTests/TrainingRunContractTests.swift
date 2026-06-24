@@ -182,11 +182,11 @@ struct TrainingRunContractTests {
                 artifacts: [
                     TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
                         kind: "checkpoint-evaluation",
-                        path: "/tmp/rr-eval-1/checkpoint-evaluation.json"
+                        path: "evaluations/iteration-1/checkpoint-evaluation.json"
                     ),
                     TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
                         kind: "g1-attitude-acceptance",
-                        path: "/tmp/rr-eval-1/g1-attitude-acceptance.json"
+                        path: "evaluations/iteration-1/g1-attitude-acceptance.json"
                     ),
                 ]
             )
@@ -217,6 +217,104 @@ struct TrainingRunContractTests {
         let artifacts = try #require(journal.records.first?.evaluation?.artifacts)
 
         #expect(artifacts.isEmpty)
+    }
+
+    @Test func evaluationArtifactReferenceValidatorAcceptsExistingRelativeArtifacts() throws {
+        let root = try makeTemporaryRunRoot()
+        var writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-artifact-reference-validation"),
+            in: root
+        )
+        let artifactDirectory = writer.runDirectory
+            .appendingPathComponent("evaluations", isDirectory: true)
+            .appendingPathComponent("iteration-0", isDirectory: true)
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+        let artifactURL = artifactDirectory.appendingPathComponent("checkpoint-evaluation.json")
+        try Data("{}".utf8).write(to: artifactURL, options: [.atomic])
+        try writer.appendIteration(TrainingRunIterationRecord(
+            iteration: 0,
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_160),
+            evaluation: TrainingRunIterationRecord.EvaluationRecord(
+                evaluationHorizon: 20_000,
+                metrics: ["policyPassed": 1],
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "evaluations/iteration-0/checkpoint-evaluation.json"
+                    ),
+                ]
+            )
+        ))
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        let journal = try reader.readJournal()
+
+        try TrainingRunEvaluationArtifactReferenceValidator().validate(
+            journal: journal,
+            runDirectory: writer.runDirectory
+        )
+    }
+
+    @Test func evaluationArtifactReferenceValidatorRejectsMissingArtifacts() throws {
+        let validator = TrainingRunEvaluationArtifactReferenceValidator()
+        let artifact = TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+            kind: "checkpoint-evaluation",
+            path: "evaluations/iteration-0/missing.json"
+        )
+
+        #expect {
+            try validator.validate(
+                artifacts: [artifact],
+                iteration: 0,
+                runDirectory: FileManager.default.temporaryDirectory
+            )
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError == .missingFile(
+                iteration: 0,
+                kind: "checkpoint-evaluation",
+                path: "evaluations/iteration-0/missing.json"
+            )
+        }
+    }
+
+    @Test func evaluationArtifactReferenceValidatorRejectsPathsOutsideRunDirectory() throws {
+        let validator = TrainingRunEvaluationArtifactReferenceValidator()
+
+        #expect {
+            try validator.validate(
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "/tmp/checkpoint-evaluation.json"
+                    ),
+                ],
+                iteration: 0,
+                runDirectory: FileManager.default.temporaryDirectory
+            )
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError == .absolutePath(
+                iteration: 0,
+                kind: "checkpoint-evaluation",
+                path: "/tmp/checkpoint-evaluation.json"
+            )
+        }
+        #expect {
+            try validator.validate(
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "../checkpoint-evaluation.json"
+                    ),
+                ],
+                iteration: 1,
+                runDirectory: FileManager.default.temporaryDirectory
+            )
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError == .parentDirectoryEscape(
+                iteration: 1,
+                kind: "checkpoint-evaluation",
+                path: "../checkpoint-evaluation.json"
+            )
+        }
     }
 
     @Test func journalRecordsAreSingleCompactLines() throws {

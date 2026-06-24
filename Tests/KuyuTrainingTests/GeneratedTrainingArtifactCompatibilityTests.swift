@@ -260,7 +260,7 @@ import KuyuTraining
             GeneratedTrainingArtifactCompatibilityRequest(evolutionArtifactDirectory: directory)
         )
         Issue.record("Expected missing evolution artifact to fail closed.")
-    } catch EvolutionRunArtifactValidator.ValidationError.missingFile(let fileName) {
+    } catch GeneratedTrainingArtifactCompatibilityVerifier.VerificationError.missingEvolutionArtifact(let fileName) {
         #expect(fileName == EvolutionRunArtifactContract.fileName)
     }
 }
@@ -315,6 +315,44 @@ import KuyuTraining
         expectedCheckpointPath: "/tmp/loaded-checkpoint",
         requiresPolicyPass: true
     )
+}
+
+@Test func generatedArtifactCompatibilityVerifierWrapsCheckpointEvaluationValidationErrors() throws {
+    let profile = try TaskEvaluationProfile.profile(task: "attitude")
+    let artifact = CheckpointEvaluationArtifact(
+        evaluationID: "invalid-checkpoint-public-artifact",
+        startedAt: Date(timeIntervalSince1970: 1),
+        task: profile.task,
+        profileID: profile.profileID,
+        checkpointPath: "/tmp/wrong-checkpoint",
+        teacherScore: 1,
+        policyScore: 1,
+        teacherPassed: true,
+        policyPassed: true,
+        failureReasons: [],
+        expectedQualityKeys: [],
+        qualitySummary: [],
+        motorMAE: nil,
+        driveMAE: nil,
+        finalAltitudeDelta: nil,
+        policyAverageMotorFinalOutputByIndex: nil,
+        teacherAverageMotorFinalOutputByIndex: nil,
+        diagnostics: nil
+    )
+
+    do {
+        try GeneratedTrainingArtifactCompatibilityVerifier().validateCheckpointEvaluationArtifact(
+            artifact,
+            expectedProfile: profile,
+            expectedCheckpointPath: "/tmp/expected-checkpoint",
+            requiresPolicyPass: true
+        )
+        Issue.record("Expected checkpoint evaluation validation error to fail through the public verifier error.")
+    } catch GeneratedTrainingArtifactCompatibilityVerifier.VerificationError
+        .invalidCheckpointEvaluationArtifact(.checkpointMismatch(let expected, let actual)) {
+        #expect(expected == "/tmp/expected-checkpoint")
+        #expect(actual == "/tmp/wrong-checkpoint")
+    }
 }
 
 @Test func generatedArtifactCompatibilityVerifierRejectsEmptyRequest() throws {

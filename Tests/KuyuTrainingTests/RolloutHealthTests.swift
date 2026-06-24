@@ -137,6 +137,25 @@ import KuyuPhysics
     #expect(!health.containsFailureReason(in: ["safety-envelope"]))
 }
 
+@Test func rolloutHealthMatchesFailureReasonFragments() {
+    var health = RolloutHealth()
+    health.addEpisodeSummary(
+        done: true,
+        truncated: false,
+        failureReason: "task:ground-violation",
+        terminalReason: "ground-violation",
+        rewardSum: -1.0,
+        maxOmega: 0.5,
+        maxTilt: 0.05,
+        minAltitude: 0.0
+    )
+
+    #expect(health.failureReasonCount("ground-violation") == 0)
+    #expect(!health.containsFailureReason(in: ["ground-violation"]))
+    #expect(health.containsFailureReason(matching: ["ground-violation"]))
+    #expect(!health.containsFailureReason(matching: ["sustained-fall"]))
+}
+
 @Test func rolloutHealthDecodesLegacyPayloadWithoutTerminalStepProgress() throws {
     let legacyJSON = """
     {

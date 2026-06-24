@@ -97,6 +97,18 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         failureReasonCounts.keys.contains { reasons.contains($0) }
     }
 
+    public func containsFailureReason(matching fragments: Set<String>) -> Bool {
+        let sanitizedFragments = fragments
+            .map(Self.sanitizedFailureReason)
+            .filter { !$0.isEmpty }
+        guard !sanitizedFragments.isEmpty else { return false }
+        return failureReasonCounts.keys.contains { reason in
+            sanitizedFragments.contains { fragment in
+                reason.contains(fragment)
+            }
+        }
+    }
+
     public mutating func add(_ other: RolloutHealth) {
         episodeCount += other.episodeCount
         doneCount += other.doneCount

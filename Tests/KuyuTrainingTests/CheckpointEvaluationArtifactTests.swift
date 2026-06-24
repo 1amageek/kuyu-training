@@ -201,6 +201,39 @@ import Testing
     }
 }
 
+@Test func checkpointEvaluationArtifactValidatorRejectsDuplicateScenarioHorizon() throws {
+    let profile = try TaskEvaluationProfile.profile(task: "lift")
+    let key = CheckpointEvaluationScenarioKey(scenarioID: "lift-test", seed: 1)
+    let horizon = CheckpointEvaluationScenarioHorizon(
+        scenarioID: key.scenarioID,
+        seed: key.seed,
+        durationSeconds: 8,
+        timeStepSeconds: 0.001,
+        stepCount: 8000
+    )
+    let artifact = makeCheckpointEvaluationArtifact(
+        profile: profile,
+        expectedQualityKeys: [key],
+        qualitySummary: [makeTaskQualitySummary(task: "lift", scenarioID: key.scenarioID, seed: key.seed)],
+        scenarioHorizons: [horizon, horizon]
+    )
+
+    do {
+        try CheckpointEvaluationArtifactValidator.validate(
+            artifact,
+            expectedProfile: profile,
+            expectedCheckpointPath: artifact.checkpointPath,
+            requiresPolicyPass: true
+        )
+        Issue.record("Expected duplicate scenario horizon to throw.")
+    } catch CheckpointEvaluationArtifactValidator.ValidationError.duplicateScenarioHorizon(let scenarioID, let seed) {
+        #expect(scenarioID == "lift-test")
+        #expect(seed == 1)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
 @Test func checkpointEvaluationArtifactValidatorRejectsInvalidScenarioHorizon() throws {
     let profile = try TaskEvaluationProfile.profile(task: "lift")
     let artifact = makeCheckpointEvaluationArtifact(

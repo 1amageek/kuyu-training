@@ -94,6 +94,47 @@ import KuyuPhysics
     #expect(health.terminalStepObservationCount == 2)
     #expect(health.terminalStepSum == 25_000)
     #expect(health.terminalStepAverage == 12_500)
+    #expect(health.failureReasonCounts == ["sustained-fall": 1])
+    #expect(health.failureReasonCount("sustained-fall") == 1)
+    #expect(health.containsFailureReason(in: ["sustained-fall"]))
+}
+
+@Test func rolloutHealthAggregatesFailureReasonCounts() throws {
+    var health = RolloutHealth(episodes: [
+        try makeRolloutHealthEpisode(
+            rewardSum: -1.0,
+            omega: 0.5,
+            tilt: 0.05,
+            altitude: 1.8,
+            failureReason: "sustained-fall"
+        ),
+        try makeRolloutHealthEpisode(
+            rewardSum: -1.0,
+            omega: 0.5,
+            tilt: 0.05,
+            altitude: 0.0,
+            failureReason: "ground-violation"
+        ),
+    ])
+    health.addEpisodeSummary(
+        done: true,
+        truncated: false,
+        failureReason: " sustained-fall ",
+        terminalReason: "sustained-fall",
+        rewardSum: -1.0,
+        maxOmega: 0.5,
+        maxTilt: 0.05,
+        minAltitude: 1.8
+    )
+
+    #expect(health.failureCount == 3)
+    #expect(health.failureReasonCounts == [
+        "ground-violation": 1,
+        "sustained-fall": 2,
+    ])
+    #expect(health.failureReasonCount(" sustained-fall ") == 2)
+    #expect(health.containsFailureReason(in: ["ground-violation"]))
+    #expect(!health.containsFailureReason(in: ["safety-envelope"]))
 }
 
 @Test func rolloutHealthDecodesLegacyPayloadWithoutTerminalStepProgress() throws {
@@ -120,6 +161,7 @@ import KuyuPhysics
     #expect(health.terminalStepObservationCount == 0)
     #expect(health.terminalStepSum == 0)
     #expect(health.terminalStepAverage == 0)
+    #expect(health.failureReasonCounts.isEmpty)
 }
 
 @Test func rolloutHealthAddsSummariesAndMergesWithoutEpisodes() {
@@ -165,6 +207,7 @@ import KuyuPhysics
     #expect(baseline.maxTilt == 0.08)
     #expect(baseline.minAltitude == 1.5)
     #expect(baseline.nonFiniteMetricCount == 4)
+    #expect(baseline.failureReasonCounts == ["ground-violation": 1])
 }
 
 @Test func rolloutHealthRejectsNewCancellationAndNonHorizonTruncation() throws {

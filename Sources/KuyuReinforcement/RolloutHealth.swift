@@ -15,6 +15,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
     public private(set) var maxOmega: Double
     public private(set) var maxTilt: Double
     public private(set) var minAltitude: Double?
+    public private(set) var failureReasonCounts: [String: Int]
     public private(set) var stabilityMetrics: [String: RolloutStabilityMetricSummary]
     public private(set) var stabilityMetricContractViolations: [RolloutStabilityMetricContractViolation]
 
@@ -32,6 +33,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         maxOmega = 0
         maxTilt = 0
         minAltitude = nil
+        failureReasonCounts = [:]
         stabilityMetrics = [:]
         stabilityMetricContractViolations = []
     }
@@ -80,8 +82,19 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             "omega=\(String(format: "%.3f", maxOmega))",
             "tilt=\(String(format: "%.3f", maxTilt))",
             "minZ=\(minAltitudeText)",
+            "failureReasons=\(failureReasonSummary)",
             "nonFinite=\(nonFiniteMetricCount)",
         ].joined(separator: " ")
+    }
+
+    public func failureReasonCount(_ reason: String) -> Int {
+        let key = Self.sanitizedFailureReason(reason)
+        guard !key.isEmpty else { return 0 }
+        return failureReasonCounts[key] ?? 0
+    }
+
+    public func containsFailureReason(in reasons: Set<String>) -> Bool {
+        failureReasonCounts.keys.contains { reasons.contains($0) }
     }
 
     public mutating func add(_ other: RolloutHealth) {
@@ -99,6 +112,9 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         maxTilt = max(maxTilt, other.maxTilt)
         if let otherMinAltitude = other.minAltitude {
             minAltitude = min(minAltitude ?? otherMinAltitude, otherMinAltitude)
+        }
+        for (reason, count) in other.failureReasonCounts {
+            failureReasonCounts[reason, default: 0] += count
         }
         stabilityMetricContractViolations.append(contentsOf: other.stabilityMetricContractViolations)
         for metric in other.stabilityMetrics.values {
@@ -217,6 +233,12 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         if failureReason != nil {
             failureCount += 1
         }
+        if let failureReason {
+            let key = Self.sanitizedFailureReason(failureReason)
+            if !key.isEmpty {
+                failureReasonCounts[key, default: 0] += 1
+            }
+        }
         if cancelled {
             cancelledCount += 1
         }
@@ -275,6 +297,23 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         }
     }
 
+    private var failureReasonSummary: String {
+        guard !failureReasonCounts.isEmpty else { return "none" }
+        return failureReasonCounts
+            .sorted { first, second in
+                if first.value == second.value {
+                    return first.key < second.key
+                }
+                return first.value > second.value
+            }
+            .map { "\($0.key):\($0.value)" }
+            .joined(separator: ",")
+    }
+
+    private static func sanitizedFailureReason(_ reason: String) -> String {
+        reason.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case episodeCount
         case doneCount
@@ -289,6 +328,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         case maxOmega
         case maxTilt
         case minAltitude
+        case failureReasonCounts
         case stabilityMetrics
         case stabilityMetricContractViolations
     }
@@ -311,6 +351,10 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         maxOmega = try container.decode(Double.self, forKey: .maxOmega)
         maxTilt = try container.decode(Double.self, forKey: .maxTilt)
         minAltitude = try container.decodeIfPresent(Double.self, forKey: .minAltitude)
+        failureReasonCounts = try container.decodeIfPresent(
+            [String: Int].self,
+            forKey: .failureReasonCounts
+        ) ?? [:]
         stabilityMetrics = try container.decode(
             [String: RolloutStabilityMetricSummary].self,
             forKey: .stabilityMetrics
@@ -336,6 +380,7 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
         try container.encode(maxOmega, forKey: .maxOmega)
         try container.encode(maxTilt, forKey: .maxTilt)
         try container.encodeIfPresent(minAltitude, forKey: .minAltitude)
+        try container.encode(failureReasonCounts, forKey: .failureReasonCounts)
         try container.encode(stabilityMetrics, forKey: .stabilityMetrics)
         try container.encode(
             stabilityMetricContractViolations,

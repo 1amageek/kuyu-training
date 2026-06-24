@@ -91,6 +91,15 @@ public struct TrainingRunArchiveReader: Sendable {
         return try Self.parseJournal(data, runID: runID.rawValue)
     }
 
+    public func readJournalValidatingEvaluationArtifacts() throws -> TrainingRunJournalReadResult {
+        let journal = try readJournal()
+        try TrainingRunEvaluationArtifactReferenceValidator().validate(
+            journal: journal,
+            runDirectory: runDirectory
+        )
+        return journal
+    }
+
     /// Parses raw journal bytes.
     ///
     /// Torn tail = bytes after the last record-terminating newline (an

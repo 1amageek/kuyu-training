@@ -246,12 +246,42 @@ struct TrainingRunContractTests {
             )
         ))
         let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
-        let journal = try reader.readJournal()
+        let journal = try reader.readJournalValidatingEvaluationArtifacts()
 
-        try TrainingRunEvaluationArtifactReferenceValidator().validate(
-            journal: journal,
-            runDirectory: writer.runDirectory
+        #expect(journal.records.count == 1)
+    }
+
+    @Test func readJournalValidatingEvaluationArtifactsRejectsMissingArtifacts() throws {
+        let root = try makeTemporaryRunRoot()
+        var writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-missing-artifact-reference"),
+            in: root
         )
+        try writer.appendIteration(TrainingRunIterationRecord(
+            iteration: 0,
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_170),
+            evaluation: TrainingRunIterationRecord.EvaluationRecord(
+                evaluationHorizon: 20_000,
+                metrics: ["policyPassed": 0],
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "evaluations/iteration-0/missing.json"
+                    ),
+                ]
+            )
+        ))
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+
+        #expect {
+            try reader.readJournalValidatingEvaluationArtifacts()
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError == .missingFile(
+                iteration: 0,
+                kind: "checkpoint-evaluation",
+                path: "evaluations/iteration-0/missing.json"
+            )
+        }
     }
 
     @Test func evaluationArtifactReferenceValidatorRejectsMissingArtifacts() throws {

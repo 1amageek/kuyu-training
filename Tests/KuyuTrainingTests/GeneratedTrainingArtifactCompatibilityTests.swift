@@ -97,6 +97,94 @@ import KuyuTraining
     #expect(report.probeArtifacts?.trained?.stage == .trainedPolicy)
 }
 
+@Test func generatedArtifactCompatibilityVerifierRejectsMismatchedRunAndProbeArtifacts() throws {
+    let directory = try generatedArtifactTemporaryDirectory()
+    defer { generatedArtifactCleanup(directory) }
+
+    let probeDirectory = directory.appendingPathComponent("probe", isDirectory: true)
+    let probeTrainingDirectory = probeDirectory.appendingPathComponent("training", isDirectory: true)
+    let probeTraining = generatedArtifactRunResult(directory: probeTrainingDirectory)
+    try TrainingArtifactWriter().write(
+        manifest: probeTraining.manifest,
+        metrics: probeTraining.metrics,
+        convergence: probeTraining.convergence,
+        checkpointDecision: probeTraining.checkpointDecision,
+        scenarioRuns: try generatedArtifactScenarioRuns(runID: probeTraining.manifest.runID),
+        to: probeTrainingDirectory
+    )
+
+    let teacher = try generatedArtifactProbeSummary(stage: .teacherActiveAltitudeHold, passed: true)
+    let initial = try generatedArtifactProbeSummary(stage: .initialPolicy, passed: false)
+    let trained = try generatedArtifactProbeSummary(stage: .trainedPolicy, passed: true)
+    let comparison = TrainingProbeComparison(
+        probeID: "probe-mismatched-public-artifact",
+        trainingRunID: probeTraining.manifest.runID,
+        teacher: teacher,
+        initial: initial,
+        trained: trained,
+        training: probeTraining,
+        minScoreDelta: 0,
+        requireTeacherPass: true,
+        requireTrainedPass: true
+    )
+    let probeDecision = CheckpointDecision(
+        runID: probeTraining.manifest.runID,
+        state: .accepted,
+        reason: "accepted",
+        candidateCheckpointID: "candidate",
+        candidateCheckpointURL: directory.appendingPathComponent("candidate"),
+        publishedCheckpointURL: directory.appendingPathComponent("published"),
+        decidedAt: Date(timeIntervalSince1970: 4)
+    )
+    try TrainingProbeArtifactWriter().write(
+        result: TrainingProbeResult(
+            manifest: TrainingProbeManifest(
+                probeID: "probe-mismatched-public-artifact",
+                trainingRunID: probeTraining.manifest.runID,
+                startedAt: Date(timeIntervalSince1970: 1),
+                completedAt: Date(timeIntervalSince1970: 5),
+                terminalState: .completed
+            ),
+            teacher: teacher,
+            initial: initial,
+            training: probeTraining,
+            trained: trained,
+            comparison: comparison,
+            probeCheckpointDecision: probeDecision
+        ),
+        to: probeDirectory
+    )
+
+    let runDirectory = directory.appendingPathComponent("standalone-run", isDirectory: true)
+    let run = generatedArtifactRunResult(directory: runDirectory, runID: "standalone-public-artifact")
+    try TrainingArtifactWriter().write(
+        manifest: run.manifest,
+        metrics: run.metrics,
+        convergence: run.convergence,
+        checkpointDecision: run.checkpointDecision,
+        scenarioRuns: try generatedArtifactScenarioRuns(runID: run.manifest.runID),
+        to: runDirectory
+    )
+
+    do {
+        _ = try GeneratedTrainingArtifactCompatibilityVerifier().verify(
+            GeneratedTrainingArtifactCompatibilityRequest(
+                runArtifactDirectory: runDirectory,
+                probeArtifactDirectory: probeDirectory
+            )
+        )
+        Issue.record("Expected mismatched run/probe artifacts to fail closed.")
+    } catch let error as GeneratedTrainingArtifactCompatibilityVerifier.VerificationError {
+        switch error {
+        case .incompatibleRunAndProbeArtifacts(let runID, let probeTrainingRunID):
+            #expect(runID == run.manifest.runID)
+            #expect(probeTrainingRunID == probeTraining.manifest.runID)
+        default:
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+}
+
 @Test func generatedArtifactCompatibilityVerifierRoundTripsCheckpointEvaluationThroughFacade() throws {
     let directory = try generatedArtifactTemporaryDirectory()
     defer { generatedArtifactCleanup(directory) }
@@ -239,9 +327,12 @@ import KuyuTraining
     }
 }
 
-private func generatedArtifactRunResult(directory: URL) -> TrainingRunResult {
+private func generatedArtifactRunResult(
+    directory: URL,
+    runID: String = "run-public-artifact"
+) -> TrainingRunResult {
     let manifest = LearningRunManifest(
-        runID: "run-public-artifact",
+        runID: runID,
         mode: .supervised,
         configHash: "config-hash",
         suiteID: "attitude",

@@ -63,6 +63,7 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
     public enum VerificationError: Error, Sendable, Equatable {
         case emptyRequest
         case missingCheckpointEvaluationArtifact(String)
+        case incompatibleRunAndProbeArtifacts(runID: String, probeTrainingRunID: String)
     }
 
     private let runValidator: TrainingRunArtifactValidator
@@ -92,6 +93,7 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
         let probeArtifacts = try request.probeArtifactDirectory.map(loadProbeArtifacts)
         let evolutionArtifacts = try request.evolutionArtifactDirectory.map(loadEvolutionArtifacts)
         let checkpointEvaluationArtifact = try request.checkpointEvaluation.map(loadCheckpointEvaluationArtifact)
+        try validateCompatibility(runArtifacts: runArtifacts, probeArtifacts: probeArtifacts)
         return GeneratedTrainingArtifactCompatibilityReport(
             runArtifacts: runArtifacts,
             probeArtifacts: probeArtifacts,
@@ -143,5 +145,20 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
             expectedCheckpointPath: expectedCheckpointPath,
             requiresPolicyPass: requiresPolicyPass
         )
+    }
+
+    private func validateCompatibility(
+        runArtifacts: TrainingRunArtifactBundle?,
+        probeArtifacts: TrainingProbeArtifactBundle?
+    ) throws {
+        guard let runArtifacts, let probeArtifacts else {
+            return
+        }
+        guard runArtifacts.manifest.runID == probeArtifacts.training.manifest.runID else {
+            throw VerificationError.incompatibleRunAndProbeArtifacts(
+                runID: runArtifacts.manifest.runID,
+                probeTrainingRunID: probeArtifacts.training.manifest.runID
+            )
+        }
     }
 }

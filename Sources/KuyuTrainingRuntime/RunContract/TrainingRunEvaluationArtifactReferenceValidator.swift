@@ -7,6 +7,8 @@ public struct TrainingRunEvaluationArtifactReferenceValidator: Sendable {
         case absolutePath(iteration: Int, kind: String, path: String)
         case parentDirectoryEscape(iteration: Int, kind: String, path: String)
         case missingFile(iteration: Int, kind: String, path: String)
+        case duplicateKind(iteration: Int, kind: String)
+        case duplicatePath(iteration: Int, kind: String, path: String)
 
         public var description: String {
             switch self {
@@ -20,6 +22,10 @@ public struct TrainingRunEvaluationArtifactReferenceValidator: Sendable {
                 return "artifact path escapes run directory at iteration \(iteration) kind=\(kind) path=\(path)"
             case .missingFile(let iteration, let kind, let path):
                 return "missing artifact file at iteration \(iteration) kind=\(kind) path=\(path)"
+            case .duplicateKind(let iteration, let kind):
+                return "duplicate artifact kind at iteration \(iteration) kind=\(kind)"
+            case .duplicatePath(let iteration, let kind, let path):
+                return "duplicate artifact path at iteration \(iteration) kind=\(kind) path=\(path)"
             }
         }
     }
@@ -47,8 +53,20 @@ public struct TrainingRunEvaluationArtifactReferenceValidator: Sendable {
         iteration: Int,
         runDirectory: URL
     ) throws {
+        var seenKinds = Set<String>()
+        var seenPaths = Set<String>()
         for artifact in artifacts {
             try validate(artifact: artifact, iteration: iteration, runDirectory: runDirectory)
+            guard seenKinds.insert(artifact.kind).inserted else {
+                throw ValidationError.duplicateKind(iteration: iteration, kind: artifact.kind)
+            }
+            guard seenPaths.insert(artifact.path).inserted else {
+                throw ValidationError.duplicatePath(
+                    iteration: iteration,
+                    kind: artifact.kind,
+                    path: artifact.path
+                )
+            }
         }
     }
 

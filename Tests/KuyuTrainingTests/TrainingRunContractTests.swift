@@ -356,6 +356,75 @@ struct TrainingRunContractTests {
         }
     }
 
+    @Test func evaluationArtifactReferenceValidatorRejectsDuplicateKinds() throws {
+        let root = try makeTemporaryRunRoot()
+        let artifactDirectory = root
+            .appendingPathComponent("evaluations", isDirectory: true)
+            .appendingPathComponent("iteration-0", isDirectory: true)
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+        let firstArtifact = artifactDirectory.appendingPathComponent("checkpoint-evaluation.json")
+        let secondArtifact = artifactDirectory.appendingPathComponent("checkpoint-evaluation-copy.json")
+        try Data("{}".utf8).write(to: firstArtifact, options: [.atomic])
+        try Data("{}".utf8).write(to: secondArtifact, options: [.atomic])
+
+        let validator = TrainingRunEvaluationArtifactReferenceValidator()
+        #expect {
+            try validator.validate(
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "evaluations/iteration-0/checkpoint-evaluation.json"
+                    ),
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "evaluations/iteration-0/checkpoint-evaluation-copy.json"
+                    ),
+                ],
+                iteration: 0,
+                runDirectory: root
+            )
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError == .duplicateKind(
+                iteration: 0,
+                kind: "checkpoint-evaluation"
+            )
+        }
+    }
+
+    @Test func evaluationArtifactReferenceValidatorRejectsDuplicatePaths() throws {
+        let root = try makeTemporaryRunRoot()
+        let artifactDirectory = root
+            .appendingPathComponent("evaluations", isDirectory: true)
+            .appendingPathComponent("iteration-0", isDirectory: true)
+        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+        let artifact = artifactDirectory.appendingPathComponent("checkpoint-evaluation.json")
+        try Data("{}".utf8).write(to: artifact, options: [.atomic])
+
+        let validator = TrainingRunEvaluationArtifactReferenceValidator()
+        #expect {
+            try validator.validate(
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "evaluations/iteration-0/checkpoint-evaluation.json"
+                    ),
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "g1-attitude-acceptance",
+                        path: "evaluations/iteration-0/checkpoint-evaluation.json"
+                    ),
+                ],
+                iteration: 0,
+                runDirectory: root
+            )
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError == .duplicatePath(
+                iteration: 0,
+                kind: "g1-attitude-acceptance",
+                path: "evaluations/iteration-0/checkpoint-evaluation.json"
+            )
+        }
+    }
+
     @Test func journalRecordsAreSingleCompactLines() throws {
         let root = try makeTemporaryRunRoot()
         var writer = try TrainingRunArchiveWriter.create(

@@ -172,6 +172,7 @@ Required gates:
 | Artifact publication | Rejected candidates never appear at accepted paths. |
 | Artifact acceptance consistency | Training run artifacts cannot claim accepted convergence without an accepted/staged checkpoint decision and required checkpoint evidence. |
 | Artifact lifecycle consistency | Terminal manifests must have completion time, completed runs must match accepted convergence, and rejected/skipped/failed decisions cannot expose an output checkpoint ID. |
+| Evaluation artifact references | Evaluation records reject missing, escaping, duplicate-kind, and duplicate-path artifact references before a run journal is treated as auditable evidence. |
 | Event lifecycle | Public run handles finish streams on operation completion, cancellation, and `shutdown()` so consumers do not hang. |
 | Standard executor lifecycle | Package-provided executors wrap `start` and `resume` operations in managed handles instead of exposing stream ownership to training backends. |
 
@@ -183,6 +184,7 @@ Exit criteria:
 | Terminal outcomes are final at reader and writer boundaries. | `submitControlCommandRejectsTerminalRun`, `openRefusesTerminalRun`, `writerRejectsMutationAfterTerminalOutcome`, and `writerRejectsOutcomeTransitionAfterTerminalOutcome`. |
 | Published artifact acceptance is internally consistent. | `trainingRunArtifactValidatorRejectsAcceptedConvergenceWithoutAcceptedCheckpointDecision`, `trainingRunArtifactValidatorRejectsAcceptedCheckpointDecisionWithoutAcceptedConvergence`, `trainingRunArtifactValidatorRejectsAcceptedCheckpointWithoutPublishedEvidence`, `trainingRunArtifactValidatorRejectsStagedCheckpointWithoutCandidateEvidence`, and `trainingRunArtifactValidatorRejectsAcceptedCheckpointIDMismatch`. |
 | Published artifact lifecycle facts are internally consistent. | `trainingRunArtifactValidatorRejectsCompletedManifestWithoutAcceptedConvergence`, `trainingRunArtifactValidatorRejectsRejectedManifestWithOutputCheckpoint`, and `trainingRunArtifactValidatorRejectsTerminalManifestWithoutCompletionTime`. |
+| Evaluation evidence references are unambiguous. | `readJournalValidatingEvaluationArtifactsRejectsMissingArtifacts`, `evaluationArtifactReferenceValidatorRejectsDuplicateKinds`, and `evaluationArtifactReferenceValidatorRejectsDuplicatePaths`. |
 | Every resumable failure mode is either repaired or rejected with a typed error. | Resume/corruption tests. |
 | Reader and resume boundaries reject corrupt iteration order. | `readerRejectsJournalGap`, `readerRejectsDuplicateJournalIteration`, and `openRejectsNonMonotonicJournalOnResume`. |
 | Event streams cannot outlive a stopped run. | `ManagedTrainingRunHandle` tests for completion, cancellation, and shutdown stream termination. |

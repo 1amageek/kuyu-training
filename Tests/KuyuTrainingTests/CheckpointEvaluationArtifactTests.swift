@@ -201,12 +201,85 @@ import Testing
     }
 }
 
+@Test func checkpointEvaluationArtifactValidatorRejectsInvalidScenarioHorizon() throws {
+    let profile = try TaskEvaluationProfile.profile(task: "lift")
+    let artifact = makeCheckpointEvaluationArtifact(
+        profile: profile,
+        expectedQualityKeys: [CheckpointEvaluationScenarioKey(scenarioID: "lift-test", seed: 1)],
+        qualitySummary: [makeTaskQualitySummary(task: "lift", scenarioID: "lift-test", seed: 1)],
+        scenarioHorizons: [
+            CheckpointEvaluationScenarioHorizon(
+                scenarioID: "lift-test",
+                seed: 1,
+                durationSeconds: 8,
+                timeStepSeconds: 0.001,
+                stepCount: 1
+            )
+        ]
+    )
+
+    do {
+        try CheckpointEvaluationArtifactValidator.validate(
+            artifact,
+            expectedProfile: profile,
+            expectedCheckpointPath: artifact.checkpointPath,
+            requiresPolicyPass: true
+        )
+        Issue.record("Expected invalid scenario horizon to throw.")
+    } catch CheckpointEvaluationArtifactValidator.ValidationError.invalidScenarioHorizon(let scenarioID, let seed) {
+        #expect(scenarioID == "lift-test")
+        #expect(seed == 1)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func checkpointEvaluationArtifactValidatorRejectsMissingScenarioHorizon() throws {
+    let profile = try TaskEvaluationProfile.profile(task: "lift")
+    let artifact = makeCheckpointEvaluationArtifact(
+        profile: profile,
+        expectedQualityKeys: [
+            CheckpointEvaluationScenarioKey(scenarioID: "lift-test", seed: 1),
+            CheckpointEvaluationScenarioKey(scenarioID: "lift-test-2", seed: 2),
+        ],
+        qualitySummary: [
+            makeTaskQualitySummary(task: "lift", scenarioID: "lift-test", seed: 1),
+            makeTaskQualitySummary(task: "lift", scenarioID: "lift-test-2", seed: 2),
+        ],
+        scenarioHorizons: [
+            CheckpointEvaluationScenarioHorizon(
+                scenarioID: "lift-test",
+                seed: 1,
+                durationSeconds: 8,
+                timeStepSeconds: 0.001,
+                stepCount: 8000
+            )
+        ]
+    )
+
+    do {
+        try CheckpointEvaluationArtifactValidator.validate(
+            artifact,
+            expectedProfile: profile,
+            expectedCheckpointPath: artifact.checkpointPath,
+            requiresPolicyPass: true
+        )
+        Issue.record("Expected missing scenario horizon to throw.")
+    } catch CheckpointEvaluationArtifactValidator.ValidationError.missingScenarioHorizon(let scenarioID, let seed) {
+        #expect(scenarioID == "lift-test-2")
+        #expect(seed == 2)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
 private func makeCheckpointEvaluationArtifact(
     profile: TaskEvaluationProfile,
     schemaVersion: Int = CheckpointEvaluationArtifact.currentSchemaVersion,
     policyScore: Double = 1,
     expectedQualityKeys: [CheckpointEvaluationScenarioKey]? = nil,
-    qualitySummary: [ReferenceQuadrotorTaskQualitySummary]? = nil
+    qualitySummary: [ReferenceQuadrotorTaskQualitySummary]? = nil,
+    scenarioHorizons: [CheckpointEvaluationScenarioHorizon]? = nil
 ) -> CheckpointEvaluationArtifact {
     let summaries = qualitySummary ?? [makeTaskQualitySummary(task: profile.task)]
     let diagnostics: CheckpointEvaluationDiagnostics?
@@ -236,6 +309,7 @@ private func makeCheckpointEvaluationArtifact(
         failureReasons: [],
         expectedQualityKeys: expectedQualityKeys ?? summaries.map(CheckpointEvaluationScenarioKey.init(qualitySummary:)),
         qualitySummary: summaries,
+        scenarioHorizons: scenarioHorizons,
         motorMAE: 0,
         driveMAE: 0,
         finalAltitudeDelta: 0,

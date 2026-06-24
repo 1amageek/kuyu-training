@@ -28,6 +28,60 @@ public struct CheckpointEvaluationScenarioKey: Sendable, Codable, Hashable, Comp
     }
 }
 
+public struct CheckpointEvaluationScenarioHorizon: Sendable, Codable, Hashable, Comparable {
+    public let scenarioID: String
+    public let seed: UInt64
+    public let durationSeconds: Double
+    public let timeStepSeconds: Double
+    public let stepCount: Int
+
+    public init(
+        scenarioID: String,
+        seed: UInt64,
+        durationSeconds: Double,
+        timeStepSeconds: Double,
+        stepCount: Int
+    ) {
+        self.scenarioID = scenarioID
+        self.seed = seed
+        self.durationSeconds = durationSeconds
+        self.timeStepSeconds = timeStepSeconds
+        self.stepCount = stepCount
+    }
+
+    public init(definition: ReferenceQuadrotorScenarioDefinition) {
+        let duration = definition.config.duration
+        let timeStep = definition.config.timeStep.delta
+        self.init(
+            scenarioID: definition.config.id.rawValue,
+            seed: definition.config.seed.rawValue,
+            durationSeconds: duration,
+            timeStepSeconds: timeStep,
+            stepCount: Int((duration / timeStep).rounded(.down))
+        )
+    }
+
+    public var key: CheckpointEvaluationScenarioKey {
+        CheckpointEvaluationScenarioKey(scenarioID: scenarioID, seed: seed)
+    }
+
+    public static func < (
+        lhs: CheckpointEvaluationScenarioHorizon,
+        rhs: CheckpointEvaluationScenarioHorizon
+    ) -> Bool {
+        if lhs.key != rhs.key {
+            return lhs.key < rhs.key
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return lhs.durationSeconds < rhs.durationSeconds
+        }
+        if lhs.timeStepSeconds != rhs.timeStepSeconds {
+            return lhs.timeStepSeconds < rhs.timeStepSeconds
+        }
+        return lhs.stepCount < rhs.stepCount
+    }
+}
+
 public struct CheckpointEvaluationRequest: Sendable, Equatable {
     public let evaluationID: String
     public let profile: TaskEvaluationProfile
@@ -69,6 +123,7 @@ public struct CheckpointEvaluationArtifact: Sendable, Codable, Equatable {
     public let failureReasons: [String]
     public let expectedQualityKeys: [CheckpointEvaluationScenarioKey]
     public let qualitySummary: [ReferenceQuadrotorTaskQualitySummary]
+    public let scenarioHorizons: [CheckpointEvaluationScenarioHorizon]?
     public let motorMAE: Double?
     public let driveMAE: Double?
     public let finalAltitudeDelta: Double?
@@ -90,6 +145,7 @@ public struct CheckpointEvaluationArtifact: Sendable, Codable, Equatable {
         failureReasons: [String],
         expectedQualityKeys: [CheckpointEvaluationScenarioKey],
         qualitySummary: [ReferenceQuadrotorTaskQualitySummary],
+        scenarioHorizons: [CheckpointEvaluationScenarioHorizon]? = nil,
         motorMAE: Double?,
         driveMAE: Double?,
         finalAltitudeDelta: Double?,
@@ -111,6 +167,7 @@ public struct CheckpointEvaluationArtifact: Sendable, Codable, Equatable {
         self.failureReasons = failureReasons
         self.expectedQualityKeys = expectedQualityKeys
         self.qualitySummary = qualitySummary
+        self.scenarioHorizons = scenarioHorizons
         self.motorMAE = motorMAE
         self.driveMAE = driveMAE
         self.finalAltitudeDelta = finalAltitudeDelta
@@ -134,6 +191,10 @@ public enum CheckpointEvaluationArtifactValidator {
         case unexpectedTaskQuality(scenarioID: String, seed: UInt64)
         case duplicateExpectedTaskQuality(scenarioID: String, seed: UInt64)
         case duplicateTaskQuality(scenarioID: String, seed: UInt64)
+        case duplicateScenarioHorizon(scenarioID: String, seed: UInt64)
+        case missingScenarioHorizon(scenarioID: String, seed: UInt64)
+        case unexpectedScenarioHorizon(scenarioID: String, seed: UInt64)
+        case invalidScenarioHorizon(scenarioID: String, seed: UInt64)
         case qualityTaskMismatch(expected: String, actual: String)
         case qualityEvaluatorMismatch(expected: String, actual: String)
         case failedTaskQuality(scenarioID: String, reasons: [String])
@@ -174,6 +235,10 @@ public enum CheckpointEvaluationArtifactValidator {
             artifact.qualitySummary,
             expectedProfile: expectedProfile,
             requiresPolicyPass: requiresPolicyPass
+        )
+        try validateScenarioHorizons(
+            artifact.scenarioHorizons,
+            expectedKeys: artifact.expectedQualityKeys
         )
         if requiresPolicyPass && !artifact.policyPassed {
             throw ValidationError.failedPolicy(artifact.failureReasons)
@@ -265,6 +330,52 @@ public enum CheckpointEvaluationArtifactValidator {
         guard let values else { return }
         guard values.allSatisfy(\.isFinite) else {
             throw ValidationError.nonFiniteMetric(name)
+        }
+    }
+
+    private static func validateScenarioHorizons(
+        _ horizons: [CheckpointEvaluationScenarioHorizon]?,
+        expectedKeys: [CheckpointEvaluationScenarioKey]
+    ) throws {
+        guard let horizons else {
+            return
+        }
+        var horizonSet = Set<CheckpointEvaluationScenarioKey>()
+        for horizon in horizons {
+            guard horizonSet.insert(horizon.key).inserted else {
+                throw ValidationError.duplicateScenarioHorizon(
+                    scenarioID: horizon.scenarioID,
+                    seed: horizon.seed
+                )
+            }
+            guard horizon.durationSeconds.isFinite,
+                  horizon.timeStepSeconds.isFinite,
+                  horizon.durationSeconds > 0,
+                  horizon.timeStepSeconds > 0,
+                  horizon.stepCount > 0,
+                  horizon.stepCount == Int((horizon.durationSeconds / horizon.timeStepSeconds).rounded(.down)) else {
+                throw ValidationError.invalidScenarioHorizon(
+                    scenarioID: horizon.scenarioID,
+                    seed: horizon.seed
+                )
+            }
+        }
+        let expectedSet = Set(expectedKeys)
+        if horizonSet != expectedSet {
+            let missing = expectedSet.subtracting(horizonSet).sorted()
+            if let first = missing.first {
+                throw ValidationError.missingScenarioHorizon(
+                    scenarioID: first.scenarioID,
+                    seed: first.seed
+                )
+            }
+            let unexpected = horizonSet.subtracting(expectedSet).sorted()
+            if let first = unexpected.first {
+                throw ValidationError.unexpectedScenarioHorizon(
+                    scenarioID: first.scenarioID,
+                    seed: first.seed
+                )
+            }
         }
     }
 

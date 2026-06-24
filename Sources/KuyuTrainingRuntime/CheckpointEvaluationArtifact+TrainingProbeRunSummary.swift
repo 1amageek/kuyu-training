@@ -12,6 +12,7 @@ public extension CheckpointEvaluationArtifact {
         policy: TrainingProbeRunSummary,
         expectedQualityKeys: [CheckpointEvaluationScenarioKey],
         qualitySummary: [ReferenceQuadrotorTaskQualitySummary],
+        scenarioHorizons: [CheckpointEvaluationScenarioHorizon]? = nil,
         diagnostics: CheckpointEvaluationDiagnostics? = nil
     ) {
         self.init(
@@ -27,6 +28,7 @@ public extension CheckpointEvaluationArtifact {
             failureReasons: policy.diagnostics.failureReasons,
             expectedQualityKeys: expectedQualityKeys,
             qualitySummary: qualitySummary,
+            scenarioHorizons: scenarioHorizons,
             motorMAE: CheckpointEvaluationProbeMetrics.meanAbsoluteError(
                 policy.diagnostics.averageMotorFinalOutputByIndex,
                 teacher.diagnostics.averageMotorFinalOutputByIndex

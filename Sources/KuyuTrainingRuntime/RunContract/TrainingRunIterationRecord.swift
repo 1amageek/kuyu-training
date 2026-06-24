@@ -41,12 +41,53 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
 
     /// Evaluation metrics gathered at a specific horizon.
     public struct EvaluationRecord: Sendable, Codable, Equatable {
+        public struct ArtifactReference: Sendable, Codable, Equatable {
+            public let kind: String
+            public let path: String
+
+            public init(kind: String, path: String) {
+                self.kind = kind
+                self.path = path
+            }
+        }
+
         public let evaluationHorizon: Int
         public let metrics: [String: Double]
+        public let artifacts: [ArtifactReference]
 
-        public init(evaluationHorizon: Int, metrics: [String: Double]) {
+        public init(
+            evaluationHorizon: Int,
+            metrics: [String: Double],
+            artifacts: [ArtifactReference] = []
+        ) {
             self.evaluationHorizon = evaluationHorizon
             self.metrics = metrics
+            self.artifacts = artifacts
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case evaluationHorizon
+            case metrics
+            case artifacts
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            evaluationHorizon = try container.decode(Int.self, forKey: .evaluationHorizon)
+            metrics = try container.decode([String: Double].self, forKey: .metrics)
+            artifacts = try container.decodeIfPresent(
+                [ArtifactReference].self,
+                forKey: .artifacts
+            ) ?? []
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(evaluationHorizon, forKey: .evaluationHorizon)
+            try container.encode(metrics, forKey: .metrics)
+            if !artifacts.isEmpty {
+                try container.encode(artifacts, forKey: .artifacts)
+            }
         }
     }
 

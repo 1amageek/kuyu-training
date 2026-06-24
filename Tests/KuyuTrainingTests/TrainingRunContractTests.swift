@@ -167,6 +167,58 @@ struct TrainingRunContractTests {
         #expect(journal.truncatedTailBytes == 0)
     }
 
+    @Test func journalPreservesEvaluationArtifactReferences() throws {
+        let root = try makeTemporaryRunRoot()
+        var writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-evaluation-artifacts"),
+            in: root
+        )
+        let record = TrainingRunIterationRecord(
+            iteration: 0,
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_150),
+            evaluation: TrainingRunIterationRecord.EvaluationRecord(
+                evaluationHorizon: 20_000,
+                metrics: ["policyPassed": 0, "policyScore": -10],
+                artifacts: [
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "checkpoint-evaluation",
+                        path: "/tmp/rr-eval-1/checkpoint-evaluation.json"
+                    ),
+                    TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+                        kind: "g1-attitude-acceptance",
+                        path: "/tmp/rr-eval-1/g1-attitude-acceptance.json"
+                    ),
+                ]
+            )
+        )
+        try writer.appendIteration(record)
+
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        let decoded = try #require(try reader.readJournal().records.first?.evaluation)
+
+        #expect(decoded.artifacts == record.evaluation?.artifacts)
+    }
+
+    @Test func journalDefaultsMissingEvaluationArtifactsToEmpty() throws {
+        let root = try makeTemporaryRunRoot()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "legacy-run"),
+            in: root
+        )
+        let legacyLine = """
+        {"iteration":0,"recordedAt":"2026-06-12T00:00:00Z","evaluation":{"evaluationHorizon":20000,"metrics":{"policyPassed":0}},"failureEpisodes":[],"phaseTimings":{},"environmentSample":{}}
+        """
+        let journalURL = writer.runDirectory
+            .appendingPathComponent(TrainingRunContractSchema.journalFileName, isDirectory: false)
+        try Data((legacyLine + "\n").utf8).write(to: journalURL, options: [.atomic])
+
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        let journal = try reader.readJournal()
+        let artifacts = try #require(journal.records.first?.evaluation?.artifacts)
+
+        #expect(artifacts.isEmpty)
+    }
+
     @Test func journalRecordsAreSingleCompactLines() throws {
         let root = try makeTemporaryRunRoot()
         var writer = try TrainingRunArchiveWriter.create(

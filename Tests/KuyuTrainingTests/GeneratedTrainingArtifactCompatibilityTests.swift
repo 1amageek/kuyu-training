@@ -168,6 +168,37 @@ import KuyuTraining
     }
 }
 
+@Test func generatedArtifactCompatibilityVerifierValidatesLoadedCheckpointEvaluationArtifact() throws {
+    let profile = try TaskEvaluationProfile.profile(task: "attitude")
+    let artifact = CheckpointEvaluationArtifact(
+        evaluationID: "loaded-checkpoint-public-artifact",
+        startedAt: Date(timeIntervalSince1970: 1),
+        task: profile.task,
+        profileID: profile.profileID,
+        checkpointPath: "/tmp/loaded-checkpoint",
+        teacherScore: 1,
+        policyScore: 1,
+        teacherPassed: true,
+        policyPassed: true,
+        failureReasons: [],
+        expectedQualityKeys: [],
+        qualitySummary: [],
+        motorMAE: nil,
+        driveMAE: nil,
+        finalAltitudeDelta: nil,
+        policyAverageMotorFinalOutputByIndex: nil,
+        teacherAverageMotorFinalOutputByIndex: nil,
+        diagnostics: nil
+    )
+
+    try GeneratedTrainingArtifactCompatibilityVerifier().validateCheckpointEvaluationArtifact(
+        artifact,
+        expectedProfile: profile,
+        expectedCheckpointPath: "/tmp/loaded-checkpoint",
+        requiresPolicyPass: true
+    )
+}
+
 @Test func generatedArtifactCompatibilityVerifierRejectsEmptyRequest() throws {
     do {
         _ = try GeneratedTrainingArtifactCompatibilityVerifier().verify(

@@ -113,4 +113,18 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
         )
         return artifact
     }
+
+    public func validateCheckpointEvaluationArtifact(
+        _ artifact: CheckpointEvaluationArtifact,
+        expectedProfile: TaskEvaluationProfile,
+        expectedCheckpointPath: String,
+        requiresPolicyPass: Bool
+    ) throws {
+        try CheckpointEvaluationArtifactValidator.validate(
+            artifact,
+            expectedProfile: expectedProfile,
+            expectedCheckpointPath: expectedCheckpointPath,
+            requiresPolicyPass: requiresPolicyPass
+        )
+    }
 }

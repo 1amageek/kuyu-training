@@ -17,6 +17,7 @@ training-profile requirements belong to profile validators.
 Package-local reliability milestones are defined in
 `RELIABILITY_MILESTONES.md`. Implementation work should advance the first
 incomplete milestone unless it is fixing a blocking defect in an earlier one.
+Package-local reliability evidence is recorded in `RELIABILITY_EVIDENCE.md`.
 The root individual reliability baseline is defined in
 `../INDIVIDUAL_RELIABILITY_MILESTONES.md`; `kuyu-training` must remain
 independently verifiable before downstream backend or app integration treats it

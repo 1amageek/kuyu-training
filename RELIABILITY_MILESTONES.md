@@ -4,7 +4,7 @@ This document defines the local reliability ladder for `kuyu-training`.
 `../KUYU_CAPABILITY_ROADMAP.md` owns the cross-package capability order. This
 file owns the package-local sequence that must be completed before treating
 `kuyu-training` as a stable dependency for backend, app, and long-running
-training work.
+training work. Package-local evidence is recorded in `RELIABILITY_EVIDENCE.md`.
 
 ## End State
 
@@ -53,7 +53,7 @@ validator, regression tests, and evidence all agree.
 | KT3 | Target split and import gates | Complete for current public facade | Split the monolithic target into contract, evolution, reinforcement, runtime, and validation targets without changing behavior. | SwiftPM target split, static import-boundary gate, facade compatibility test, and package-level xcodebuild test. |
 | KT4 | Profile isolation | Complete for current profile-adapter boundary | Ensure generic validators stay robot-agnostic while profile validators own robot-specific requirements. | Non-quadrotor executable contract tests, reference-quadrotor profile tests, rejection of legacy CTBR shortcut compatibility, and runtime adapter boundary gate. |
 | KT5 | Downstream adoption readiness | Complete for current public-consumer paths | Give `kuyu-mlx` and app adapters stable typed entrypoints and artifact schemas that do not require internal knowledge. | Type-erased facade tests, generated artifact compatibility tests, and app/MLX smoke tests consuming only public contracts. |
-| KT6 | Individual reliability baseline | Active | Make `kuyu-training` independently auditable before additional integration work depends on it. | Root individual reliability map, README linkage, static gate requirements, and package-level xcodebuild test. |
+| KT6 | Individual reliability baseline | Complete for current package-local baseline | Make `kuyu-training` independently auditable before additional integration work depends on it. | Root individual reliability map, README linkage, package-local evidence, static gate requirements, and package-level xcodebuild test. |
 
 ## Dependency Order
 
@@ -310,7 +310,7 @@ training is solved. Those remain separate capability milestones.
 
 ## KT6: Individual Reliability Baseline
 
-Status: active.
+Status: complete for current package-local baseline.
 
 Goal: `kuyu-training` can be evaluated as a stable dependency on its own,
 without using downstream `kuyu`, `kuyu-mlx`, UI, or CLI behavior as proof of
@@ -338,6 +338,7 @@ Required gates:
 |---|---|
 | Root linkage | `../INDIVIDUAL_RELIABILITY_MILESTONES.md` names `kuyu-training` and its required package test command. |
 | Package linkage | `README.md` and this file link the root individual reliability baseline. |
+| Evidence record | `RELIABILITY_EVIDENCE.md` records the command set, evidence files, and scoped claim for KT6. |
 | Ownership map | `TARGET_OWNERSHIP.md` remains the authority for target ownership and import posture. |
 | Static gate | `../scripts/validate-kuyu-boundaries.sh` rejects target/import drift and direct dataset loads outside the package validator. |
 | Package tests | `TEST_TIMEOUT_SECONDS=120 ../scripts/test.sh kuyu-training` passes before claiming KT6 progress. |
@@ -346,9 +347,10 @@ Exit criteria:
 
 | Criterion | Evidence |
 |---|---|
-| The package has a current incomplete reliability target after KT5. | This KT6 section and milestone table. |
+| The package has a current reliability target after KT5. | This KT6 section and milestone table. |
 | Root validation requires the package-local reliability map. | `../scripts/validate-unconscious-boundaries.sh`. |
 | Root validation requires the root individual reliability map to name `kuyu-training` and its test command. | `../scripts/validate-unconscious-boundaries.sh`. |
+| Package-local evidence records the scoped KT6 claim. | `RELIABILITY_EVIDENCE.md` entry `2026-06-24-kt6-individual-reliability-baseline`. |
 | Package source boundaries remain enforceable without downstream consumers. | `../scripts/validate-kuyu-boundaries.sh`. |
 | Package tests pass through the root dispatcher. | `TEST_TIMEOUT_SECONDS=120 ../scripts/test.sh kuyu-training`. |
 

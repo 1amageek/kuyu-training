@@ -86,6 +86,15 @@ struct TrainingRunContractTests {
         )
     }
 
+    private func appendRawJournalRecord(_ record: TrainingRunIterationRecord, to journalURL: URL) throws {
+        var data = try TrainingRunContractCodec.makeJournalEncoder().encode(record)
+        data.append(0x0A)
+        let handle = try FileHandle(forWritingTo: journalURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: data)
+        try handle.close()
+    }
+
     // MARK: - Creation and manifest
 
     @Test func createWritesManifestJournalOutcomeAndControl() throws {
@@ -380,6 +389,50 @@ struct TrainingRunContractTests {
         }
     }
 
+    @Test func readerRejectsJournalGap() throws {
+        let root = try makeTemporaryRunRoot()
+        var writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-gap"),
+            in: root
+        )
+        try writer.appendIteration(makeRecord(iteration: 0))
+        let journalURL = writer.runDirectory
+            .appendingPathComponent(TrainingRunContractSchema.journalFileName, isDirectory: false)
+        try appendRawJournalRecord(makeRecord(iteration: 2), to: journalURL)
+
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        #expect {
+            try reader.readJournal()
+        } throws: { error in
+            guard case TrainingRunContractError.nonMonotonicIteration(let expected, let found) = error else {
+                return false
+            }
+            return expected == 1 && found == 2
+        }
+    }
+
+    @Test func readerRejectsDuplicateJournalIteration() throws {
+        let root = try makeTemporaryRunRoot()
+        var writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-duplicate-iteration"),
+            in: root
+        )
+        try writer.appendIteration(makeRecord(iteration: 0))
+        let journalURL = writer.runDirectory
+            .appendingPathComponent(TrainingRunContractSchema.journalFileName, isDirectory: false)
+        try appendRawJournalRecord(makeRecord(iteration: 0), to: journalURL)
+
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        #expect {
+            try reader.readJournal()
+        } throws: { error in
+            guard case TrainingRunContractError.nonMonotonicIteration(let expected, let found) = error else {
+                return false
+            }
+            return expected == 1 && found == 0
+        }
+    }
+
     @Test func readerToleratesUnknownJournalFields() throws {
         let root = try makeTemporaryRunRoot()
         var writer = try TrainingRunArchiveWriter.create(
@@ -469,6 +522,25 @@ struct TrainingRunContractTests {
         try reopened.appendIteration(makeRecord(iteration: 2))
         let reader = TrainingRunArchiveReader(runDirectory: reopened.runDirectory)
         #expect(try reader.readJournal().records.count == 3)
+    }
+
+    @Test func openRejectsNonMonotonicJournalOnResume() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-resume-gap")
+        var writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        try writer.appendIteration(makeRecord(iteration: 0))
+        let journalURL = writer.runDirectory
+            .appendingPathComponent(TrainingRunContractSchema.journalFileName, isDirectory: false)
+        try appendRawJournalRecord(makeRecord(iteration: 2), to: journalURL)
+
+        #expect {
+            try TrainingRunArchiveWriter.open(runID: manifest.runID, in: root)
+        } throws: { error in
+            guard case TrainingRunContractError.nonMonotonicIteration(let expected, let found) = error else {
+                return false
+            }
+            return expected == 1 && found == 2
+        }
     }
 
     @Test func openRefusesTornTailUnlessRepairRequested() throws {

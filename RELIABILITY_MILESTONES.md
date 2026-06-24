@@ -165,6 +165,7 @@ Required gates:
 | Area | Required checks |
 |---|---|
 | Journal integrity | Torn tail repair, corrupted middle-line rejection, monotonic iteration enforcement. |
+| Reader/resume integrity | Gap and duplicate iteration records are rejected before readers expose journal state or writers derive resume iteration. |
 | Writer ownership | Duplicate live writer rejection and dead-writer resume behavior. |
 | Terminal outcome | Completed, cancelled, failed, and paused states write explicit outcomes. |
 | Terminal immutability | Terminal runs cannot accept new control commands, be reopened for writing, appended to, or transitioned back to non-terminal states. |
@@ -183,6 +184,7 @@ Exit criteria:
 | Published artifact acceptance is internally consistent. | `trainingRunArtifactValidatorRejectsAcceptedConvergenceWithoutAcceptedCheckpointDecision`, `trainingRunArtifactValidatorRejectsAcceptedCheckpointDecisionWithoutAcceptedConvergence`, `trainingRunArtifactValidatorRejectsAcceptedCheckpointWithoutPublishedEvidence`, `trainingRunArtifactValidatorRejectsStagedCheckpointWithoutCandidateEvidence`, and `trainingRunArtifactValidatorRejectsAcceptedCheckpointIDMismatch`. |
 | Published artifact lifecycle facts are internally consistent. | `trainingRunArtifactValidatorRejectsCompletedManifestWithoutAcceptedConvergence`, `trainingRunArtifactValidatorRejectsRejectedManifestWithOutputCheckpoint`, and `trainingRunArtifactValidatorRejectsTerminalManifestWithoutCompletionTime`. |
 | Every resumable failure mode is either repaired or rejected with a typed error. | Resume/corruption tests. |
+| Reader and resume boundaries reject corrupt iteration order. | `readerRejectsJournalGap`, `readerRejectsDuplicateJournalIteration`, and `openRejectsNonMonotonicJournalOnResume`. |
 | Event streams cannot outlive a stopped run. | `ManagedTrainingRunHandle` tests for completion, cancellation, and shutdown stream termination. |
 | Standard executor entry points preserve the managed lifecycle. | `ManagedTrainingRunExecutor` tests for start/resume event forwarding, start/resume validation rejection, and continuation selection. |
 

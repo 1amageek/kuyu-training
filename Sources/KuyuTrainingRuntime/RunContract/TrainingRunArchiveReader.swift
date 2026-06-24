@@ -117,6 +117,7 @@ public struct TrainingRunArchiveReader: Sendable {
         let truncatedTailBytes = data.distance(from: data.index(after: lastNewlineIndex), to: data.endIndex)
         let decoder = TrainingRunContractCodec.makeDecoder()
         var records: [TrainingRunIterationRecord] = []
+        var expectedIteration = 0
         var lineNumber = 0
         var lineStart = data.startIndex
         var index = data.startIndex
@@ -132,8 +133,19 @@ public struct TrainingRunArchiveReader: Sendable {
                     )
                 }
                 do {
-                    records.append(try decoder.decode(TrainingRunIterationRecord.self, from: Data(line)))
+                    let record = try decoder.decode(TrainingRunIterationRecord.self, from: Data(line))
+                    guard record.iteration == expectedIteration else {
+                        throw TrainingRunContractError.nonMonotonicIteration(
+                            expected: expectedIteration,
+                            found: record.iteration
+                        )
+                    }
+                    records.append(record)
+                    expectedIteration += 1
                 } catch {
+                    if let contractError = error as? TrainingRunContractError {
+                        throw contractError
+                    }
                     throw TrainingRunContractError.corruptedJournalLine(
                         lineNumber: lineNumber,
                         runID: runID,

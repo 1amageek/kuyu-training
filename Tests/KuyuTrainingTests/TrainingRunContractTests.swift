@@ -14,6 +14,14 @@ struct TrainingRunContractTests {
         return root
     }
 
+    private func makeDeadProcessIdentifier() throws -> Int32 {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try probe.run()
+        probe.waitUntilExit()
+        return probe.processIdentifier
+    }
+
     private func makeManifest(
         runID: String,
         createdAt: Date = Date(timeIntervalSince1970: 1_700_000_000),
@@ -1013,11 +1021,7 @@ struct TrainingRunContractTests {
 
     @Test func livenessDerivesInterruptedFromDeadWriter() throws {
         let root = try makeTemporaryRunRoot()
-        let probe = Process()
-        probe.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try probe.run()
-        probe.waitUntilExit()
-        let deadProcessIdentifier = probe.processIdentifier
+        let deadProcessIdentifier = try makeDeadProcessIdentifier()
 
         let writer = try TrainingRunArchiveWriter.create(
             manifest: makeManifest(runID: "run-interrupted", processIdentifier: deadProcessIdentifier),
@@ -1068,6 +1072,27 @@ struct TrainingRunContractTests {
         #expect(try reader.latestControlSequence() == 1)
     }
 
+    @Test func controlSubmissionServiceSubmitsForLiveRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-control-service-live"),
+            in: root
+        )
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+
+        let submission = try TrainingRunControlSubmissionService().submit(
+            reader: reader,
+            action: .pause,
+            requestedBy: "kuyu-cli",
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_525)
+        )
+
+        #expect(submission.command.sequence == 1)
+        #expect(submission.command.action == .pause)
+        #expect(submission.command.requestedBy == "kuyu-cli")
+        #expect(try writer.pendingControlCommand() == submission.command)
+    }
+
     @Test func submitControlCommandRejectsTerminalRun() throws {
         let root = try makeTemporaryRunRoot()
         let writer = try TrainingRunArchiveWriter.create(
@@ -1101,6 +1126,110 @@ struct TrainingRunContractTests {
             .appendingPathComponent(TrainingRunContractSchema.controlDirectoryName, isDirectory: true)
             .appendingPathComponent(TrainingRunContractSchema.controlCommandFileName, isDirectory: false)
         #expect(!FileManager.default.fileExists(atPath: commandURL.path))
+    }
+
+    @Test func controlSubmissionServiceRejectsTerminalRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: "run-control-service-terminal"),
+            in: root
+        )
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        try writer.writeOutcome(
+            TrainingRunOutcome(
+                status: .completed,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_560),
+                finalIteration: 2
+            )
+        )
+
+        #expect {
+            try TrainingRunControlSubmissionService().submit(
+                reader: reader,
+                action: .stop,
+                requestedBy: "kuyu-cli",
+                requestedAt: Date(timeIntervalSince1970: 1_700_000_561)
+            )
+        } throws: { error in
+            guard case TrainingRunControlSubmissionError.runAlreadyFinished(
+                let runID,
+                let status,
+                let action
+            ) = error else {
+                return false
+            }
+            return runID == "run-control-service-terminal"
+                && status == .completed
+                && action == .stop
+        }
+    }
+
+    @Test func controlSubmissionServiceRejectsInterruptedRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let deadProcessIdentifier = try makeDeadProcessIdentifier()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(
+                runID: "run-control-service-interrupted",
+                processIdentifier: deadProcessIdentifier
+            ),
+            in: root
+        )
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+
+        #expect {
+            try TrainingRunControlSubmissionService().submit(
+                reader: reader,
+                action: .pause,
+                requestedBy: "kuyu-cli",
+                requestedAt: Date(timeIntervalSince1970: 1_700_000_562)
+            )
+        } throws: { error in
+            guard case TrainingRunControlSubmissionError.runInterrupted(
+                let runID,
+                let action
+            ) = error else {
+                return false
+            }
+            return runID == "run-control-service-interrupted"
+                && action == .pause
+        }
+    }
+
+    @Test func controlSubmissionServiceRejectsPausedRunWithDeadWriter() throws {
+        let root = try makeTemporaryRunRoot()
+        let deadProcessIdentifier = try makeDeadProcessIdentifier()
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(
+                runID: "run-control-service-paused-dead",
+                processIdentifier: deadProcessIdentifier
+            ),
+            in: root
+        )
+        let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
+        try writer.writeOutcome(
+            TrainingRunOutcome(
+                status: .paused,
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_563)
+            )
+        )
+
+        #expect {
+            try TrainingRunControlSubmissionService().submit(
+                reader: reader,
+                action: .resume,
+                requestedBy: "kuyu-cli",
+                requestedAt: Date(timeIntervalSince1970: 1_700_000_564)
+            )
+        } throws: { error in
+            guard case TrainingRunControlSubmissionError.pausedWriterDead(
+                let runID,
+                let action
+            ) = error else {
+                return false
+            }
+            return runID == "run-control-service-paused-dead"
+                && action == .resume
+        }
     }
 
     @Test func submitRefusesSecondPendingCommand() throws {

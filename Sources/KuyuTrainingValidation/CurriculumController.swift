@@ -39,9 +39,24 @@ public struct CurriculumController {
             self.maxEpochsPerLevel = maxEpochsPerLevel
         }
 
-        public static let `default`: Config = {
-            do { return try Config() } catch { preconditionFailure("Invalid default Config: \(error)") }
-        }()
+        private init(
+            uncheckedTotalLevels totalLevels: Int,
+            uncheckedScenariosPerLevel scenariosPerLevel: Int,
+            uncheckedAdvanceThreshold advanceThreshold: Double,
+            uncheckedMaxEpochsPerLevel maxEpochsPerLevel: Int
+        ) {
+            self.totalLevels = totalLevels
+            self.scenariosPerLevel = scenariosPerLevel
+            self.advanceThreshold = advanceThreshold
+            self.maxEpochsPerLevel = maxEpochsPerLevel
+        }
+
+        public static let `default` = Config(
+            uncheckedTotalLevels: 5,
+            uncheckedScenariosPerLevel: 20,
+            uncheckedAdvanceThreshold: 0.8,
+            uncheckedMaxEpochsPerLevel: 10
+        )
     }
 
     public enum AdvanceResult: Sendable, Equatable {

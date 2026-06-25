@@ -29,7 +29,7 @@ public struct LearningProjectTemplateCatalog: Sendable {
 
 public extension LearningProjectTemplate {
     static let droneAutonomyStarter: LearningProjectTemplate = {
-        let liftProfile = knownTaskEvaluationProfile(task: "lift")
+        let liftProfile = TaskEvaluationProfile.lift
         return LearningProjectTemplate(
             templateID: "aerial-drone-autonomy-starter-v1",
             displayName: "Drone Autonomy Starter",
@@ -164,7 +164,7 @@ public extension LearningProjectTemplate {
     }()
 
     static let singlePropLiftRecovery: LearningProjectTemplate = {
-        let profile = knownTaskEvaluationProfile(task: "singleLift")
+        let profile = TaskEvaluationProfile.singleLift
         return LearningProjectTemplate(
             templateID: "aerial-single-prop-lift-recovery-v1",
             displayName: "Single Prop Lift Diagnostic",
@@ -620,7 +620,7 @@ public extension LearningProjectTemplate {
 
     static let roArmM1ArmGripperTargetTracking: LearningProjectTemplate = {
         let goal = RoArmM1JointTargetTrainingGoal.canonical
-        let profile = knownTaskEvaluationProfile(task: goal.task)
+        let profile = TaskEvaluationProfile.roArmM1ArmGripperTargetTracking
         return LearningProjectTemplate(
             templateID: "roarm-m1-arm-gripper-target-tracking-v1",
             displayName: "RoArm M1 Arm and Gripper Target Tracking",
@@ -854,14 +854,6 @@ public extension LearningProjectTemplate {
         compute: localCompute(workerCount: 2, candidateEvaluationConcurrency: 2),
         tags: ["automotive", "lane-keeping", "safety", "blueprint", "hybrid"]
     )
-
-    private static func knownTaskEvaluationProfile(task: String) -> TaskEvaluationProfile {
-        do {
-            return try TaskEvaluationProfile.profile(task: task)
-        } catch {
-            preconditionFailure("Missing built-in task evaluation profile for \(task): \(error)")
-        }
-    }
 
     private static func localCompute(
         workerCount: Int,

@@ -39,6 +39,37 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
     public let liftThresholdSource: String?
     public let stabilityLimitEnvelope: RolloutStabilityLimitEnvelope
 
+    public static let lift = TaskEvaluationProfile.makeLiftProfile(task: "lift", profileID: "lift-v1")
+
+    public static let singleLift = TaskEvaluationProfile.makeLiftProfile(
+        task: "singleLift",
+        profileID: "singleLift-v1",
+        observationChannelCount: 8,
+        baseEvaluationSuiteIDs: [6],
+        policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil)
+    )
+
+    public static let roArmM1ArmGripperTargetTracking = TaskEvaluationProfile(
+        family: .roArmM1ArmGripper,
+        profileID: RoArmM1JointTargetTrainingGoal.canonical.taskProfileID,
+        task: RoArmM1JointTargetTrainingGoal.canonical.task,
+        observationChannelCount: 25,
+        baseEvaluationSuiteIDs: [9],
+        regressionSuiteIDs: [9],
+        baselineMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil),
+        policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 2, smoothingTimeConstant: 0.08),
+        minimumRewardAverage: 0,
+        minimumTaskPassRate: 1,
+        minimumHoldTimeRatio: nil,
+        maximumAltitudeErrorRatio: nil,
+        failOnTruncation: true,
+        requiresReferenceTaskPass: true,
+        requiresParentCheckpointEvaluation: false,
+        referenceEvaluatorID: "RoArmM1ArmGripperTargetTrackingEvaluator",
+        qualityEvaluatorID: "RoArmM1ArmGripperQualityEvaluator",
+        liftThresholdSource: nil
+    )
+
     public init(
         family: TaskEvaluationProfileFamily,
         profileID: String,
@@ -109,36 +140,11 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
                 stabilityLimitEnvelope: try referenceQuadrotorAttitudeStabilityLimits()
             )
         case "lift":
-            return liftProfile(task: "lift", profileID: "lift-v1")
+            return .lift
         case "singleLift":
-            return liftProfile(
-                task: "singleLift",
-                profileID: "singleLift-v1",
-                observationChannelCount: 8,
-                baseEvaluationSuiteIDs: [6],
-                policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil)
-            )
+            return .singleLift
         case RoArmM1JointTargetTrainingGoal.canonical.task:
-            return TaskEvaluationProfile(
-                family: .roArmM1ArmGripper,
-                profileID: RoArmM1JointTargetTrainingGoal.canonical.taskProfileID,
-                task: RoArmM1JointTargetTrainingGoal.canonical.task,
-                observationChannelCount: 25,
-                baseEvaluationSuiteIDs: [9],
-                regressionSuiteIDs: [9],
-                baselineMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 100, smoothingTimeConstant: nil),
-                policyMotorNerveSettings: TaskMotorNerveSettings(rateLimitPerSecond: 2, smoothingTimeConstant: 0.08),
-                minimumRewardAverage: 0,
-                minimumTaskPassRate: 1,
-                minimumHoldTimeRatio: nil,
-                maximumAltitudeErrorRatio: nil,
-                failOnTruncation: true,
-                requiresReferenceTaskPass: true,
-                requiresParentCheckpointEvaluation: false,
-                referenceEvaluatorID: "RoArmM1ArmGripperTargetTrackingEvaluator",
-                qualityEvaluatorID: "RoArmM1ArmGripperQualityEvaluator",
-                liftThresholdSource: nil
-            )
+            return .roArmM1ArmGripperTargetTracking
         default:
             throw TaskEvaluationProfileError.unsupportedTask(task)
         }
@@ -179,7 +185,7 @@ public struct TaskEvaluationProfile: Sendable, Codable, Equatable {
         }
     }
 
-    private static func liftProfile(
+    private static func makeLiftProfile(
         task: String,
         profileID: String,
         observationChannelCount: Int = 64,

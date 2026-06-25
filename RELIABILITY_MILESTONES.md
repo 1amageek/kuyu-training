@@ -97,7 +97,7 @@ Acceptance evidence:
 | `README.md` | Documents responsibility boundary and reliability contract. |
 | `../KUYU_PACKAGE_ARCHITECTURE.md` | Defines package and target boundaries. |
 | `../scripts/validate-kuyu-boundaries.sh` | Passes. |
-| Swift safety gate | Source validation rejects `try?`, `DispatchQueue`, `EventLoopFuture`, and `@unchecked Sendable` in package sources. |
+| Swift safety gate | Source validation rejects `try?`, `try!`, crash-only `preconditionFailure` / `fatalError`, `DispatchQueue`, `EventLoopFuture`, and `@unchecked Sendable` in package sources. |
 
 ## KT1: Scenario Truth Preservation
 

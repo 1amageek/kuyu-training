@@ -65,6 +65,16 @@ import Testing
     try TaskEvaluationProfileContractValidator().validate(profile, robotClass: .manipulator)
 }
 
+@Test func taskEvaluationProfileBuiltInConstantsMatchPublicLookup() throws {
+    let lift = try TaskEvaluationProfile.profile(task: "lift")
+    let singleLift = try TaskEvaluationProfile.profile(task: "singleLift")
+    let roArmM1 = try TaskEvaluationProfile.profile(task: RoArmM1JointTargetTrainingGoal.canonical.task)
+
+    #expect(TaskEvaluationProfile.lift == lift)
+    #expect(TaskEvaluationProfile.singleLift == singleLift)
+    #expect(TaskEvaluationProfile.roArmM1ArmGripperTargetTracking == roArmM1)
+}
+
 @Test func taskEvaluationProfileContractRejectsReferenceQuadrotorEvaluatorLeaks() throws {
     let profile = TaskEvaluationProfile(
         family: .roArmM1ArmGripper,

@@ -114,6 +114,15 @@ struct CurriculumControllerTests {
         #expect(config.advanceThreshold == 1.0)
     }
 
+    @Test func defaultConfigUsesBuiltInValidatedValues() {
+        let config = CurriculumController.Config.default
+
+        #expect(config.totalLevels == 5)
+        #expect(config.scenariosPerLevel == 20)
+        #expect(config.advanceThreshold == 0.8)
+        #expect(config.maxEpochsPerLevel == 10)
+    }
+
     @Test func advancesWhenPassRateMeetsThreshold() throws {
         let config = try CurriculumController.Config(
             totalLevels: 3, scenariosPerLevel: 2,

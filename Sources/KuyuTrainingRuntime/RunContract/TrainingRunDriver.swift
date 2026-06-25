@@ -45,6 +45,12 @@ public final class TrainingRunDriver {
         }
     }
 
+    public enum FinishDisposition: Sendable, Equatable {
+        case completed
+        case cancelled
+        case failed(reason: String)
+    }
+
     private var writer: TrainingRunArchiveWriter
     public private(set) var isFinished = false
     public let runIDString: String
@@ -269,6 +275,25 @@ public final class TrainingRunDriver {
 
     // MARK: - Outcomes
 
+    @discardableResult
+    public func finish(result: TrainingRunResult) throws -> FinishDisposition {
+        switch result.manifest.terminalState {
+        case .completed:
+            try finishCompleted(acceptedCheckpointPath: Self.acceptedCheckpointPath(for: result))
+            return .completed
+        case .rejected:
+            try finishCompleted(acceptedCheckpointPath: nil)
+            return .completed
+        case .cancelled:
+            try finishCancelled(acceptedCheckpointPath: nil)
+            return .cancelled
+        case .failed, .running:
+            let reason = result.manifest.failureReason ?? "unknown failure"
+            finishFailedReportingSecondaryFailure(reason: reason)
+            return .failed(reason: reason)
+        }
+    }
+
     public func finishCompleted(acceptedCheckpointPath: String?) throws {
         try finish(status: .completed, acceptedCheckpointPath: acceptedCheckpointPath, failureReason: nil)
     }
@@ -305,6 +330,19 @@ public final class TrainingRunDriver {
             )
         )
         isFinished = true
+    }
+
+    private static func acceptedCheckpointPath(for result: TrainingRunResult) -> String? {
+        guard result.manifest.terminalState == .completed,
+              result.convergence.runID == result.manifest.runID,
+              result.checkpointDecision.runID == result.manifest.runID,
+              result.convergence.accepted,
+              result.checkpointDecision.state == .accepted
+        else {
+            return nil
+        }
+        return result.checkpointDecision.publishedCheckpointURL?.path
+            ?? result.checkpointDecision.candidateCheckpointURL?.path
     }
 
     // MARK: - Checkpoint digest

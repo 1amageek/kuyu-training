@@ -86,6 +86,64 @@ struct TrainingRunContractTests {
         )
     }
 
+    private func makeDriverFinishTrainingRunResult(
+        runID: String,
+        terminalState: LearningRunTerminalState,
+        convergenceAccepted: Bool,
+        checkpointState: CheckpointDecisionState,
+        convergenceRunID: String? = nil,
+        checkpointRunID: String? = nil,
+        candidateCheckpointURL: URL? = nil,
+        publishedCheckpointURL: URL? = nil,
+        failureReason: String? = nil
+    ) -> TrainingRunResult {
+        let candidateCheckpointID = candidateCheckpointURL.map { _ in "candidate" }
+            ?? publishedCheckpointURL.map { _ in "candidate" }
+        let manifest = LearningRunManifest(
+            runID: runID,
+            mode: .supervised,
+            configHash: "config-hash",
+            suiteID: "suite-0",
+            seedSet: [1],
+            policyID: "policy",
+            outputCheckpointID: checkpointState == .accepted ? candidateCheckpointID : nil,
+            workerCount: 1,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            completedAt: Date(timeIntervalSince1970: 1_700_000_010),
+            terminalState: terminalState,
+            failureReason: failureReason
+        )
+        let convergence = ConvergenceSummary(
+            runID: convergenceRunID ?? runID,
+            accepted: convergenceAccepted,
+            reason: convergenceAccepted ? "accepted" : (failureReason ?? "rejected"),
+            bestCheckpointID: convergenceAccepted ? candidateCheckpointID : nil,
+            finalTrainingLoss: convergenceAccepted ? 0.1 : 1.0,
+            finalValidationLoss: nil,
+            rewardMovingAverage: nil,
+            passRate: convergenceAccepted ? 1 : 0,
+            failureRate: convergenceAccepted ? 0 : 1,
+            safetyRegressionDetected: false,
+            plateauDetected: false,
+            overfitRiskDetected: false
+        )
+        let decision = CheckpointDecision(
+            runID: checkpointRunID ?? runID,
+            state: checkpointState,
+            reason: checkpointState.rawValue,
+            candidateCheckpointID: candidateCheckpointID,
+            candidateCheckpointURL: candidateCheckpointURL,
+            publishedCheckpointURL: publishedCheckpointURL,
+            decidedAt: Date(timeIntervalSince1970: 1_700_000_011)
+        )
+        return TrainingRunResult(
+            manifest: manifest,
+            metrics: [],
+            convergence: convergence,
+            checkpointDecision: decision
+        )
+    }
+
     private func appendRawJournalRecord(_ record: TrainingRunIterationRecord, to journalURL: URL) throws {
         var data = try TrainingRunContractCodec.makeJournalEncoder().encode(record)
         data.append(0x0A)
@@ -797,6 +855,126 @@ struct TrainingRunContractTests {
         let reader = TrainingRunArchiveReader(runDirectory: writer.runDirectory)
         #expect(try reader.loadOutcome().failureReason == "diverged: non-finite loss")
         #expect(try reader.liveness() == .finished(.failed))
+    }
+
+    @Test func driverFinishResultPublishesAcceptedCheckpointOnlyForAcceptedCompletedRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-driver-finish-accepted")
+        var writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        try writer.appendIteration(makeRecord(iteration: 0))
+        let driver = try TrainingRunDriver.resume(runID: manifest.runID.rawValue, runRoot: root)
+        let published = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("accepted", isDirectory: true)
+
+        let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: true,
+            checkpointState: .accepted,
+            publishedCheckpointURL: published
+        ))
+
+        let outcome = try TrainingRunArchiveReader(runDirectory: writer.runDirectory).loadOutcome()
+        #expect(disposition == .completed)
+        #expect(outcome.status == .completed)
+        #expect(outcome.finalIteration == 0)
+        #expect(outcome.acceptedCheckpointPath == published.path)
+    }
+
+    @Test func driverFinishResultDoesNotPublishCheckpointForRejectedDecision() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-driver-finish-rejected")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let driver = try TrainingRunDriver.resume(runID: manifest.runID.rawValue, runRoot: root)
+        let candidate = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("candidate", isDirectory: true)
+
+        let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: false,
+            checkpointState: .rejected,
+            candidateCheckpointURL: candidate
+        ))
+
+        let outcome = try TrainingRunArchiveReader(runDirectory: writer.runDirectory).loadOutcome()
+        #expect(disposition == .completed)
+        #expect(outcome.status == .completed)
+        #expect(outcome.acceptedCheckpointPath == nil)
+    }
+
+    @Test func driverFinishResultDoesNotPublishCheckpointForAcceptedDecisionWithoutAcceptedConvergence() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-driver-finish-convergence-rejected")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let driver = try TrainingRunDriver.resume(runID: manifest.runID.rawValue, runRoot: root)
+        let candidate = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("candidate", isDirectory: true)
+
+        let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: false,
+            checkpointState: .accepted,
+            candidateCheckpointURL: candidate
+        ))
+
+        let outcome = try TrainingRunArchiveReader(runDirectory: writer.runDirectory).loadOutcome()
+        #expect(disposition == .completed)
+        #expect(outcome.status == .completed)
+        #expect(outcome.acceptedCheckpointPath == nil)
+    }
+
+    @Test func driverFinishResultDoesNotPublishCheckpointForRunIDMismatch() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-driver-finish-run-id-mismatch")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let driver = try TrainingRunDriver.resume(runID: manifest.runID.rawValue, runRoot: root)
+        let published = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("accepted", isDirectory: true)
+
+        let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: true,
+            checkpointState: .accepted,
+            checkpointRunID: "other-run",
+            publishedCheckpointURL: published
+        ))
+
+        let outcome = try TrainingRunArchiveReader(runDirectory: writer.runDirectory).loadOutcome()
+        #expect(disposition == .completed)
+        #expect(outcome.status == .completed)
+        #expect(outcome.acceptedCheckpointPath == nil)
+    }
+
+    @Test func driverFinishResultWritesFailureOutcomeForFailedTerminalState() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-driver-finish-failed")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let driver = try TrainingRunDriver.resume(runID: manifest.runID.rawValue, runRoot: root)
+
+        let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .failed,
+            convergenceAccepted: false,
+            checkpointState: .failed,
+            failureReason: "diverged: non-finite loss"
+        ))
+
+        let outcome = try TrainingRunArchiveReader(runDirectory: writer.runDirectory).loadOutcome()
+        #expect(disposition == .failed(reason: "diverged: non-finite loss"))
+        #expect(outcome.status == .failed)
+        #expect(outcome.failureReason == "diverged: non-finite loss")
+        #expect(outcome.acceptedCheckpointPath == nil)
     }
 
     @Test func livenessReportsLiveForCurrentProcess() throws {

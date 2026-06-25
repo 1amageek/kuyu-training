@@ -277,9 +277,10 @@ public final class TrainingRunDriver {
 
     @discardableResult
     public func finish(result: TrainingRunResult) throws -> FinishDisposition {
-        switch result.manifest.terminalState {
-        case .completed:
-            try finishCompleted(acceptedCheckpointPath: Self.acceptedCheckpointPath(for: result))
+        let classification = TrainingRunResultTerminalClassifier().classify(result: result)
+        switch classification.status {
+        case .accepted:
+            try finishCompleted(acceptedCheckpointPath: classification.acceptedCheckpointPath)
             return .completed
         case .rejected:
             try finishCompleted(acceptedCheckpointPath: nil)
@@ -287,10 +288,9 @@ public final class TrainingRunDriver {
         case .cancelled:
             try finishCancelled(acceptedCheckpointPath: nil)
             return .cancelled
-        case .failed, .running:
-            let reason = result.manifest.failureReason ?? "unknown failure"
-            finishFailedReportingSecondaryFailure(reason: reason)
-            return .failed(reason: reason)
+        case .failed, .incomplete:
+            finishFailedReportingSecondaryFailure(reason: classification.reason)
+            return .failed(reason: classification.reason)
         }
     }
 
@@ -330,19 +330,6 @@ public final class TrainingRunDriver {
             )
         )
         isFinished = true
-    }
-
-    private static func acceptedCheckpointPath(for result: TrainingRunResult) -> String? {
-        guard result.manifest.terminalState == .completed,
-              result.convergence.runID == result.manifest.runID,
-              result.checkpointDecision.runID == result.manifest.runID,
-              result.convergence.accepted,
-              result.checkpointDecision.state == .accepted
-        else {
-            return nil
-        }
-        return result.checkpointDecision.publishedCheckpointURL?.path
-            ?? result.checkpointDecision.candidateCheckpointURL?.path
     }
 
     // MARK: - Checkpoint digest

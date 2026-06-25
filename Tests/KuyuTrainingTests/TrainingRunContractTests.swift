@@ -883,6 +883,28 @@ struct TrainingRunContractTests {
         #expect(outcome.acceptedCheckpointPath == published.path)
     }
 
+    @Test func terminalClassifierAcceptsOnlyConsistentCompletedAcceptedRun() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-terminal-classifier-accepted")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let published = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("accepted", isDirectory: true)
+
+        let classification = TrainingRunResultTerminalClassifier().classify(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: true,
+            checkpointState: .accepted,
+            publishedCheckpointURL: published
+        ))
+
+        #expect(classification.status == .accepted)
+        #expect(classification.accepted)
+        #expect(classification.acceptedCheckpointPath == published.path)
+    }
+
     @Test func driverFinishResultDoesNotPublishCheckpointForRejectedDecision() throws {
         let root = try makeTemporaryRunRoot()
         let manifest = makeManifest(runID: "run-driver-finish-rejected")

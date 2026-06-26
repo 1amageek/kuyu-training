@@ -183,6 +183,7 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
         case emptyRequest
         case missingEvolutionArtifact(String)
         case invalidEvolutionArtifact(String)
+        case evolutionCheckpointNotAccepted([String])
         case missingCheckpointEvaluationArtifact(String)
         case invalidCheckpointEvaluationArtifact(CheckpointEvaluationArtifactCompatibilityFailure)
         case incompatibleRunAndProbeArtifacts(runID: String, probeTrainingRunID: String)
@@ -239,6 +240,26 @@ public struct GeneratedTrainingArtifactCompatibilityVerifier: Sendable {
             throw VerificationError.missingEvolutionArtifact(fileName)
         } catch let error as EvolutionRunArtifactValidator.ValidationError {
             throw VerificationError.invalidEvolutionArtifact(String(describing: error))
+        }
+    }
+
+    public func evolutionPublicationProjection(
+        for artifacts: EvolutionRunArtifactBundle
+    ) -> EvolutionArtifactPublicationProjection {
+        EvolutionArtifactPublicationProjection(artifacts: artifacts)
+    }
+
+    public func loadEvolutionPublicationProjection(
+        from artifactDirectory: URL
+    ) throws -> EvolutionArtifactPublicationProjection {
+        try evolutionPublicationProjection(for: loadEvolutionArtifacts(from: artifactDirectory))
+    }
+
+    public func requireAcceptedEvolutionCheckpoint(
+        _ projection: EvolutionArtifactPublicationProjection
+    ) throws {
+        guard projection.accepted else {
+            throw VerificationError.evolutionCheckpointNotAccepted(projection.reasons)
         }
     }
 

@@ -251,6 +251,45 @@ import KuyuTraining
     #expect(report.evolutionArtifacts?.acceptedCheckpoint.accepted == true)
 }
 
+@Test func generatedArtifactCompatibilityVerifierProjectsEvolutionPublicationStatus() throws {
+    let directory = try generatedArtifactTemporaryDirectory()
+    defer { generatedArtifactCleanup(directory) }
+
+    try generatedEvolutionArtifact(directory: directory)
+
+    let verifier = GeneratedTrainingArtifactCompatibilityVerifier()
+    let artifacts = try verifier.loadEvolutionArtifacts(from: directory)
+    let projection = verifier.evolutionPublicationProjection(for: artifacts)
+
+    #expect(projection.accepted)
+    #expect(projection.acceptedCheckpointPath == directory.appendingPathComponent("checkpoint-0").path)
+    #expect(projection.acceptedCandidateID == "candidate-0")
+    #expect(projection.bestCheckpointPath == directory.appendingPathComponent("checkpoint-0").path)
+    #expect(projection.bestCandidateID == "candidate-0")
+    #expect(projection.reasons.isEmpty)
+    #expect(projection.decisionPath == directory.appendingPathComponent(EvolutionAcceptedCheckpointDecision.fileName).path)
+    try verifier.requireAcceptedEvolutionCheckpoint(projection)
+}
+
+@Test func generatedArtifactCompatibilityVerifierRejectsUnacceptedEvolutionPublication() throws {
+    let directory = try generatedArtifactTemporaryDirectory()
+    defer { generatedArtifactCleanup(directory) }
+
+    try generatedEvolutionArtifact(directory: directory, terminalState: .rejected, accepted: false)
+
+    let verifier = GeneratedTrainingArtifactCompatibilityVerifier()
+    let projection = try verifier.loadEvolutionPublicationProjection(from: directory)
+
+    #expect(!projection.accepted)
+    #expect(projection.acceptedCheckpointPath == nil)
+    do {
+        try verifier.requireAcceptedEvolutionCheckpoint(projection)
+        Issue.record("Expected rejected evolution publication to fail closed.")
+    } catch GeneratedTrainingArtifactCompatibilityVerifier.VerificationError.evolutionCheckpointNotAccepted(let reasons) {
+        #expect(reasons.contains("not-accepted"))
+    }
+}
+
 @Test func generatedArtifactCompatibilityVerifierRejectsMissingEvolutionArtifacts() throws {
     let directory = try generatedArtifactTemporaryDirectory()
     defer { generatedArtifactCleanup(directory) }
@@ -417,7 +456,11 @@ private func generatedArtifactRunResult(
     )
 }
 
-private func generatedEvolutionArtifact(directory: URL) throws {
+private func generatedEvolutionArtifact(
+    directory: URL,
+    terminalState: EvolutionRunTerminalState = .completed,
+    accepted: Bool = true
+) throws {
     let runID = "evolution-public-artifact"
     let candidateID = "candidate-0"
     let checkpointURL = directory.appendingPathComponent("checkpoint-0")
@@ -432,7 +475,7 @@ private func generatedEvolutionArtifact(directory: URL) throws {
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),
         completedAt: Date(timeIntervalSince1970: 2),
-        terminalState: .completed
+        terminalState: terminalState
     )
     let generation = PopulationGenerationRecord(
         runID: runID,
@@ -442,8 +485,8 @@ private func generatedEvolutionArtifact(directory: URL) throws {
         eliteCandidateIDs: [candidateID],
         bestCandidateID: candidateID,
         bestFitness: 1,
-        accepted: true,
-        rejectionReasons: [],
+        accepted: accepted,
+        rejectionReasons: accepted ? [] : ["not-accepted"],
         createdAt: Date(timeIntervalSince1970: 2)
     )
     let candidate = GenomeCandidate(

@@ -1530,12 +1530,12 @@ private final class FakeTrainingProbeExecutor: TrainingProbeScenarioExecuting {
         request: SimulationRunRequest,
         to directory: URL,
         includeSuccessfulScenarios: Bool
-    ) async throws -> AttitudeRecoveryRelabelReport? {
+    ) async throws -> RecoveryRelabelReport? {
         _ = includeSuccessfulScenarios
         guard writesRecoveryDataset else { return nil }
         _ = try TrainingDatasetExporter().write(output: output, to: directory)
         let relabeledEntryCount = recoveryRelabeledEntryCount ?? output.logs.count
-        return AttitudeRecoveryRelabelReport(
+        return RecoveryRelabelReport(
             sourceEntryCount: output.logs.count,
             relabeledEntryCount: relabeledEntryCount,
             relabeledStepCount: output.logs.reduce(0) { $0 + $1.log.events.count },

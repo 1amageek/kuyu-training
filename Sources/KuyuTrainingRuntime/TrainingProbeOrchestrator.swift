@@ -509,13 +509,13 @@ public struct TrainingProbeResult: Sendable, Equatable {
 public struct TrainingProbeRecoveryRelabelStatus: Sendable, Codable, Equatable {
     public let attempted: Bool
     public let datasetDirectory: URL?
-    public let report: AttitudeRecoveryRelabelReport?
+    public let report: RecoveryRelabelReport?
     public let failureReason: String?
 
     public init(
         attempted: Bool,
         datasetDirectory: URL?,
-        report: AttitudeRecoveryRelabelReport?,
+        report: RecoveryRelabelReport?,
         failureReason: String?
     ) {
         self.attempted = attempted
@@ -547,7 +547,7 @@ public protocol TrainingProbeScenarioExecuting {
         request: SimulationRunRequest,
         to directory: URL,
         includeSuccessfulScenarios: Bool
-    ) async throws -> AttitudeRecoveryRelabelReport?
+    ) async throws -> RecoveryRelabelReport?
 }
 
 public extension TrainingProbeScenarioExecuting {
@@ -556,7 +556,7 @@ public extension TrainingProbeScenarioExecuting {
         request: SimulationRunRequest,
         to directory: URL,
         includeSuccessfulScenarios: Bool
-    ) async throws -> AttitudeRecoveryRelabelReport? {
+    ) async throws -> RecoveryRelabelReport? {
         _ = includeSuccessfulScenarios
         return nil
     }

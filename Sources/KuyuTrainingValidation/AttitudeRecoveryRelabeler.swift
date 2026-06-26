@@ -23,36 +23,14 @@ public struct AttitudeRecoveryRelabelConfig: Sendable, Equatable {
     }
 }
 
-public struct AttitudeRecoveryRelabelReport: Sendable, Codable, Equatable {
-    public let sourceEntryCount: Int
-    public let relabeledEntryCount: Int
-    public let relabeledStepCount: Int
-    public let relabeledCutStepCount: Int
-    public let skippedEntryCount: Int
-
-    public init(
-        sourceEntryCount: Int,
-        relabeledEntryCount: Int,
-        relabeledStepCount: Int,
-        relabeledCutStepCount: Int,
-        skippedEntryCount: Int
-    ) {
-        self.sourceEntryCount = sourceEntryCount
-        self.relabeledEntryCount = relabeledEntryCount
-        self.relabeledStepCount = relabeledStepCount
-        self.relabeledCutStepCount = relabeledCutStepCount
-        self.skippedEntryCount = skippedEntryCount
-    }
-}
-
 public struct AttitudeRecoveryRelabelResult: Sendable, Equatable {
     public let entries: [ScenarioLogEntry]
-    public let report: AttitudeRecoveryRelabelReport
+    public let report: RecoveryRelabelReport
     public let policyId: String
 
     public init(
         entries: [ScenarioLogEntry],
-        report: AttitudeRecoveryRelabelReport,
+        report: RecoveryRelabelReport,
         policyId: String = "teacherActiveAltitudeHoldRelabel"
     ) {
         self.entries = entries
@@ -108,7 +86,7 @@ public struct AttitudeRecoveryRelabeler: Sendable {
 
         return AttitudeRecoveryRelabelResult(
             entries: relabeledEntries,
-            report: AttitudeRecoveryRelabelReport(
+            report: RecoveryRelabelReport(
                 sourceEntryCount: entries.count,
                 relabeledEntryCount: relabeledEntries.count,
                 relabeledStepCount: relabeledStepCount,

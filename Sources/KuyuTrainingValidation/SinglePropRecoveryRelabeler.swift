@@ -21,9 +21,9 @@ public struct SinglePropRecoveryRelabelConfig: Sendable, Equatable {
 
 public struct SinglePropRecoveryRelabelResult: Sendable, Equatable {
     public let entries: [ScenarioLogEntry]
-    public let report: AttitudeRecoveryRelabelReport
+    public let report: RecoveryRelabelReport
 
-    public init(entries: [ScenarioLogEntry], report: AttitudeRecoveryRelabelReport) {
+    public init(entries: [ScenarioLogEntry], report: RecoveryRelabelReport) {
         self.entries = entries
         self.report = report
     }
@@ -78,7 +78,7 @@ public struct SinglePropRecoveryRelabeler: Sendable {
 
         return SinglePropRecoveryRelabelResult(
             entries: relabeledEntries,
-            report: AttitudeRecoveryRelabelReport(
+            report: RecoveryRelabelReport(
                 sourceEntryCount: entries.count,
                 relabeledEntryCount: relabeledEntries.count,
                 relabeledStepCount: relabeledStepCount,

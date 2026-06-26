@@ -26,6 +26,14 @@ import KuyuTraining
         driveIntents: [],
         reflexCorrections: []
     )
+    let report = RecoveryRelabelReport(
+        sourceEntryCount: 1,
+        relabeledEntryCount: 1,
+        relabeledStepCount: 2,
+        relabeledCutStepCount: 1,
+        skippedEntryCount: 0
+    )
+    let legacyReport: AttitudeRecoveryRelabelReport = report
     let decoder = TrainingRunContractCodec.makeDecoder()
     let decodedDate = try decoder.decode(Date.self, from: Data("\"1970-01-01T00:00:00Z\"".utf8))
 
@@ -33,6 +41,7 @@ import KuyuTraining
     #expect(evaluation.candidateID == "candidate-a")
     #expect(health.episodeCount == 1)
     #expect(dataset.time == 0)
+    #expect(report == legacyReport)
     #expect(decodedDate.timeIntervalSince1970 == 0)
     #expect(TrainingRunContractSchema.manifestFileName == "manifest.json")
 }

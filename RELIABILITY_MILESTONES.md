@@ -293,6 +293,7 @@ KT5 is split into consumer-facing gates:
 | KT5a. Runtime scenario run output neutrality | Complete | `TrainingScenarioExecuting` and `TrainingProbeScenarioExecuting` return `TrainingScenarioRunOutput`; `KuyuTrainingRuntime` rejects `KuyAtt1RunOutput` reintroduction. |
 | KT5b. Generated artifact compatibility | Complete | Public artifact loaders, writers, publication projections, and compatibility errors round-trip generated training/probe/checkpoint/evolution artifacts through the facade without internal target imports leaking to consumers. |
 | KT5c. App/MLX public-consumer smoke | Complete | `kuyu` and `kuyu-mlx` smoke paths consume only public contracts and generated artifacts for training/evaluation entrypoints. |
+| KT5d. Recovery relabel report neutrality | Complete | `RecoveryRelabelReport` is the task-neutral public recovery relabel summary, with the old attitude-specific spelling kept only as a source-compatible alias. |
 
 Completed slices:
 
@@ -302,6 +303,7 @@ Completed slices:
 | Generated training, probe, checkpoint evaluation, and evolution artifacts can be loaded, validated, and projected for publication through a public compatibility verifier. | `GeneratedTrainingArtifactCompatibilityVerifier`, `EvolutionArtifactPublicationProjection`, `GeneratedTrainingArtifactCompatibilityTests`, `TrainingScenarioRunOutput`, `TrainingRunArtifactValidator`, `TrainingProbeArtifactValidator`, `CheckpointEvaluationArtifactValidator`, `EvolutionRunArtifactValidator`; empty verification requests, mismatched run/probe artifact combinations, missing evolution artifacts, rejected evolution publication, checkpoint-evaluation validation failures, and duplicate scenario-horizon evidence fail closed through public verifier errors. |
 | Current app and MLX consumers load generated training run, probe, checkpoint evaluation, and evolution artifacts through public compatibility verification rather than internal validators, internal validator errors, or file-layout knowledge. | `GeneratedTrainingArtifactCompatibilityVerifier`, `TrainingRunStore`, `KuyuCLI`, `LearningCampaignArtifactValidator`, `LearningCampaignOrchestrator`, `ReferenceQuadrotorCheckpointRegressionEvidenceResolver`, `../scripts/validate-kuyu-boundaries.sh`. |
 | Generic rollout health preserves failure-reason histograms and fragment matching for downstream gates without interpreting profile-specific reason semantics. | `RolloutHealth.failureReasonCounts`, `RolloutHealth.containsFailureReason(matching:)`, `RolloutHealthTests.rolloutHealthAggregatesFailureReasonCounts`, `RolloutHealthTests.rolloutHealthMatchesFailureReasonFragments`, `../scripts/validate-kuyu-boundaries.sh`. |
+| Recovery relabel summaries are public and task-neutral across attitude, lift, and single-lift relabel paths. | `RecoveryRelabelReport`, `AttitudeRecoveryRelabelReport` source-compatible alias, `TrainingProbeScenarioExecuting.writeRecoveryRelabelDataset`, `KuyuTrainingFacadeCompatibilityTests`, `../scripts/validate-kuyu-boundaries.sh`. |
 
 Goal: `kuyu-mlx`, CLI, UI, and long-running training harnesses can depend on
 public `kuyu-training` contracts without reading internal runtime state.

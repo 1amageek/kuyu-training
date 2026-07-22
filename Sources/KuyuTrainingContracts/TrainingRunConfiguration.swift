@@ -9,6 +9,15 @@ public enum TrainingDeterminismTier: String, Sendable, Codable, Equatable, CaseI
 public enum TrainingVariationKind: String, Sendable, Codable, Equatable, CaseIterable {
     case copy
     case gaussian
+
+    public var contractVersion: Int {
+        switch self {
+        case .copy:
+            1
+        case .gaussian:
+            2
+        }
+    }
 }
 
 public enum TrainingArtifactRetentionKind: String, Sendable, Codable, Equatable, CaseIterable {
@@ -22,19 +31,22 @@ public struct TrainingScenarioSelection: Sendable, Codable, Equatable {
     public let tier: TrainingDeterminismTier
     public let cutPeriodSteps: UInt64
     public let explicitSeeds: [String]?
+    public let evaluationFidelity: TrainingEvaluationFidelity
 
     public init(
         suiteIDs: [Int] = [6],
         episodesPerSuite: Int = 1,
         tier: TrainingDeterminismTier = .tier1,
         cutPeriodSteps: UInt64 = 2,
-        explicitSeeds: [String]? = nil
+        explicitSeeds: [String]? = nil,
+        evaluationFidelity: TrainingEvaluationFidelity = .fullScenario
     ) {
         self.suiteIDs = suiteIDs.isEmpty ? [6] : suiteIDs
         self.episodesPerSuite = max(1, episodesPerSuite)
         self.tier = tier
         self.cutPeriodSteps = cutPeriodSteps
         self.explicitSeeds = explicitSeeds
+        self.evaluationFidelity = evaluationFidelity
     }
 }
 
@@ -93,26 +105,35 @@ public struct TrainingMutationSchedule: Sendable, Codable, Equatable {
 
 public struct TrainingEvolutionSettings: Sendable, Codable, Equatable {
     public let eliteCount: Int
+    public let candidateRefinement: TrainingCandidateRefinementPolicy?
     public let searchStrategy: EvolutionSearchStrategy
     public let variation: TrainingVariationKind
     public let mutation: TrainingMutationSchedule
     public let minimumIncumbentImprovement: Double
     public let minimumNoveltyScore: Double?
+    /// Search-continuation budget: consecutive gate-rejected generations that
+    /// may keep exploring before the run stops. nil or 0 keeps the historical
+    /// stop-at-first-rejection behavior.
+    public let maxConsecutiveRejectedGenerations: Int?
 
     public init(
         eliteCount: Int = 10,
+        candidateRefinement: TrainingCandidateRefinementPolicy? = nil,
         searchStrategy: EvolutionSearchStrategy = .qualityDiversity,
         variation: TrainingVariationKind = .gaussian,
         mutation: TrainingMutationSchedule = TrainingMutationSchedule(),
         minimumIncumbentImprovement: Double = 0,
-        minimumNoveltyScore: Double? = nil
+        minimumNoveltyScore: Double? = nil,
+        maxConsecutiveRejectedGenerations: Int? = nil
     ) {
         self.eliteCount = max(1, eliteCount)
+        self.candidateRefinement = candidateRefinement
         self.searchStrategy = searchStrategy
         self.variation = variation
         self.mutation = mutation
         self.minimumIncumbentImprovement = minimumIncumbentImprovement.isFinite ? minimumIncumbentImprovement : 0
         self.minimumNoveltyScore = minimumNoveltyScore?.isFinite == true ? minimumNoveltyScore : nil
+        self.maxConsecutiveRejectedGenerations = maxConsecutiveRejectedGenerations.map { max(0, $0) }
     }
 }
 
@@ -155,6 +176,7 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
     public let iterations: Int
     public let learningRate: Double
     public let maxBatches: Int?
+    public let stopping: TrainingReinforcementStoppingSettings
 
     public init(
         warmupEnabled: Bool = true,
@@ -162,7 +184,8 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         rolloutDuration: Double = 2,
         iterations: Int = 1,
         learningRate: Double = 3e-4,
-        maxBatches: Int? = nil
+        maxBatches: Int? = nil,
+        stopping: TrainingReinforcementStoppingSettings = .conservative
     ) {
         self.warmupEnabled = warmupEnabled
         self.requiresTemporalActorCritic = requiresTemporalActorCritic
@@ -170,6 +193,7 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         self.iterations = max(1, iterations)
         self.learningRate = learningRate.isFinite ? max(0.000_001, learningRate) : 3e-4
         self.maxBatches = maxBatches.map { max(1, $0) }
+        self.stopping = stopping
     }
 }
 
@@ -232,7 +256,8 @@ public struct TrainingRunConfiguration: Sendable, Codable, Equatable {
     public let trainingStageID: String?
     public let trainingStageDisplayName: String?
     public let trainingStageKind: AutonomousTrainingStageKind?
-    public let scenarioSelection: TrainingScenarioSelection
+    public let searchScenarioSelection: TrainingScenarioSelection
+    public let acceptanceScenarioSelection: TrainingScenarioSelection
     public let resources: TrainingResourcePlan
     public let evolution: TrainingEvolutionSettings
     public let convergence: TrainingConvergenceSettings
@@ -246,7 +271,11 @@ public struct TrainingRunConfiguration: Sendable, Codable, Equatable {
         trainingStageID: String? = nil,
         trainingStageDisplayName: String? = nil,
         trainingStageKind: AutonomousTrainingStageKind? = nil,
-        scenarioSelection: TrainingScenarioSelection = TrainingScenarioSelection(),
+        searchScenarioSelection: TrainingScenarioSelection = TrainingScenarioSelection(),
+        acceptanceScenarioSelection: TrainingScenarioSelection = TrainingScenarioSelection(
+            suiteIDs: [6, 7, 8],
+            episodesPerSuite: 3
+        ),
         resources: TrainingResourcePlan = TrainingResourcePlan(),
         evolution: TrainingEvolutionSettings = TrainingEvolutionSettings(),
         convergence: TrainingConvergenceSettings = TrainingConvergenceSettings(),
@@ -259,7 +288,8 @@ public struct TrainingRunConfiguration: Sendable, Codable, Equatable {
         self.trainingStageID = trainingStageID
         self.trainingStageDisplayName = trainingStageDisplayName
         self.trainingStageKind = trainingStageKind
-        self.scenarioSelection = scenarioSelection
+        self.searchScenarioSelection = searchScenarioSelection
+        self.acceptanceScenarioSelection = acceptanceScenarioSelection
         self.resources = resources
         self.evolution = evolution
         self.convergence = convergence

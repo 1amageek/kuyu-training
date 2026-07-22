@@ -24,6 +24,9 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
     public let eliteCount: Int
     public let workerCount: Int
     public let candidateEvaluationConcurrency: Int
+    public let candidateAcceptanceMode: EvolutionCandidateAcceptanceMode
+    public let searchEvaluationFidelity: TrainingEvaluationFidelity
+    public let searchRefinementPolicy: TrainingCandidateRefinementPolicy?
     public let searchStrategy: EvolutionSearchStrategy
     public let bootstrapSource: EvolutionBootstrapSource
     public let worldModelUsage: EvolutionWorldModelUsage
@@ -49,6 +52,9 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
         eliteCount: Int,
         workerCount: Int,
         candidateEvaluationConcurrency: Int = 1,
+        candidateAcceptanceMode: EvolutionCandidateAcceptanceMode = .searchGateOnly,
+        searchEvaluationFidelity: TrainingEvaluationFidelity = .fullScenario,
+        searchRefinementPolicy: TrainingCandidateRefinementPolicy? = nil,
         searchStrategy: EvolutionSearchStrategy = .genetic,
         bootstrapSource: EvolutionBootstrapSource = .checkpoint,
         worldModelUsage: EvolutionWorldModelUsage = .disabled,
@@ -73,6 +79,9 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
         self.eliteCount = max(1, eliteCount)
         self.workerCount = max(1, workerCount)
         self.candidateEvaluationConcurrency = max(1, candidateEvaluationConcurrency)
+        self.candidateAcceptanceMode = candidateAcceptanceMode
+        self.searchEvaluationFidelity = searchEvaluationFidelity
+        self.searchRefinementPolicy = searchRefinementPolicy
         self.searchStrategy = searchStrategy
         self.bootstrapSource = bootstrapSource
         self.worldModelUsage = worldModelUsage
@@ -104,6 +113,9 @@ public struct EvolutionRunManifest: Sendable, Codable, Equatable {
             eliteCount: eliteCount,
             workerCount: workerCount,
             candidateEvaluationConcurrency: candidateEvaluationConcurrency,
+            candidateAcceptanceMode: candidateAcceptanceMode,
+            searchEvaluationFidelity: searchEvaluationFidelity,
+            searchRefinementPolicy: searchRefinementPolicy,
             searchStrategy: searchStrategy,
             bootstrapSource: bootstrapSource,
             worldModelUsage: worldModelUsage,
@@ -132,6 +144,8 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
     public let eliteCount: Int
     public let workerCount: Int
     public let candidateEvaluationConcurrency: Int
+    public let searchEvaluationFidelity: TrainingEvaluationFidelity
+    public let searchRefinementPolicy: TrainingCandidateRefinementPolicy?
     public let searchStrategy: EvolutionSearchStrategy
     public let bootstrapSource: EvolutionBootstrapSource
     public let worldModelUsage: EvolutionWorldModelUsage
@@ -141,6 +155,13 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
     public let mutationNoiseScale: Double
     public let adaptiveMutation: EvolutionAdaptiveMutationConfig
     public let earlyStopping: EvolutionEarlyStoppingConfig
+    /// Search-continuation budget: how many consecutive gate-rejected
+    /// generations may continue exploring with ranking-selected parents
+    /// before the run stops. nil or 0 preserves the historical behavior of
+    /// stopping at the first rejected generation. Exploration never grants
+    /// elite, QD, or promotion eligibility; the strict gate keeps owning
+    /// capability claims.
+    public let maxConsecutiveRejectedGenerations: Int?
     public let worldExecutionRequirement: VectorizedWorldExecutionRequirement
     public let parentCheckpointID: String?
     public let parentCheckpointURL: URL?
@@ -157,6 +178,8 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
         eliteCount: Int,
         workerCount: Int = 1,
         candidateEvaluationConcurrency: Int = 1,
+        searchEvaluationFidelity: TrainingEvaluationFidelity = .fullScenario,
+        searchRefinementPolicy: TrainingCandidateRefinementPolicy? = nil,
         searchStrategy: EvolutionSearchStrategy = .genetic,
         bootstrapSource: EvolutionBootstrapSource = .checkpoint,
         worldModelUsage: EvolutionWorldModelUsage = .disabled,
@@ -166,6 +189,7 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
         mutationNoiseScale: Double = 0.01,
         adaptiveMutation: EvolutionAdaptiveMutationConfig = EvolutionAdaptiveMutationConfig(),
         earlyStopping: EvolutionEarlyStoppingConfig = EvolutionEarlyStoppingConfig(),
+        maxConsecutiveRejectedGenerations: Int? = nil,
         worldExecutionRequirement: VectorizedWorldExecutionRequirement = .acceleratorSharedWorld,
         parentCheckpointID: String? = nil,
         parentCheckpointURL: URL? = nil
@@ -181,15 +205,18 @@ public struct EvolutionRunConfig: Sendable, Codable, Equatable {
         self.eliteCount = max(1, min(eliteCount, populationSize))
         self.workerCount = max(1, workerCount)
         self.candidateEvaluationConcurrency = max(1, min(candidateEvaluationConcurrency, populationSize))
+        self.searchEvaluationFidelity = searchEvaluationFidelity
+        self.searchRefinementPolicy = searchRefinementPolicy
         self.searchStrategy = searchStrategy
         self.bootstrapSource = bootstrapSource
         self.worldModelUsage = worldModelUsage
         self.antitheticSampling = antitheticSampling || searchStrategy == .antitheticEvolutionStrategy
-        self.commonRandomSeed = commonRandomSeed == 0 ? 1 : commonRandomSeed
+        self.commonRandomSeed = commonRandomSeed
         self.mutationRate = mutationRate
         self.mutationNoiseScale = max(0, mutationNoiseScale)
         self.adaptiveMutation = adaptiveMutation
         self.earlyStopping = earlyStopping
+        self.maxConsecutiveRejectedGenerations = maxConsecutiveRejectedGenerations
         self.worldExecutionRequirement = worldExecutionRequirement
         self.parentCheckpointID = parentCheckpointID
         self.parentCheckpointURL = parentCheckpointURL
@@ -261,6 +288,7 @@ public struct GenomeCandidate: Sendable, Codable, Equatable {
     public let antitheticSign: Int?
     public let mutationSummary: String?
     public let isIncumbent: Bool?
+    public let isCarryover: Bool?
 
     public init(
         runID: String,
@@ -276,7 +304,8 @@ public struct GenomeCandidate: Sendable, Codable, Equatable {
         antitheticPairID: String? = nil,
         antitheticSign: Int? = nil,
         mutationSummary: String? = nil,
-        isIncumbent: Bool = false
+        isIncumbent: Bool = false,
+        isCarryover: Bool = false
     ) {
         self.runID = runID
         self.generationIndex = max(0, generationIndex)
@@ -292,6 +321,7 @@ public struct GenomeCandidate: Sendable, Codable, Equatable {
         self.antitheticSign = antitheticSign
         self.mutationSummary = mutationSummary
         self.isIncumbent = isIncumbent
+        self.isCarryover = isCarryover
     }
 }
 
@@ -312,6 +342,7 @@ public struct FitnessSummary: Sendable, Codable, Equatable {
     public let generationIndex: Int
     public let candidateID: String
     public let taskID: String
+    public let evaluationFidelity: TrainingEvaluationFidelity
     public let scalarFitness: Double
     public let rewardAverage: Double
     public let taskPassRate: Double
@@ -330,6 +361,7 @@ public struct FitnessSummary: Sendable, Codable, Equatable {
         generationIndex: Int,
         candidateID: String,
         taskID: String,
+        evaluationFidelity: TrainingEvaluationFidelity = .fullScenario,
         scalarFitness: Double,
         rewardAverage: Double,
         taskPassRate: Double,
@@ -347,6 +379,7 @@ public struct FitnessSummary: Sendable, Codable, Equatable {
         self.generationIndex = max(0, generationIndex)
         self.candidateID = candidateID
         self.taskID = taskID
+        self.evaluationFidelity = evaluationFidelity
         self.scalarFitness = scalarFitness
         self.rewardAverage = rewardAverage
         self.taskPassRate = taskPassRate

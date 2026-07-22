@@ -9,6 +9,7 @@ public struct EvolutionRunConfigValidator: Sendable {
         case invalidMutationNoiseScale(Double)
         case invalidAdaptiveMutationRateRange(minimum: Double, maximum: Double)
         case unsupportedBoundedRefinementFidelity(TrainingEvaluationFidelity)
+        case invalidRejectedGenerationBudget(Int)
     }
 
     public init() {}
@@ -27,6 +28,9 @@ public struct EvolutionRunConfigValidator: Sendable {
             throw ValidationError.unsupportedBoundedRefinementFidelity(
                 refinementPolicy.evaluationFidelity
             )
+        }
+        if let budget = config.maxConsecutiveRejectedGenerations, budget < 0 {
+            throw ValidationError.invalidRejectedGenerationBudget(budget)
         }
         if config.generationCount > 1, config.populationSize < 2 {
             throw ValidationError.insufficientPopulation(

@@ -90,10 +90,10 @@ public struct EvolutionGatePolicy: Sendable {
             }
             return lhs.scalarFitness > rhs.scalarFitness
         }
-        let best = ranked.first
         let passing = ranked.filter { summary in
             candidatePasses(summary)
         }
+        let best = passing.first
         let incumbentFitness = knownIncumbentFitness ?? incumbentCandidateID.flatMap { candidateID in
             fitness.first { $0.candidateID == candidateID }?.scalarFitness
         }
@@ -127,7 +127,88 @@ public struct EvolutionGatePolicy: Sendable {
         )
     }
 
-    private func candidatePasses(_ summary: FitnessSummary) -> Bool {
+    public func acceptanceReport(
+        runID: String,
+        candidate: FitnessSummary,
+        incumbent: FitnessSummary
+    ) -> EvolutionGateReport {
+        let absoluteReport = report(
+            runID: runID,
+            generationIndex: candidate.generationIndex,
+            fitness: [candidate]
+        )
+        let fitnessDelta = candidate.scalarFitness - incumbent.scalarFitness
+        var reasons = absoluteReport.rejectionReasons
+        if let minimumImprovementOverIncumbent,
+           fitnessDelta <= minimumImprovementOverIncumbent {
+            reasons.append(
+                "incumbent-improvement-below-min:\(candidate.candidateID):"
+                    + "\(candidate.scalarFitness)-\(incumbent.scalarFitness)"
+                    + "<=\(minimumImprovementOverIncumbent)"
+            )
+        }
+        reasons.append(contentsOf: acceptanceMetricRegressions(
+            candidate: candidate,
+            incumbent: incumbent
+        ))
+        return EvolutionGateReport(
+            runID: runID,
+            generationIndex: candidate.generationIndex,
+            accepted: absoluteReport.accepted && reasons.isEmpty,
+            eliteCandidateIDs: absoluteReport.accepted && reasons.isEmpty
+                ? [candidate.candidateID]
+                : [],
+            bestCandidateID: candidate.candidateID,
+            bestFitness: candidate.scalarFitness,
+            incumbentCandidateID: incumbent.candidateID,
+            incumbentFitness: incumbent.scalarFitness,
+            bestVsIncumbentDelta: fitnessDelta,
+            minimumImprovementOverIncumbent: minimumImprovementOverIncumbent,
+            rejectionReasons: reasons
+        )
+    }
+
+    /// Curriculum-rung acceptance: the candidate must pass the absolute gate
+    /// on acceptance evidence; the incumbent is recorded for transparency but
+    /// not compared. See TrainingPromotionCriterion.
+    public func absoluteAcceptanceReport(
+        runID: String,
+        candidate: FitnessSummary,
+        incumbent: FitnessSummary
+    ) -> EvolutionGateReport {
+        let absoluteReport = report(
+            runID: runID,
+            generationIndex: candidate.generationIndex,
+            fitness: [candidate]
+        )
+        return EvolutionGateReport(
+            runID: runID,
+            generationIndex: candidate.generationIndex,
+            accepted: absoluteReport.accepted,
+            eliteCandidateIDs: absoluteReport.accepted ? [candidate.candidateID] : [],
+            bestCandidateID: candidate.candidateID,
+            bestFitness: candidate.scalarFitness,
+            incumbentCandidateID: incumbent.candidateID,
+            incumbentFitness: incumbent.scalarFitness,
+            bestVsIncumbentDelta: candidate.scalarFitness - incumbent.scalarFitness,
+            minimumImprovementOverIncumbent: nil,
+            rejectionReasons: absoluteReport.rejectionReasons
+        )
+    }
+
+    func candidatePasses(_ summary: FitnessSummary) -> Bool {
+        candidatePasses(summary, requiresNovelty: true)
+    }
+
+    func candidatePassesRefinement(_ summary: FitnessSummary) -> Bool {
+        candidatePasses(summary, requiresNovelty: false)
+    }
+
+    private func candidatePasses(
+        _ summary: FitnessSummary,
+        requiresNovelty: Bool
+    ) -> Bool {
+        guard summary.evaluationFidelity.isFullScenario else { return false }
         guard summary.taskPassRate >= minimumTaskPassRate else { return false }
         guard summary.safetyViolationRate <= maximumSafetyViolationRate else { return false }
         if let minimumHoldTimeRatio {
@@ -145,7 +226,7 @@ public struct EvolutionGatePolicy: Sendable {
         if let minimumRewardAverage {
             guard summary.rewardAverage >= minimumRewardAverage else { return false }
         }
-        if let minimumNoveltyScore {
+        if requiresNovelty, let minimumNoveltyScore {
             guard let noveltyScore = summary.noveltyScore,
                   noveltyScore.isFinite,
                   noveltyScore >= minimumNoveltyScore else {
@@ -157,6 +238,9 @@ public struct EvolutionGatePolicy: Sendable {
 
     private func candidateRejectionReasons(_ summary: FitnessSummary) -> [String] {
         var reasons: [String] = []
+        if !summary.evaluationFidelity.isFullScenario {
+            reasons.append("evaluation-fidelity-not-full-scenario:\(summary.candidateID)")
+        }
         if summary.taskPassRate < minimumTaskPassRate {
             reasons.append("task-pass-rate-below-min:\(summary.candidateID):\(summary.taskPassRate)<\(minimumTaskPassRate)")
         }
@@ -196,6 +280,68 @@ public struct EvolutionGatePolicy: Sendable {
             }
         }
         reasons.append(contentsOf: summary.failureReasons.map { "candidate-failure:\(summary.candidateID):\($0)" })
+        return reasons
+    }
+
+    private func acceptanceMetricRegressions(
+        candidate: FitnessSummary,
+        incumbent: FitnessSummary
+    ) -> [String] {
+        var reasons: [String] = []
+        if candidate.taskPassRate < incumbent.taskPassRate {
+            reasons.append(
+                "acceptance-metric-regression:taskPassRate:"
+                    + "\(candidate.taskPassRate)<\(incumbent.taskPassRate)"
+            )
+        }
+        if candidate.safetyViolationRate > incumbent.safetyViolationRate {
+            reasons.append(
+                "acceptance-metric-regression:safetyViolationRate:"
+                    + "\(candidate.safetyViolationRate)>\(incumbent.safetyViolationRate)"
+            )
+        }
+        if let incumbentHoldTimeRatio = incumbent.holdTimeRatio {
+            if let candidateHoldTimeRatio = candidate.holdTimeRatio {
+                if candidateHoldTimeRatio < incumbentHoldTimeRatio {
+                    reasons.append(
+                        "acceptance-metric-regression:holdTimeRatio:"
+                            + "\(candidateHoldTimeRatio)<\(incumbentHoldTimeRatio)"
+                    )
+                }
+            } else {
+                reasons.append("acceptance-metric-regression:holdTimeRatio:missing")
+            }
+        }
+        if let incumbentAltitudeErrorRatio = incumbent.altitudeErrorRatio {
+            if let candidateAltitudeErrorRatio = candidate.altitudeErrorRatio {
+                if candidateAltitudeErrorRatio > incumbentAltitudeErrorRatio {
+                    reasons.append(
+                        "acceptance-metric-regression:altitudeErrorRatio:"
+                            + "\(candidateAltitudeErrorRatio)>\(incumbentAltitudeErrorRatio)"
+                    )
+                }
+            } else {
+                reasons.append("acceptance-metric-regression:altitudeErrorRatio:missing")
+            }
+        }
+        if candidate.rewardAverage < incumbent.rewardAverage {
+            reasons.append(
+                "acceptance-metric-regression:rewardAverage:"
+                    + "\(candidate.rewardAverage)<\(incumbent.rewardAverage)"
+            )
+        }
+        if let incumbentEnergyPenalty = incumbent.energyPenalty {
+            if let candidateEnergyPenalty = candidate.energyPenalty {
+                if candidateEnergyPenalty > incumbentEnergyPenalty {
+                    reasons.append(
+                        "acceptance-metric-regression:energyPenalty:"
+                            + "\(candidateEnergyPenalty)>\(incumbentEnergyPenalty)"
+                    )
+                }
+            } else {
+                reasons.append("acceptance-metric-regression:energyPenalty:missing")
+            }
+        }
         return reasons
     }
 }

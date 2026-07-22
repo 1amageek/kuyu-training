@@ -122,6 +122,10 @@ public struct TrainingEvolutionSettings: Sendable, Codable, Equatable {
     /// may keep exploring before the run stops. nil or 0 keeps the historical
     /// stop-at-first-rejection behavior.
     public let maxConsecutiveRejectedGenerations: Int?
+    /// Acceptance promotion criterion. nil means incumbentRelative (the
+    /// standard capability-claim criterion). absoluteThreshold is reserved
+    /// for curriculum rungs and is recorded in the run manifest.
+    public let promotionCriterion: TrainingPromotionCriterion?
 
     public init(
         eliteCount: Int = 10,
@@ -131,7 +135,8 @@ public struct TrainingEvolutionSettings: Sendable, Codable, Equatable {
         mutation: TrainingMutationSchedule = TrainingMutationSchedule(),
         minimumIncumbentImprovement: Double = 0,
         minimumNoveltyScore: Double? = nil,
-        maxConsecutiveRejectedGenerations: Int? = nil
+        maxConsecutiveRejectedGenerations: Int? = nil,
+        promotionCriterion: TrainingPromotionCriterion? = nil
     ) {
         self.eliteCount = max(1, eliteCount)
         self.candidateRefinement = candidateRefinement
@@ -141,6 +146,7 @@ public struct TrainingEvolutionSettings: Sendable, Codable, Equatable {
         self.minimumIncumbentImprovement = minimumIncumbentImprovement.isFinite ? minimumIncumbentImprovement : 0
         self.minimumNoveltyScore = minimumNoveltyScore?.isFinite == true ? minimumNoveltyScore : nil
         self.maxConsecutiveRejectedGenerations = maxConsecutiveRejectedGenerations.map { max(0, $0) }
+        self.promotionCriterion = promotionCriterion
     }
 }
 

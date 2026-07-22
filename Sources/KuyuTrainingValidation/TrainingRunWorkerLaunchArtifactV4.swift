@@ -242,6 +242,7 @@ struct TrainingRunWorkerLaunchArtifactV4: Codable, Equatable {
     let minimumIncumbentImprovement: Double
     let minimumNoveltyScore: Double?
     let maxConsecutiveRejectedGenerations: Int?
+    let promotionCriterion: String?
   }
 
   struct ConvergenceSettings: Codable, Equatable {

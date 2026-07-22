@@ -260,7 +260,8 @@ extension TrainingRunWorkerLaunchArtifactV4.EvolutionSettings {
       mutation: .init(settings.mutation),
       minimumIncumbentImprovement: settings.minimumIncumbentImprovement,
       minimumNoveltyScore: settings.minimumNoveltyScore,
-      maxConsecutiveRejectedGenerations: settings.maxConsecutiveRejectedGenerations
+      maxConsecutiveRejectedGenerations: settings.maxConsecutiveRejectedGenerations,
+      promotionCriterion: settings.promotionCriterion?.rawValue
     )
   }
 
@@ -292,6 +293,9 @@ extension TrainingRunWorkerLaunchArtifactV4.EvolutionSettings {
           )
         }
         return $0
+      },
+      promotionCriterion: try promotionCriterion.map {
+        try rawValue($0, field: "configuration.evolution.promotionCriterion")
       }
     )
   }

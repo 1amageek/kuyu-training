@@ -2,7 +2,7 @@ import Foundation
 import KuyuTrainingContracts
 
 public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 6
+    public static let currentSchemaVersion = 12
     public static let currentContractVersion = 1
     public static let fileName = "evolution-contract.json"
 
@@ -25,6 +25,7 @@ public struct EvolutionRunArtifactContract: Sendable, Codable, Equatable {
             "quality-diversity-archive.json",
             "lineage.json",
             "evaluation-trace.jsonl",
+            "acceptance-evaluations.jsonl",
         ]
     ) {
         self.schemaVersion = schemaVersion
@@ -43,6 +44,7 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
     public let candidateID: String?
     public let checkpointID: String?
     public let checkpointURL: URL?
+    public let checkpointReference: EvolutionCheckpointReference?
     public let scalarFitness: Double?
     public let bestCandidateID: String?
     public let bestCheckpointID: String?
@@ -62,6 +64,7 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
         candidateID: String?,
         checkpointID: String?,
         checkpointURL: URL?,
+        checkpointReference: EvolutionCheckpointReference? = nil,
         scalarFitness: Double?,
         bestCandidateID: String? = nil,
         bestCheckpointID: String? = nil,
@@ -80,6 +83,7 @@ public struct EvolutionAcceptedCheckpointDecision: Sendable, Codable, Equatable 
         self.candidateID = candidateID
         self.checkpointID = checkpointID
         self.checkpointURL = checkpointURL
+        self.checkpointReference = checkpointReference
         self.scalarFitness = scalarFitness
         self.bestCandidateID = bestCandidateID
         self.bestCheckpointID = bestCheckpointID
@@ -145,11 +149,16 @@ public protocol EvolutionArtifactWriting {
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord],
         evaluationTraces: [EvolutionCandidateEvaluationTrace],
+        acceptanceEvaluations: [EvolutionCandidateAcceptanceRecord],
         to directory: URL
     ) throws
 }
 
 public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
+    public enum WriteError: Error, Sendable, Equatable {
+        case acceptedCheckpointReferenceMissing(String)
+    }
+
     public init() {}
 
     public func write(
@@ -161,6 +170,7 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         qualityDiversityArchive: EvolutionQualityDiversityArchive,
         lineage: [EvolutionLineageRecord],
         evaluationTraces: [EvolutionCandidateEvaluationTrace],
+        acceptanceEvaluations: [EvolutionCandidateAcceptanceRecord],
         to directory: URL
     ) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -184,12 +194,14 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
             to: directory.appendingPathComponent("elite-archive.json"),
             options: [.atomic]
         )
-        try encoder.encode(Self.acceptedCheckpointDecision(
+        try encoder.encode(try Self.acceptedCheckpointDecision(
             manifest: manifest,
             generations: generations,
             candidates: candidates,
             fitness: fitness,
-            eliteArchive: eliteArchive
+            eliteArchive: eliteArchive,
+            acceptanceEvaluations: acceptanceEvaluations,
+            artifactDirectory: directory
         )).write(
             to: directory.appendingPathComponent(EvolutionAcceptedCheckpointDecision.fileName),
             options: [.atomic]
@@ -206,6 +218,10 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         try writeJSONLines(candidates, to: directory.appendingPathComponent("candidates.jsonl"))
         try writeJSONLines(fitness, to: directory.appendingPathComponent("fitness.jsonl"))
         try writeJSONLines(evaluationTraces, to: directory.appendingPathComponent("evaluation-trace.jsonl"))
+        try writeJSONLines(
+            acceptanceEvaluations,
+            to: directory.appendingPathComponent("acceptance-evaluations.jsonl")
+        )
     }
 
     private func writeJSONLines<T: Encodable>(_ records: [T], to url: URL) throws {
@@ -235,8 +251,10 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         generations: [PopulationGenerationRecord],
         candidates: [GenomeCandidate],
         fitness: [FitnessSummary],
-        eliteArchive: EvolutionEliteArchive
-    ) -> EvolutionAcceptedCheckpointDecision {
+        eliteArchive: EvolutionEliteArchive,
+        acceptanceEvaluations: [EvolutionCandidateAcceptanceRecord],
+        artifactDirectory: URL
+    ) throws -> EvolutionAcceptedCheckpointDecision {
         let bestCandidate = eliteArchive.bestCandidateID.flatMap { candidateID in
             candidates.first { $0.candidateID == candidateID }
         }
@@ -254,33 +272,90 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
         ).map { best, incumbent in best - incumbent }
         let minimumImprovementOverIncumbent = generations.last?.minimumImprovementOverIncumbent
         let improvementAccepted: Bool
-        if let minimumImprovementOverIncumbent,
-           let incumbentFitness,
-           let bestFitness = eliteArchive.bestFitness {
-            improvementAccepted = bestFitness > incumbentFitness + minimumImprovementOverIncumbent
-        } else {
+        switch manifest.candidateAcceptanceMode {
+        case .searchGateOnly:
+            if let minimumImprovementOverIncumbent,
+               let incumbentFitness,
+               let bestFitness = eliteArchive.bestFitness {
+                improvementAccepted = bestFitness > incumbentFitness + minimumImprovementOverIncumbent
+            } else {
+                improvementAccepted = true
+            }
+        case .dedicatedEvaluation, .dedicatedAbsoluteThreshold:
             improvementAccepted = true
         }
+        let candidateAcceptanceSatisfied: Bool
+        switch manifest.candidateAcceptanceMode {
+        case .searchGateOnly:
+            candidateAcceptanceSatisfied = false
+        case .dedicatedEvaluation, .dedicatedAbsoluteThreshold:
+            candidateAcceptanceSatisfied = eliteArchive.bestCandidateID.map { candidateID in
+                acceptanceEvaluations.contains { record in
+                    record.candidateID == candidateID && record.accepted
+                }
+            } ?? false
+        }
+        let publishMetricRegressions = manifest.candidateAcceptanceMode == .searchGateOnly
+            ? Self.publishMetricRegressions(best: bestFitnessSummary, incumbent: incumbentFitnessSummary)
+            : []
         let accepted = manifest.terminalState == .completed
             && bestCandidate != nil
             && improvementAccepted
-            && Self.publishMetricRegressions(best: bestFitnessSummary, incumbent: incumbentFitnessSummary).isEmpty
+            && candidateAcceptanceSatisfied
+            && publishMetricRegressions.isEmpty
         var reasons: [String] = []
         if manifest.terminalState != .completed {
             reasons.append(contentsOf: generations.last?.rejectionReasons ?? [])
         }
-        let publishMetricRegressions = Self.publishMetricRegressions(
-            best: bestFitnessSummary,
-            incumbent: incumbentFitnessSummary
-        )
         reasons.append(contentsOf: publishMetricRegressions)
         if manifest.terminalState == .completed,
+           manifest.candidateAcceptanceMode == .searchGateOnly {
+            reasons.append("dedicated-acceptance-required")
+        }
+        if manifest.candidateAcceptanceMode == .dedicatedEvaluation,
+           let bestCandidateID = eliteArchive.bestCandidateID,
+           !candidateAcceptanceSatisfied {
+            let acceptanceReasons = acceptanceEvaluations
+                .filter { $0.candidateID == bestCandidateID }
+                .flatMap(\.rejectionReasons)
+            reasons.append(contentsOf: acceptanceReasons.map { "acceptance:\($0)" })
+        }
+        if manifest.terminalState == .completed,
+           manifest.candidateAcceptanceMode == .searchGateOnly,
            !improvementAccepted,
            let minimumImprovementOverIncumbent,
            let incumbentFitness,
            let bestFitness = eliteArchive.bestFitness,
            let bestCandidateID = eliteArchive.bestCandidateID {
             reasons.append("incumbent-improvement-below-min:\(bestCandidateID):\(bestFitness)-\(incumbentFitness)<\(minimumImprovementOverIncumbent)")
+        }
+        let checkpointReference: EvolutionCheckpointReference?
+        if accepted, let bestCandidate,
+           let checkpointID = bestCandidate.checkpointID,
+           let checkpointURL = bestCandidate.checkpointURL {
+            switch manifest.candidateAcceptanceMode {
+            case .searchGateOnly:
+                checkpointReference = try EvolutionCheckpointIntegrity().reference(
+                    checkpointID: checkpointID,
+                    checkpointURL: checkpointURL,
+                    artifactRoot: artifactDirectory
+                )
+            case .dedicatedEvaluation, .dedicatedAbsoluteThreshold:
+                guard let reference = acceptanceEvaluations.first(where: {
+                    $0.candidateID == bestCandidate.candidateID && $0.accepted
+                })?.checkpointReference else {
+                    throw WriteError.acceptedCheckpointReferenceMissing(bestCandidate.candidateID)
+                }
+                try EvolutionCheckpointIntegrity().validate(
+                    reference,
+                    expectedCheckpointID: checkpointID,
+                    expectedCheckpointURL: checkpointURL,
+                    artifactRoot: artifactDirectory
+                )
+                checkpointReference = reference
+            }
+        } else {
+            checkpointReference = nil
         }
         return EvolutionAcceptedCheckpointDecision(
             runID: manifest.runID,
@@ -289,6 +364,7 @@ public struct EvolutionArtifactWriter: EvolutionArtifactWriting {
             candidateID: accepted ? bestCandidate?.candidateID : nil,
             checkpointID: accepted ? bestCandidate?.checkpointID : nil,
             checkpointURL: accepted ? bestCandidate?.checkpointURL : nil,
+            checkpointReference: checkpointReference,
             scalarFitness: accepted ? eliteArchive.bestFitness : nil,
             bestCandidateID: bestCandidate?.candidateID,
             bestCheckpointID: bestCandidate?.checkpointID,

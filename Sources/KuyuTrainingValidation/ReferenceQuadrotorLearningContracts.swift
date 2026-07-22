@@ -149,14 +149,38 @@ public enum ReferenceQuadrotorLearningContracts {
         )
     }
 
+    public static func singlePropellerActionContract() -> LearningProjectActionContract {
+        LearningProjectActionContract(
+            schemaID: "single-prop-drive-v1",
+            kind: .continuous,
+            driveCount: 1,
+            actuatorCount: 1,
+            isBounded: true,
+            channels: [
+                LearningProjectActionChannel(
+                    index: 0,
+                    name: "propellerThrust",
+                    unit: "normalized",
+                    normalizedLowerBound: 0,
+                    normalizedUpperBound: 1,
+                    outputTransform: .sigmoid
+                )
+            ]
+        )
+    }
+
     public static func temporalCTBRPolicyContract(
         observationDimension: Int = 64,
-        historyLength: Int = 32
+        historyLength: Int = 32,
+        explorationLogStandardDeviation: Double = -3.2
     ) -> LearningProjectPolicyContract {
         LearningProjectPolicyContract(
             architecture: .temporalGRUActorCritic,
             actionEncoding: .ctbr,
-            actionDistribution: .gaussian,
+            actionDistribution: .fixedGaussian(
+                actionDimension: 4,
+                baseLogStandardDeviation: explorationLogStandardDeviation
+            ),
             actionDimension: 4,
             temporalWindow: LearningProjectTemporalWindowContract(
                 historyLength: historyLength,
@@ -195,7 +219,6 @@ public enum ReferenceQuadrotorLearningContracts {
                 discount: 0.997,
                 gaeLambda: 0.95,
                 valueLossCoefficient: 0.5,
-                entropyCoefficient: 0.01,
                 actionSmoothnessCoefficient: 0.02,
                 epochCount: 4,
                 minibatchSize: 256

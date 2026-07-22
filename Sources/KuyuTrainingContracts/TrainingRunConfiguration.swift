@@ -32,6 +32,11 @@ public struct TrainingScenarioSelection: Sendable, Codable, Equatable {
     public let cutPeriodSteps: UInt64
     public let explicitSeeds: [String]?
     public let evaluationFidelity: TrainingEvaluationFidelity
+    /// Stress severity in (0, 1] applied to severity-capable suites (A1
+    /// actuator swaps). nil means full severity. Severities below 1 are
+    /// stamped into scenario IDs so graded evidence is never conflated with
+    /// full-severity evidence.
+    public let stressSeverity: Double?
 
     public init(
         suiteIDs: [Int] = [6],
@@ -39,7 +44,8 @@ public struct TrainingScenarioSelection: Sendable, Codable, Equatable {
         tier: TrainingDeterminismTier = .tier1,
         cutPeriodSteps: UInt64 = 2,
         explicitSeeds: [String]? = nil,
-        evaluationFidelity: TrainingEvaluationFidelity = .fullScenario
+        evaluationFidelity: TrainingEvaluationFidelity = .fullScenario,
+        stressSeverity: Double? = nil
     ) {
         self.suiteIDs = suiteIDs.isEmpty ? [6] : suiteIDs
         self.episodesPerSuite = max(1, episodesPerSuite)
@@ -47,6 +53,7 @@ public struct TrainingScenarioSelection: Sendable, Codable, Equatable {
         self.cutPeriodSteps = cutPeriodSteps
         self.explicitSeeds = explicitSeeds
         self.evaluationFidelity = evaluationFidelity
+        self.stressSeverity = stressSeverity
     }
 }
 

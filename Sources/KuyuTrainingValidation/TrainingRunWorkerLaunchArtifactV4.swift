@@ -199,6 +199,7 @@ struct TrainingRunWorkerLaunchArtifactV4: Codable, Equatable {
     let cutPeriodSteps: UInt64
     let explicitSeeds: [String]?
     let evaluationFidelity: EvaluationFidelity?
+    let stressSeverity: Double?
   }
 
   struct EvaluationFidelity: Codable, Equatable {

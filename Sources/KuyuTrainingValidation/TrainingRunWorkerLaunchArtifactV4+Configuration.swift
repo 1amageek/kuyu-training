@@ -56,7 +56,8 @@ extension TrainingRunWorkerLaunchArtifactV4.ScenarioSelection {
       tier: selection.tier.rawValue,
       cutPeriodSteps: selection.cutPeriodSteps,
       explicitSeeds: selection.explicitSeeds,
-      evaluationFidelity: .init(selection.evaluationFidelity)
+      evaluationFidelity: .init(selection.evaluationFidelity),
+      stressSeverity: selection.stressSeverity
     )
   }
 
@@ -79,6 +80,11 @@ extension TrainingRunWorkerLaunchArtifactV4.ScenarioSelection {
         throw invalid(field + ".explicitSeeds", "must not contain empty values")
       }
     }
+    if let stressSeverity {
+      guard stressSeverity.isFinite, stressSeverity > 0, stressSeverity <= 1 else {
+        throw invalid(field + ".stressSeverity", "must be in (0, 1]")
+      }
+    }
     return TrainingScenarioSelection(
       suiteIDs: suiteIDs,
       episodesPerSuite: episodesPerSuite,
@@ -86,7 +92,8 @@ extension TrainingRunWorkerLaunchArtifactV4.ScenarioSelection {
       cutPeriodSteps: cutPeriodSteps,
       explicitSeeds: explicitSeeds,
       evaluationFidelity: try evaluationFidelity?.domainFidelity(field: field + ".evaluationFidelity")
-        ?? .fullScenario
+        ?? .fullScenario,
+      stressSeverity: stressSeverity
     )
   }
 }

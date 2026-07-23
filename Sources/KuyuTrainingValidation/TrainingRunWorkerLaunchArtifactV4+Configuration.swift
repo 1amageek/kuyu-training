@@ -365,6 +365,7 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
       iterations: settings.iterations,
       learningRate: settings.learningRate,
       maxBatches: settings.maxBatches,
+      dualLearningRate: settings.dualLearningRate,
       stopping: .init(settings.stopping)
     )
   }
@@ -384,6 +385,12 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
     if let maxBatches, maxBatches <= 0 {
       throw invalid("configuration.reinforcement.maxBatches", "must be positive")
     }
+    let dualRate = try dualLearningRate.map {
+      try finite($0, field: "configuration.reinforcement.dualLearningRate")
+    }
+    if let dualRate, dualRate <= 0 {
+      throw invalid("configuration.reinforcement.dualLearningRate", "must be positive")
+    }
     return TrainingReinforcementSettings(
       warmupEnabled: warmupEnabled,
       requiresTemporalActorCritic: requiresTemporalActorCritic,
@@ -391,6 +398,7 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
       iterations: iterations,
       learningRate: rate,
       maxBatches: maxBatches,
+      dualLearningRate: dualRate,
       stopping: try stopping?.domainSettings() ?? .conservative
     )
   }

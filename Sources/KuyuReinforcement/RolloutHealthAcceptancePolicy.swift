@@ -12,6 +12,16 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
     /// per-iteration rollout noise two orders of magnitude larger), so
     /// consumers should compare through `effectiveSafetyCostTolerance`.
     public let safetyCostTolerance: Double?
+    /// Relative tolerance for the reward-average regression check, as a
+    /// fraction of |baseline.rewardAverage|. The absolute
+    /// rewardAverageTolerance was sized for O(1) rewards; at reward
+    /// magnitudes of 10^3-10^4 it acts as zero tolerance and vetoes
+    /// candidates that trade a fraction of a percent of reward for a real
+    /// safety-cost reduction. The effective tolerance is
+    /// max(rewardAverageTolerance, |baseline| * rewardAverageRelativeTolerance).
+    /// nil keeps the absolute-only comparison (and is how policies recorded
+    /// before this field existed replay).
+    public let rewardAverageRelativeTolerance: Double?
 
     public static let conservative = RolloutHealthAcceptancePolicy(
         uncheckedRewardAverageTolerance: 0.02,
@@ -32,7 +42,8 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
     public init(
         rewardAverageTolerance: Double = 0.02,
         stabilityRegressionEnvelope: RolloutStabilityRegressionEnvelope = .empty,
-        safetyCostTolerance: Double? = 0.02
+        safetyCostTolerance: Double? = 0.02,
+        rewardAverageRelativeTolerance: Double? = nil
     ) throws {
         guard rewardAverageTolerance.isFinite, rewardAverageTolerance >= 0 else {
             throw RolloutHealthAcceptancePolicyError.invalidTolerance
@@ -42,20 +53,39 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
                 throw RolloutHealthAcceptancePolicyError.invalidTolerance
             }
         }
+        if let rewardAverageRelativeTolerance {
+            guard rewardAverageRelativeTolerance.isFinite,
+                  rewardAverageRelativeTolerance >= 0,
+                  rewardAverageRelativeTolerance < 1 else {
+                throw RolloutHealthAcceptancePolicyError.invalidTolerance
+            }
+        }
         self.rewardAverageTolerance = rewardAverageTolerance
         self.stabilityRegressionEnvelope = stabilityRegressionEnvelope
         self.safetyCostTolerance = safetyCostTolerance
+        self.rewardAverageRelativeTolerance = rewardAverageRelativeTolerance
     }
 
     public static func rootRigidBody(
         rewardAverageTolerance: Double = 0.02,
         tolerances: RootRigidBodyStabilityTolerances = .conservative,
-        safetyCostTolerance: Double? = 0.02
+        safetyCostTolerance: Double? = 0.02,
+        rewardAverageRelativeTolerance: Double? = nil
     ) throws -> RolloutHealthAcceptancePolicy {
         try RolloutHealthAcceptancePolicy(
             rewardAverageTolerance: rewardAverageTolerance,
             stabilityRegressionEnvelope: .rootRigidBody(tolerances: tolerances),
-            safetyCostTolerance: safetyCostTolerance
+            safetyCostTolerance: safetyCostTolerance,
+            rewardAverageRelativeTolerance: rewardAverageRelativeTolerance
+        )
+    }
+
+    public func effectiveRewardAverageTolerance(
+        baselineRewardAverage: Double
+    ) -> Double {
+        max(
+            rewardAverageTolerance,
+            abs(baselineRewardAverage) * (rewardAverageRelativeTolerance ?? 0)
         )
     }
 
@@ -90,7 +120,8 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
             stabilityRegressionEnvelope.rejectionReasons(candidate: candidate, relativeTo: baseline),
             to: &reasons
         )
-        if candidate.rewardAverage < baseline.rewardAverage - rewardAverageTolerance {
+        if candidate.rewardAverage < baseline.rewardAverage
+            - effectiveRewardAverageTolerance(baselineRewardAverage: baseline.rewardAverage) {
             reasons.append(.rewardAverageRegressed)
         }
         return reasons
@@ -122,5 +153,6 @@ public struct RolloutHealthAcceptancePolicy: Sendable, Codable, Equatable {
         rewardAverageTolerance = uncheckedRewardAverageTolerance
         self.stabilityRegressionEnvelope = stabilityRegressionEnvelope
         self.safetyCostTolerance = safetyCostTolerance
+        rewardAverageRelativeTolerance = nil
     }
 }

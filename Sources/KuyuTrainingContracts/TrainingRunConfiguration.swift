@@ -192,6 +192,12 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
     /// Dual-ascent step size for the Lagrangian safety-cost multiplier.
     /// nil keeps the backend default.
     public let dualLearningRate: Double?
+    /// Initial value of the Lagrangian safety-cost multiplier. The dual
+    /// state only advances on committed iterations, so a run whose first
+    /// iterations are all rejected trains with zero cost pressure and can
+    /// deadlock; a positive initial lambda applies pressure from the first
+    /// iteration. nil keeps the backend default of 0.
+    public let dualInitialLambda: Double?
     public let stopping: TrainingReinforcementStoppingSettings
 
     public init(
@@ -202,6 +208,7 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         learningRate: Double = 3e-4,
         maxBatches: Int? = nil,
         dualLearningRate: Double? = nil,
+        dualInitialLambda: Double? = nil,
         stopping: TrainingReinforcementStoppingSettings = .conservative
     ) {
         self.warmupEnabled = warmupEnabled
@@ -212,6 +219,9 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         self.maxBatches = maxBatches.map { max(1, $0) }
         self.dualLearningRate = dualLearningRate.flatMap {
             $0.isFinite && $0 > 0 ? $0 : nil
+        }
+        self.dualInitialLambda = dualInitialLambda.flatMap {
+            $0.isFinite && $0 >= 0 ? $0 : nil
         }
         self.stopping = stopping
     }

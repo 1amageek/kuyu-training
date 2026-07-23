@@ -8,38 +8,88 @@ public extension TrainingDatasetWriter {
         timeStep: Double,
         determinismTier: String,
         to directory: URL,
+        purpose: TrainingDatasetPurpose = .reinforcementRollout,
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
     ) throws -> URL {
-        try write(
-            dataset: makeDataset(
-                episode: episode,
-                timeStep: timeStep,
-                determinismTier: determinismTier,
-                observation: observation,
-                provenance: provenance
-            ),
+        try rejectDirectActuatorActions(in: episode)
+        let dataset = makeDataset(
+            episode: episode,
+            timeStep: timeStep,
+            determinismTier: determinismTier,
+            purpose: purpose,
+            observation: observation,
+            provenance: provenance
+        )
+        let contract: TrainingDatasetContract
+        switch purpose {
+        case .behaviorCloning:
+            contract = TrainingDatasetContract(
+                requiresTerminalFacts: false,
+                requiresBehaviorCloningSamples: true
+            )
+        case .reinforcementRollout, .worldModel:
+            contract = TrainingDatasetContract(
+                requiresTerminalFacts: false,
+                requiresCausalTransitions: true
+            )
+        }
+        try TrainingDatasetContractValidator().validate(dataset, against: contract)
+        return try write(
+            dataset: dataset,
             to: directory
         )
+    }
+
+    private func rejectDirectActuatorActions(in episode: RolloutEpisode) throws {
+        if let transitions = episode.transitions {
+            for (index, transition) in transitions.enumerated() {
+                if case .actuatorValues = transition.action {
+                    throw TrainingDatasetContractValidator.ValidationError.missingPolicyAction(
+                        recordIndex: index
+                    )
+                }
+            }
+            return
+        }
+
+        for (index, step) in episode.steps.enumerated() {
+            guard step.log.driveIntents.isEmpty, !step.log.actuatorValues.isEmpty else { continue }
+            throw TrainingDatasetContractValidator.ValidationError.missingPolicyAction(
+                recordIndex: index
+            )
+        }
     }
 
     func makeDataset(
         episode: RolloutEpisode,
         timeStep: Double,
         determinismTier: String,
+        purpose: TrainingDatasetPurpose = .reinforcementRollout,
         observation: TrainingObservationMetadata? = nil,
         provenance: TrainingProvenanceManifest? = nil
     ) -> TrainingDataset {
-        let records = buildRecords(from: episode)
+        let records: [TrainingDatasetRecord]
+        if purpose == .behaviorCloning {
+            records = buildBehaviorCloningRecords(from: episode)
+        } else {
+            records = buildTransitionRecords(from: episode)
+        }
+        let resolvedPhysicsTimeStep = episode.physicsTimeStep ?? timeStep
+        let resolvedControlPeriodSteps = episode.controlPeriodSteps ?? 1
+        let resolvedTimeStep = resolvedPhysicsTimeStep * Double(resolvedControlPeriodSteps)
         let metadata = TrainingDatasetMetadata(
             scenarioId: episode.scenarioId,
             seed: episode.seed,
-            timeStep: timeStep,
+            timeStep: resolvedTimeStep,
             determinismTier: determinismTier,
             configHash: episode.configHash,
             channelCount: maxChannelCount(records),
             driveCount: maxDriveCount(records),
             recordCount: records.count,
+            purpose: purpose,
+            physicsTimeStep: resolvedPhysicsTimeStep,
+            controlPeriodSteps: resolvedControlPeriodSteps,
             failureReason: episode.failureReason,
             failureTime: episode.failureTime,
             episodeId: episode.episodeId,
@@ -57,10 +107,52 @@ public extension TrainingDatasetWriter {
         return TrainingDataset(metadata: metadata, records: records)
     }
 
-    private func buildRecords(from episode: RolloutEpisode) -> [TrainingDatasetRecord] {
-        let logs = episode.steps.map(\.log)
-        let filledDriveIntents = filledDriveIntents(for: logs)
-        return episode.steps.enumerated().map { index, step in
+    private func buildTransitionRecords(from episode: RolloutEpisode) -> [TrainingDatasetRecord] {
+        guard let transitions = episode.transitions,
+              transitions.count == episode.steps.count else {
+            return episode.steps.map { legacyTransitionRecord(step: $0, episode: episode) }
+        }
+        return transitions.map { transition in
+            let step = transition.outcome
+            let event = step.log
+            let sensors = transition.actionObservation.sensorSamples.map { sample in
+                TrainingSensorSample(
+                    channelIndex: sample.channelIndex,
+                    value: sample.value,
+                    timestamp: sample.timestamp
+                )
+            }
+            let reflex = reflexCorrections(from: transition.action)
+            return TrainingDatasetRecord(
+                time: event.time.time,
+                policyDecisionID: transition.decisionID,
+                actionObservationTime: actionObservationTime(for: transition),
+                actionObservationState: stateVector(from: transition.actionObservation.plantState),
+                sensors: sensors,
+                driveIntents: driveIntents(from: transition.action),
+                reflexCorrections: reflex,
+                physicsState: predictedStateVector(
+                    from: transition.actionObservation.plantState,
+                    dt: transition.duration
+                ),
+                actualState: stateVector(from: step.observation.plantState),
+                actionValues: transition.policyAction.values,
+                policyActionEncoding: transition.policyAction.encoding,
+                behaviorMean: transition.behaviorStatistics?.mean,
+                behaviorLogProbability: transition.behaviorStatistics?.logProbability,
+                actuatorCommandValues: actuatorCommandValues(from: event),
+                continueValue: (step.done || step.truncated) ? 0.0 : 1.0,
+                reward: step.reward,
+                done: step.done,
+                truncated: step.truncated,
+                episodeId: episode.episodeId,
+                policyId: episode.policyId
+            )
+        }
+    }
+
+    private func buildBehaviorCloningRecords(from episode: RolloutEpisode) -> [TrainingDatasetRecord] {
+        episode.steps.map { step in
             let event = step.log
             let sensors = event.sensorSamples.map { sample in
                 TrainingSensorSample(
@@ -79,12 +171,15 @@ public extension TrainingDatasetWriter {
             }
             return TrainingDatasetRecord(
                 time: event.time.time,
+                actionObservationTime: actionObservationTime(for: event),
+                actionObservationState: stateVector(from: step.observation.plantState),
                 sensors: sensors,
-                driveIntents: filledDriveIntents[index],
+                driveIntents: driveIntents(from: event),
                 reflexCorrections: reflex,
-                physicsState: physicsPredictionState(for: index, in: episode.steps),
                 actualState: stateVector(from: step.observation.plantState),
-                actionValues: actionValues(from: event),
+                actionValues: policyActionValues(from: event),
+                policyActionEncoding: "environment",
+                actuatorCommandValues: actuatorCommandValues(from: event),
                 continueValue: (step.done || step.truncated) ? 0.0 : 1.0,
                 reward: step.reward,
                 done: step.done,
@@ -95,25 +190,40 @@ public extension TrainingDatasetWriter {
         }
     }
 
-    private func filledDriveIntents(for events: [WorldStepLog]) -> [[TrainingDriveIntent]] {
-        let rawDriveIntents = events.map { event in
-            driveIntents(from: event)
-        }
-
-        guard let firstNonEmptyIndex = rawDriveIntents.firstIndex(where: { !$0.isEmpty }) else {
-            return rawDriveIntents
-        }
-
-        var filled = rawDriveIntents
-        var lastDriveIntents = rawDriveIntents[firstNonEmptyIndex]
-        for index in filled.indices {
-            if filled[index].isEmpty {
-                filled[index] = lastDriveIntents
-            } else {
-                lastDriveIntents = filled[index]
-            }
-        }
-        return filled
+    private func legacyTransitionRecord(
+        step: EnvironmentStep,
+        episode: RolloutEpisode
+    ) -> TrainingDatasetRecord {
+        let event = step.log
+        return TrainingDatasetRecord(
+            time: event.time.time,
+            sensors: event.sensorSamples.map {
+                TrainingSensorSample(
+                    channelIndex: $0.channelIndex,
+                    value: $0.value,
+                    timestamp: $0.timestamp
+                )
+            },
+            driveIntents: driveIntents(from: event),
+            reflexCorrections: event.reflexCorrections.map {
+                TrainingReflexCorrection(
+                    driveIndex: $0.driveIndex.rawValue,
+                    clamp: $0.clampMultiplier,
+                    damping: $0.damping,
+                    delta: $0.delta
+                )
+            },
+            actualState: stateVector(from: step.observation.plantState),
+            actionValues: policyActionValues(from: event),
+            policyActionEncoding: "environment",
+            actuatorCommandValues: actuatorCommandValues(from: event),
+            continueValue: (step.done || step.truncated) ? 0.0 : 1.0,
+            reward: step.reward,
+            done: step.done,
+            truncated: step.truncated,
+            episodeId: episode.episodeId,
+            policyId: episode.policyId
+        )
     }
 
     private func maxChannelCount(_ records: [TrainingDatasetRecord]) -> Int {
@@ -121,31 +231,54 @@ public extension TrainingDatasetWriter {
         return maxIndex + 1
     }
 
+    private func actionObservationTime(for transition: RolloutTransition) -> Double {
+        transition.actionObservation.time.time
+    }
+
+    private func actionObservationTime(for event: WorldStepLog) -> Double {
+        event.time.time
+    }
+
     private func maxDriveCount(_ records: [TrainingDatasetRecord]) -> Int {
         let maxIndex = records.flatMap { $0.driveIntents }.map { Int($0.driveIndex) }.max() ?? -1
         return maxIndex + 1
     }
 
-    private func driveIntents(from event: WorldStepLog) -> [TrainingDriveIntent] {
-        if !event.driveIntents.isEmpty {
-            return event.driveIntents.map { intent in
+    private func driveIntents(from action: EnvironmentAction) -> [TrainingDriveIntent] {
+        switch action {
+        case .driveIntents(let drives, _):
+            return drives.map { intent in
                 TrainingDriveIntent(
                     driveIndex: intent.index.rawValue,
                     value: intent.activation,
                     parameters: intent.parameters
                 )
             }
+        case .actuatorValues:
+            return []
         }
+    }
 
-        return event.actuatorValues
-            .sorted { $0.index.rawValue < $1.index.rawValue }
-            .map { value in
-                TrainingDriveIntent(
-                    driveIndex: value.index.rawValue,
-                    value: value.value,
-                    parameters: []
-                )
-            }
+    private func driveIntents(from event: WorldStepLog) -> [TrainingDriveIntent] {
+        event.driveIntents.map {
+            TrainingDriveIntent(
+                driveIndex: $0.index.rawValue,
+                value: $0.activation,
+                parameters: $0.parameters
+            )
+        }
+    }
+
+    private func reflexCorrections(from action: EnvironmentAction) -> [TrainingReflexCorrection] {
+        guard case .driveIntents(_, let corrections) = action else { return [] }
+        return corrections.map {
+            TrainingReflexCorrection(
+                driveIndex: $0.driveIndex.rawValue,
+                clamp: $0.clampMultiplier,
+                damping: $0.damping,
+                delta: $0.delta
+            )
+        }
     }
 
     private func stateVector(from snapshot: PlantStateSnapshot) -> [Double] {
@@ -167,19 +300,6 @@ public extension TrainingDatasetWriter {
         ]
     }
 
-    private func physicsPredictionState(for index: Int, in steps: [EnvironmentStep]) -> [Double] {
-        guard index > 0, steps.indices.contains(index), steps.indices.contains(index - 1) else {
-            return stateVector(from: steps[index].observation.plantState)
-        }
-        let previous = steps[index - 1]
-        let current = steps[index]
-        let dt = max(0.0, current.observation.time.time - previous.observation.time.time)
-        return predictedStateVector(
-            from: previous.observation.plantState,
-            dt: dt
-        )
-    }
-
     private func predictedStateVector(from snapshot: PlantStateSnapshot, dt: Double) -> [Double] {
         let root = snapshot.root
         return [
@@ -199,14 +319,15 @@ public extension TrainingDatasetWriter {
         ]
     }
 
-    private func actionValues(from event: WorldStepLog) -> [Double] {
-        if !event.actuatorValues.isEmpty {
-            return event.actuatorValues
-                .sorted { $0.index.rawValue < $1.index.rawValue }
-                .map(\.value)
+    private func policyActionValues(from event: WorldStepLog) -> [Double] {
+        if !event.driveIntents.isEmpty {
+            return event.driveIntents.sorted { $0.index.rawValue < $1.index.rawValue }.map(\.activation)
         }
-        return event.driveIntents
-            .sorted { $0.index.rawValue < $1.index.rawValue }
-            .map(\.activation)
+        return event.actuatorValues.sorted { $0.index.rawValue < $1.index.rawValue }.map(\.value)
+    }
+
+    private func actuatorCommandValues(from event: WorldStepLog) -> [Double]? {
+        guard !event.actuatorValues.isEmpty else { return nil }
+        return event.actuatorValues.sorted { $0.index.rawValue < $1.index.rawValue }.map(\.value)
     }
 }

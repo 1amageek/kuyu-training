@@ -28,7 +28,6 @@ public struct TrainingBackendSnapshot: Sendable, Codable, Equatable {
     }
 }
 
-@MainActor
 public protocol SnapshotTrainingBackend: TrainingBackend {
     func makeSnapshot(for manifest: LearningRunManifest) async throws -> TrainingBackendSnapshot
 }

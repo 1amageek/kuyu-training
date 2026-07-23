@@ -89,8 +89,8 @@ public struct TrainingDatasetMixer: Sendable {
                 }
                 let loaded: TrainingDataset
                 do {
-                    loaded = try TrainingDatasetContractValidator().loadAndValidate(
-                        from: dataset,
+                    loaded = try TrainingDatasetContractValidator().validatedDataset(
+                        in: dataset,
                         against: enforcedDatasetContract
                     )
                 } catch let error as TrainingDatasetContractValidator.ValidationError {

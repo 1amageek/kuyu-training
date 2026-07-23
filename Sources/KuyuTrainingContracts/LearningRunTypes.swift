@@ -99,7 +99,13 @@ public enum TrainingMetricKind: String, Sendable, Codable, Equatable, CaseIterab
     case passRate
     case failureRate
     case safetyViolation
+    case evaluationScenarioCount
     case workerThroughput
+    case scoreDelta
+    case safetyViolationDelta
+    case safetyEvidenceAvailable
+    case safetyRegression
+    case policySatisfied
     case teacherDriveAverageMAE
     case teacherMotorAverageMAE
     case teacherFinalAltitudeDelta

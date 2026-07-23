@@ -26,15 +26,22 @@ public struct TrainingRunManifest: Sendable, Codable, Equatable {
 
     /// Seeds and determinism tier claimed by the run.
     ///
-    /// `mlxGlobalSeed` is mandatory: a run that does not seed the global MLX
-    /// RNG cannot claim Tier-0 and must record `tier >= 1`.
+    /// Tier-0 requires every stochastic MLX operation to derive a task-local
+    /// random state from `mlxRandomSeedBase` under the recorded contract.
     public struct DeterminismStamp: Sendable, Codable, Equatable {
-        public let mlxGlobalSeed: UInt64
+        public let mlxRandomSeedBase: UInt64
+        public let mlxRandomnessContractID: String
         public let noiseSeedSalt: UInt64?
         public let tier: Int
 
-        public init(mlxGlobalSeed: UInt64, noiseSeedSalt: UInt64?, tier: Int) {
-            self.mlxGlobalSeed = mlxGlobalSeed
+        public init(
+            mlxRandomSeedBase: UInt64,
+            mlxRandomnessContractID: String,
+            noiseSeedSalt: UInt64?,
+            tier: Int
+        ) {
+            self.mlxRandomSeedBase = mlxRandomSeedBase
+            self.mlxRandomnessContractID = mlxRandomnessContractID
             self.noiseSeedSalt = noiseSeedSalt
             self.tier = tier
         }
@@ -129,6 +136,11 @@ public struct TrainingRunManifest: Sendable, Codable, Equatable {
         }
         guard !profile.isEmpty else {
             throw TrainingRunContractError.invalidManifest(reason: "profile is empty")
+        }
+        guard !determinism.mlxRandomnessContractID.isEmpty else {
+            throw TrainingRunContractError.invalidManifest(
+                reason: "mlxRandomnessContractID is empty"
+            )
         }
         guard !semanticVersion.isEmpty else {
             throw TrainingRunContractError.invalidManifest(reason: "semanticVersion is empty")

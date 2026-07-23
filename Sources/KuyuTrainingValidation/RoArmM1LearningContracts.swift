@@ -68,7 +68,6 @@ public enum RoArmM1LearningContracts {
                 discount: 0.99,
                 gaeLambda: 0.95,
                 valueLossCoefficient: 0.5,
-                entropyCoefficient: 0,
                 actionSmoothnessCoefficient: 0.01,
                 epochCount: 1,
                 minibatchSize: 1

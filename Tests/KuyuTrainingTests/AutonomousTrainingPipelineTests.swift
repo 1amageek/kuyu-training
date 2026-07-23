@@ -19,6 +19,14 @@ import Testing
     #expect(plan.terminalGates.contains(.hardwareBoundaryValidated))
     #expect(plan.stages.contains { $0.kind == .hardwareInTheLoop })
     #expect(plan.stages.contains { $0.kind == .evolution })
+    #expect(plan.stages.contains { $0.kind == .worldModel })
+    let worldModelStage = try #require(plan.stages.first { $0.kind == .worldModel })
+    #expect(!worldModelStage.producesModelBundle)
+    #expect(worldModelStage.requiredExitGates == [
+        .deterministicReplayValidated,
+        .telemetryComplete,
+        .artifactLineageComplete,
+    ])
 }
 
 @Test(.timeLimit(.minutes(1))) func autonomyPlansUseReinforcementBeforeEvolutionBeforeStressOrder() throws {
@@ -234,7 +242,7 @@ import Testing
     let stage = try #require(plan.stages.first { $0.kind == .reinforcement })
     let artifactDirectory = URL(fileURLWithPath: "/tmp/rl-run", isDirectory: true)
     let checkpointURL = URL(fileURLWithPath: "/tmp/rl-run/checkpoints/accepted", isDirectory: true)
-    let bundle = makeTrainingRunArtifactBundle(
+    let bundle = try makeTrainingRunArtifactBundle(
         artifactDirectory: artifactDirectory,
         mode: .rlRollout,
         accepted: true,
@@ -258,7 +266,7 @@ import Testing
 @Test(.timeLimit(.minutes(1))) func reinforcementStageCompletionRejectsSupervisedArtifact() throws {
     let plan = AutonomousTrainingPipelineFactory().defaultPlan(domain: .aerialDrone, taskProfileIDs: ["lift-v1"])
     let stage = try #require(plan.stages.first { $0.kind == .reinforcement })
-    let bundle = makeTrainingRunArtifactBundle(
+    let bundle = try makeTrainingRunArtifactBundle(
         mode: .supervised,
         accepted: true,
         checkpointState: .accepted,
@@ -279,7 +287,7 @@ import Testing
 @Test(.timeLimit(.minutes(1))) func reinforcementStageCompletionRejectsRejectedRLArtifact() throws {
     let plan = AutonomousTrainingPipelineFactory().defaultPlan(domain: .aerialDrone, taskProfileIDs: ["lift-v1"])
     let stage = try #require(plan.stages.first { $0.kind == .reinforcement })
-    let bundle = makeTrainingRunArtifactBundle(
+    let bundle = try makeTrainingRunArtifactBundle(
         mode: .rlRollout,
         accepted: false,
         checkpointState: .rejected,
@@ -297,7 +305,7 @@ import Testing
 @Test(.timeLimit(.minutes(1))) func reinforcementStageCompletionRejectsMismatchedTaskProfile() throws {
     let plan = AutonomousTrainingPipelineFactory().defaultPlan(domain: .aerialDrone, taskProfileIDs: ["lift-v1"])
     let stage = try #require(plan.stages.first { $0.kind == .reinforcement })
-    let bundle = makeTrainingRunArtifactBundle(
+    let bundle = try makeTrainingRunArtifactBundle(
         mode: .rlRollout,
         suiteID: "singleLift-v1",
         accepted: true,
@@ -323,7 +331,7 @@ private func makeTrainingRunArtifactBundle(
     accepted: Bool,
     checkpointState: CheckpointDecisionState,
     checkpointURL: URL?
-) -> TrainingRunArtifactBundle {
+) throws -> TrainingRunArtifactBundle {
     let runID = "training-run-fixture"
     let manifest = LearningRunManifest(
         runID: runID,
@@ -366,7 +374,13 @@ private func makeTrainingRunArtifactBundle(
         manifest: manifest,
         metrics: [],
         convergence: convergence,
-        checkpointDecision: decision
+        checkpointDecision: decision,
+        observabilityArtifact: try TrainingRunObservabilityProjection().artifact(
+            manifest: manifest,
+            metrics: [],
+            convergence: convergence,
+            checkpointDecision: decision
+        )
     )
 }
 

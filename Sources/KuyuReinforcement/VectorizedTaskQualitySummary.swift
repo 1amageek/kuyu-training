@@ -3,6 +3,7 @@ import Foundation
 public struct VectorizedTaskQualitySummary: Sendable, Codable, Equatable {
     public let profileID: String?
     public let task: String
+    public let scenarioSuiteID: String
     public let scenarioID: String
     public let seed: UInt64
     public let passed: Bool
@@ -13,6 +14,7 @@ public struct VectorizedTaskQualitySummary: Sendable, Codable, Equatable {
     public init(
         profileID: String? = nil,
         task: String,
+        scenarioSuiteID: String,
         scenarioID: String,
         seed: UInt64,
         passed: Bool,
@@ -22,6 +24,9 @@ public struct VectorizedTaskQualitySummary: Sendable, Codable, Equatable {
     ) throws {
         guard !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw VectorizedTaskQualitySummaryError.emptyTask
+        }
+        guard !scenarioSuiteID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw VectorizedTaskQualitySummaryError.emptyScenarioSuiteID
         }
         guard !scenarioID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw VectorizedTaskQualitySummaryError.emptyScenarioID
@@ -39,6 +44,7 @@ public struct VectorizedTaskQualitySummary: Sendable, Codable, Equatable {
         }
         self.profileID = profileID
         self.task = task
+        self.scenarioSuiteID = scenarioSuiteID
         self.scenarioID = scenarioID
         self.seed = seed
         self.passed = passed
@@ -50,6 +56,7 @@ public struct VectorizedTaskQualitySummary: Sendable, Codable, Equatable {
 
 public enum VectorizedTaskQualitySummaryError: Error, Sendable, Equatable {
     case emptyTask
+    case emptyScenarioSuiteID
     case emptyScenarioID
     case emptyEvaluatorID
     case emptyMetricID

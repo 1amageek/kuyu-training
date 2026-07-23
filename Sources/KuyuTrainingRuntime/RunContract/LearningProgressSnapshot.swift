@@ -11,6 +11,7 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
         public let generation: Int
         public let recordedAt: Date
         public let accepted: Bool
+        public let materiallyImproved: Bool
         public let supportHorizon: Int?
         public let frontierHorizon: Int?
         public let fullHorizon: Int?
@@ -24,6 +25,8 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
         public let episodeCount: Int?
         public let failureCount: Int?
         public let rejectionReasons: [String]
+        public let progressSignals: [String]
+        public let progressRejectionReasons: [String]
         public let evaluationPassed: Bool?
         public let evaluationScore: Double?
         public let checkpointPath: String?
@@ -36,6 +39,7 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
     public struct Generation: Identifiable, Sendable, Equatable {
         public let id: Int
         public let acceptedAtAttempt: Int?
+        public let materiallyImprovedAtAttempt: Int?
         public let firstAttempt: Int
         public let lastAttempt: Int
         public let attemptCount: Int
@@ -81,9 +85,11 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
     public let failureGroups: [FailureGroup]
     public let failureObservations: [FailureObservation]
     public let acceptedGenerationCount: Int
+    public let materiallyImprovedGenerationCount: Int
     public let decisionRecordedCount: Int
     public let currentGeneration: Int
     public let attemptsSinceLastAccepted: Int?
+    public let attemptsSinceLastMaterialImprovement: Int?
     public let currentSupportHorizon: Int?
     public let initialSupportHorizon: Int?
     public let fullHorizon: Int?
@@ -95,14 +101,19 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
     public init(records: [TrainingRunIterationRecord]) {
         let ordered = records.sorted { $0.iteration < $1.iteration }
         var retainedGeneration = 0
+        var materiallyImprovedGenerationCount = 0
         var attempts: [Attempt] = []
         var observations: [FailureObservation] = []
         attempts.reserveCapacity(ordered.count)
 
         for record in ordered {
             let accepted = record.decision?.accepted == true
+            let materiallyImproved = record.decision?.materiallyImproved == true
             if accepted {
                 retainedGeneration += 1
+            }
+            if materiallyImproved {
+                materiallyImprovedGenerationCount += 1
             }
             let attemptNumber = record.iteration + 1
             let health = record.decision?.horizonHealth ?? [:]
@@ -111,6 +122,7 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
                 generation: retainedGeneration,
                 recordedAt: record.recordedAt,
                 accepted: accepted,
+                materiallyImproved: materiallyImproved,
                 supportHorizon: record.horizon?.supportHorizon,
                 frontierHorizon: record.horizon?.frontierHorizon,
                 fullHorizon: record.horizon?.fullHorizon,
@@ -124,6 +136,8 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
                 episodeCount: Self.integerMetric("episodeCount", health: health),
                 failureCount: Self.integerMetric("failureCount", health: health),
                 rejectionReasons: record.decision?.rejectionReasons ?? [],
+                progressSignals: record.decision?.progressSignals ?? [],
+                progressRejectionReasons: record.decision?.progressRejectionReasons ?? [],
                 evaluationPassed: Self.metric(["policyPassed", "suitePassed"], in: record.evaluation?.metrics)
                     .map { $0 >= 0.5 },
                 evaluationScore: Self.metric(["policyScore", "score"], in: record.evaluation?.metrics),
@@ -153,6 +167,7 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
         self.failureObservations = observations
         self.failureGroups = Self.makeFailureGroups(observations: observations)
         self.acceptedGenerationCount = retainedGeneration
+        self.materiallyImprovedGenerationCount = materiallyImprovedGenerationCount
         self.decisionRecordedCount = ordered.reduce(into: 0) { count, record in
             if record.decision != nil {
                 count += 1
@@ -164,6 +179,12 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
             self.attemptsSinceLastAccepted = latestAttempt - acceptedAttempt
         } else {
             self.attemptsSinceLastAccepted = nil
+        }
+        if let latestAttempt = attempts.last?.id,
+           let improvedAttempt = attempts.last(where: \.materiallyImproved)?.id {
+            self.attemptsSinceLastMaterialImprovement = latestAttempt - improvedAttempt
+        } else {
+            self.attemptsSinceLastMaterialImprovement = nil
         }
         self.currentSupportHorizon = attempts.reversed().compactMap(\.supportHorizon).first
         self.initialSupportHorizon = attempts.compactMap(\.supportHorizon).first
@@ -206,12 +227,14 @@ public struct LearningProgressSnapshot: Sendable, Equatable {
                 return nil
             }
             let acceptedAttempt = generationAttempts.first(where: \.accepted)
+            let materiallyImprovedAttempt = generationAttempts.first(where: \.materiallyImproved)
             let evaluationAttempt = generationAttempts.reversed().first {
                 $0.evaluationPassed != nil || $0.evaluationScore != nil
             }
             return Generation(
                 id: generationID,
                 acceptedAtAttempt: acceptedAttempt?.id,
+                materiallyImprovedAtAttempt: materiallyImprovedAttempt?.id,
                 firstAttempt: first.id,
                 lastAttempt: latest.id,
                 attemptCount: generationAttempts.count,

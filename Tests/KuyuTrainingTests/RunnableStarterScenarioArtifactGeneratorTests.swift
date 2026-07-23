@@ -29,7 +29,7 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: reportURL.path))
 
     for record in report.artifacts {
-        let bundle = try TrainingRunArtifactValidator().loadAndValidate(from: record.artifactDirectory)
+        let bundle = try TrainingRunArtifactValidator().validatedBundle(in: record.artifactDirectory)
         #expect(bundle.scenarioRuns.count == record.suiteIDs.count)
         #expect(bundle.scenarioRuns.allSatisfy { $0.summary.replay.notPerformedReason == nil })
         #expect(bundle.scenarioRuns.allSatisfy { $0.summary.replay.checks.allSatisfy(\.passed) })

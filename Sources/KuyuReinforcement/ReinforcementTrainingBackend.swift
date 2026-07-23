@@ -81,7 +81,6 @@ public struct ReinforcementTrainingWorkerMetric: Sendable, Codable, Equatable {
     }
 }
 
-@MainActor
 public protocol ReinforcementTrainingBackend: TrainingBackend {
     func trainReinforcement(request: ReinforcementTrainingBackendRequest) async throws -> ReinforcementTrainingBackendResult
 }

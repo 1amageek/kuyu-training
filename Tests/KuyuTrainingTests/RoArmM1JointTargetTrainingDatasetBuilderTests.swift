@@ -42,6 +42,33 @@ import Testing
     #expect(targetErrorChannels.allSatisfy { abs($0.value) < 1e-12 })
 }
 
+@Test func roArmM1ArmGripperBuilderUsesDriveTargetsAndJointScalars() throws {
+    let log = try makeRoArmM1JointTargetLog(events: [
+        makeRoArmM1MixedDomainStep(
+            stepIndex: 0,
+            jointPositions: [0.01, 0.02, -0.03, 0.04, -0.05],
+            jointTargets: [0.08, 0.2, -0.16, 0.12, -0.1],
+            actuatorPositions: [-0.01, -0.06, 0.03, 0.04, 0.05],
+            actuatorTargets: [-0.08, -1.4160355717865514, 0.16, 0.12, 0.1]
+        )
+    ])
+
+    let result = try RoArmM1JointTargetTrainingDatasetBuilder(
+        config: RoArmM1JointTargetTrainingDatasetBuilderConfig(includeHindsightRelabels: false)
+    ).build(from: log)
+    let firstRecord = try #require(result.dataset.records.first)
+    let actions = try #require(firstRecord.actionValues)
+    let codec = try JointTargetActionCodec(
+        physicalRanges: RoArmM1ServoCommandEncoder.manufacturerJointLimits,
+        actionContract: RoArmM1LearningContracts.armGripperTargetsActionContract()
+    )
+    let decodedTargets = try codec.physicalTargets(fromNormalizedActions: actions)
+
+    assertArrayApproximatelyEqual(decodedTargets, [0.08, 0.2, -0.16, 0.12, -0.1])
+    #expect(firstRecord.physicsState?.prefix(5).elementsEqual([0.01, 0.02, -0.03, 0.04, -0.05]) == true)
+    #expect(result.report.jointLimitViolationCount == 0)
+}
+
 @Test func jointTargetActionCodecRoundTripsRoArmM1JointTargets() throws {
     let codec = try JointTargetActionCodec(
         physicalRanges: RoArmM1ServoCommandEncoder.manufacturerJointLimits,
@@ -189,10 +216,13 @@ import Testing
 }
 
 private func makeRoArmM1JointTargetLog() throws -> SimulationLog {
-    let events = try [
+    try makeRoArmM1JointTargetLog(events: [
         makeRoArmM1JointTargetStep(stepIndex: 0, positions: [0, 0, 0, 0, 0], targets: [0.02, 0.01, -0.01, 0.02, -0.02]),
         makeRoArmM1JointTargetStep(stepIndex: 1, positions: [0.03, 0.02, -0.02, 0.03, -0.03], targets: [0.04, 0.03, -0.03, 0.04, -0.04]),
-    ]
+    ])
+}
+
+private func makeRoArmM1JointTargetLog(events: [WorldStepLog]) throws -> SimulationLog {
     return try SimulationLog(
         scenarioId: ScenarioID("ROARM-M1-ARM-GRIPPER-TEST"),
         seed: ScenarioSeed(11),
@@ -219,24 +249,45 @@ private func makeRoArmM1JointTargetStep(
     positions: [Double],
     targets: [Double]
 ) throws -> WorldStepLog {
+    try makeRoArmM1MixedDomainStep(
+        stepIndex: stepIndex,
+        jointPositions: positions,
+        jointTargets: targets,
+        actuatorPositions: positions,
+        actuatorTargets: targets
+    )
+}
+
+private func makeRoArmM1MixedDomainStep(
+    stepIndex: UInt64,
+    jointPositions: [Double],
+    jointTargets: [Double],
+    actuatorPositions: [Double],
+    actuatorTargets: [Double]
+) throws -> WorldStepLog {
     var scalars: [String: Double] = [:]
     for index in 0..<RoArmM1ServoCommandEncoder.jointCount {
-        let signalID = "joint_\(index + 1)"
-        scalars[signalID] = positions[index]
-        scalars["target_\(signalID)"] = targets[index]
-        scalars["velocity_\(signalID)"] = 0.01
-        scalars["torque_\(signalID)"] = 0.02
+        let actuatorSignalID = "joint_\(index + 1)"
+        let jointScalarID = RoArmM1ArmGripperSemantics.jointScalarIDs[index]
+        scalars[actuatorSignalID] = actuatorPositions[index]
+        scalars["target_\(actuatorSignalID)"] = actuatorTargets[index]
+        scalars["velocity_\(actuatorSignalID)"] = 0.01
+        scalars["torque_\(actuatorSignalID)"] = 0.02
+        scalars[jointScalarID] = jointPositions[index]
+        scalars["target_\(jointScalarID)"] = jointTargets[index]
+        scalars["velocity_\(jointScalarID)"] = 0.01
+        scalars["torque_\(jointScalarID)"] = 0.02
     }
 
     return try WorldStepLog(
         time: WorldTime(stepIndex: stepIndex, time: Double(stepIndex) * 0.02),
         events: [.timeAdvance, .cutUpdate, .motorNerveUpdate, .plantIntegrate, .sensorSample],
         sensorSamples: [],
-        driveIntents: targets.enumerated().map { index, target in
+        driveIntents: jointTargets.enumerated().map { index, target in
             try DriveIntent(index: DriveIndex(UInt32(index)), activation: target, parameters: [])
         },
         reflexCorrections: [],
-        actuatorValues: targets.enumerated().map { index, target in
+        actuatorValues: actuatorTargets.enumerated().map { index, target in
             try ActuatorValue(index: ActuatorIndex(UInt32(index)), value: target)
         },
         actuatorTelemetry: ActuatorTelemetrySnapshot(channels: []),

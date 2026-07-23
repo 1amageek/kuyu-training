@@ -19,7 +19,7 @@ import KuyuTraining
     )
 
     #expect(throws: TrainingRunArtifactValidator.ValidationError.missingScenarioRunEvidence) {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
     }
 }
 
@@ -47,7 +47,7 @@ import KuyuTraining
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected scenario replay validation to fail closed.")
     } catch TrainingRunArtifactValidator.ValidationError.scenarioReplayValidationFailed(let iteration, let reason) {
         #expect(iteration == 1)
@@ -77,7 +77,7 @@ import KuyuTraining
     )
 
     #expect(throws: TrainingRunArtifactValidator.ValidationError.invalidScenarioRunIteration(1)) {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
     }
 }
 

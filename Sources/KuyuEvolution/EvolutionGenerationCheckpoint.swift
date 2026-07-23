@@ -12,13 +12,14 @@ import KuyuTrainingContracts
 /// restoring the control state and re-entering the loop at `N+1` reproduces the
 /// uninterrupted run bit-for-bit.
 public struct EvolutionGenerationCheckpoint: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 5
 
     public let schemaVersion: Int
     public let runID: String
     /// Plan/config identity. A resume into a checkpoint written under a different
     /// `configHash` is rejected (fail-closed) unless explicitly overridden.
     public let configHash: String
+    public let candidateAcceptanceMode: EvolutionCandidateAcceptanceMode
     /// The last fully evaluated and committed generation index. The next
     /// generation to run is `lastCommittedGeneration + 1`.
     public let lastCommittedGeneration: Int
@@ -36,11 +37,12 @@ public struct EvolutionGenerationCheckpoint: Sendable, Codable, Equatable {
     public let earlyStopping: EvolutionEarlyStoppingSnapshot
     public let incumbentCandidateID: String?
     public let incumbentFitness: Double?
-    public let bestAcceptedFitness: FitnessSummary?
+    public let bestSearchFitness: FitnessSummary?
 
     public init(
         runID: String,
         configHash: String,
+        candidateAcceptanceMode: EvolutionCandidateAcceptanceMode,
         lastCommittedGeneration: Int,
         generationRecord: PopulationGenerationRecord,
         generationCandidates: [GenomeCandidate],
@@ -52,11 +54,12 @@ public struct EvolutionGenerationCheckpoint: Sendable, Codable, Equatable {
         earlyStopping: EvolutionEarlyStoppingSnapshot,
         incumbentCandidateID: String?,
         incumbentFitness: Double?,
-        bestAcceptedFitness: FitnessSummary?
+        bestSearchFitness: FitnessSummary?
     ) {
         self.schemaVersion = Self.currentSchemaVersion
         self.runID = runID
         self.configHash = configHash
+        self.candidateAcceptanceMode = candidateAcceptanceMode
         self.lastCommittedGeneration = max(0, lastCommittedGeneration)
         self.generationRecord = generationRecord
         self.generationCandidates = generationCandidates
@@ -68,6 +71,6 @@ public struct EvolutionGenerationCheckpoint: Sendable, Codable, Equatable {
         self.earlyStopping = earlyStopping
         self.incumbentCandidateID = incumbentCandidateID
         self.incumbentFitness = incumbentFitness
-        self.bestAcceptedFitness = bestAcceptedFitness
+        self.bestSearchFitness = bestSearchFitness
     }
 }

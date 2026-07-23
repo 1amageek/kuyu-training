@@ -17,15 +17,18 @@ public struct EvolutionTypedBackendAdapter: TypedTrainingBackend {
     private let config: EvolutionRunConfig
     private let backend: any EvolutionaryTrainingBackend
     private let evaluator: any EvolutionCandidateEvaluating
+    private let publicationValidator: any ModelBundlePublicationValidating
 
     public init(
         config: EvolutionRunConfig,
         backend: any EvolutionaryTrainingBackend,
-        evaluator: any EvolutionCandidateEvaluating
+        evaluator: any EvolutionCandidateEvaluating,
+        publicationValidator: any ModelBundlePublicationValidating
     ) {
         self.config = config
         self.backend = backend
         self.evaluator = evaluator
+        self.publicationValidator = publicationValidator
     }
 
     public func loadCheckpoint(_ reference: ModelBundleReference) async throws -> ModelBundleReference {
@@ -104,11 +107,15 @@ public struct EvolutionTypedBackendAdapter: TypedTrainingBackend {
         guard let checkpointURL = candidate.checkpointURL else {
             throw AdapterError.missingCandidateCheckpoint(candidate.candidateID)
         }
+        let receipt = try ModelBundlePublicationStore(validator: publicationValidator).publish(
+            source: checkpointURL,
+            request: request
+        )
         return ModelBundleReference(
             bundleID: request.destination.bundleID,
             kind: request.destination.kind,
-            url: checkpointURL,
-            contentHash: request.destination.contentHash,
+            url: receipt.destinationReference.checkpointURL,
+            contentHash: receipt.destinationReference.sha256Digest,
             robotManifestID: request.destination.robotManifestID,
             observationSchemaID: request.destination.observationSchemaID,
             actionSchemaID: request.destination.actionSchemaID

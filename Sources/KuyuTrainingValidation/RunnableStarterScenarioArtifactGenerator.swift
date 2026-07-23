@@ -211,7 +211,7 @@ public struct RunnableStarterScenarioArtifactGenerator: Sendable {
             scenarioRuns: scenarioRuns,
             to: artifactDirectory
         )
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: artifactDirectory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: artifactDirectory)
 
         return RunnableStarterScenarioArtifactRecord(
             templateID: template.templateID,

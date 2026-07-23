@@ -2,6 +2,7 @@ import Foundation
 import KuyuCore
 import KuyuPhysics
 import KuyuScenarios
+import Synchronization
 import Testing
 @testable import KuyuTraining
 
@@ -160,7 +161,7 @@ import Testing
         encoding: .utf8
     )
     .split(separator: "\n")
-    let artifactBundle = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+    let artifactBundle = try TrainingRunArtifactValidator().validatedBundle(in: directory)
 
     #expect(decodedManifest.runID == manifest.runID)
     #expect(decodedConvergence.accepted)
@@ -219,7 +220,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected artifact validator to reject mismatched run IDs")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .runIDMismatch(file: "convergence.json", expected: "run-artifact", actual: "other-run"))
@@ -282,7 +283,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected partial worker metric identity to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .invalidWorkerMetric(kind: .workerThroughput, iteration: 1))
@@ -304,7 +305,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected accepted convergence with skipped checkpoint decision to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .checkpointDecisionConvergenceMismatch(state: .skipped, accepted: true))
@@ -328,7 +329,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected accepted checkpoint decision without accepted convergence to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .checkpointDecisionConvergenceMismatch(state: .accepted, accepted: false))
@@ -351,7 +352,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected accepted checkpoint without published evidence to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .acceptedCheckpointMissingPublishedURL)
@@ -373,7 +374,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected staged checkpoint without candidate URL to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .stagedCheckpointMissingCandidateURL)
@@ -397,7 +398,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected accepted checkpoint with mismatched manifest output ID to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .outputCheckpointMismatch(expected: "ckpt-decision", actual: "ckpt-manifest"))
@@ -420,7 +421,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected completed manifest without accepted convergence to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .manifestConvergenceMismatch(state: .completed, accepted: false))
@@ -442,7 +443,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected rejected manifest with output checkpoint to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .unexpectedOutputCheckpointID(state: .skipped, outputCheckpointID: "stale-output"))
@@ -465,7 +466,7 @@ import Testing
     )
 
     do {
-        _ = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingRunArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected terminal manifest without completion time to fail closed.")
     } catch let error as TrainingRunArtifactValidator.ValidationError {
         #expect(error == .missingTerminalCompletionTime(.rejected))
@@ -876,7 +877,7 @@ import Testing
             && $0.rolloutShardURL?.lastPathComponent == "worker-3"
             && $0.value == 13
     })
-    let artifactBundle = try TrainingRunArtifactValidator().loadAndValidate(from: directory)
+    let artifactBundle = try TrainingRunArtifactValidator().validatedBundle(in: directory)
     #expect(artifactBundle.metrics.contains {
         $0.kind == .workerThroughput
             && $0.workerIndex == 2
@@ -926,10 +927,14 @@ import Testing
 @Test func TrainingProbeOrchestratorWritesComparisonAndReloadsAcceptedCheckpoint() async throws {
     let directory = try trainingContractTemporaryDirectory()
     defer { trainingContractCleanup(directory) }
+    let source = directory.appendingPathComponent("probe-source", isDirectory: true)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try Data("source".utf8).write(to: source.appendingPathComponent("model.json"))
     let candidate = directory.appendingPathComponent("probe-candidate", isDirectory: true)
     try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
     try Data("candidate".utf8).write(to: candidate.appendingPathComponent("model.json"))
     let executor = FakeTrainingProbeExecutor()
+    let events = Mutex<[TrainingProbeEvent]>([])
     let backend = FakeTrainingBackend(result: TrainingBackendResult(
         finalLoss: 0.1,
         epochs: 1,
@@ -958,9 +963,17 @@ import Testing
             learningRate: 0.001,
             useAux: false,
             useQualityGating: true,
-            maxBatches: 1
+            maxBatches: 1,
+            sourceSnapshot: TrainingBackendSnapshot(
+                snapshotID: "probe-source",
+                checkpointID: "probe-source",
+                checkpointURL: source
+            )
         ),
-        artifactDirectory: directory
+        artifactDirectory: directory,
+        onEvent: { event in
+            events.withLock { $0.append(event) }
+        }
     )
 
     #expect(result.manifest.terminalState == .completed)
@@ -968,24 +981,250 @@ import Testing
     #expect(result.comparison.reloadSucceeded)
     #expect(result.comparison.scoreDelta ?? -1 > 0)
     #expect(result.comparison.selectedCheckpointRole == .candidate)
-    #expect(result.comparison.selectedCheckpointURL == candidate)
+    #expect(result.comparison.selectedCheckpointURL == result.probeCheckpointDecision.publishedCheckpointURL)
     #expect(result.training.checkpointDecision.state == .staged)
     #expect(result.probeCheckpointDecision.state == .accepted)
     #expect(executor.stages == [.teacherActiveAltitudeHold, .initialPolicy, .trainingIteration, .trainedPolicy])
+    let lifecycle = events.withLock { recorded in
+        recorded.compactMap(TrainingProbeEventMarker.init)
+    }
+    #expect(lifecycle == [
+        .started(.teacherActiveAltitudeHold),
+        .completed(.teacherActiveAltitudeHold),
+        .started(.initialPolicy),
+        .completed(.initialPolicy),
+        .iterationStarted(1),
+        .started(.trainedPolicy),
+        .completed(.trainedPolicy),
+    ])
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("probe-manifest.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("comparison.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("probe-metrics.jsonl").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("probe-checkpoint-decision.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("trained-run.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("training/checkpoints/accepted/model.json").path))
-    _ = try TrainingRunArtifactValidator().loadAndValidate(
-        from: directory.appendingPathComponent("training", isDirectory: true)
+    _ = try TrainingRunArtifactValidator().validatedBundle(
+        in: directory.appendingPathComponent("training", isDirectory: true)
     )
-    let probeArtifacts = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+    let probeArtifacts = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
     #expect(probeArtifacts.manifest.probeID == "probe-a")
     #expect(probeArtifacts.training.manifest.runID == "probe-training-run")
     #expect(probeArtifacts.trained?.stage == .trainedPolicy)
+    let acceptedScoreDelta = try #require(result.comparison.scoreDelta)
+    let acceptedSafetyViolationDelta = try #require(result.comparison.safetyViolationDelta)
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .scoreDelta && $0.value == acceptedScoreDelta })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyViolationDelta && $0.value == acceptedSafetyViolationDelta })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyEvidenceAvailable && $0.value == 1.0 })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyRegression && $0.value == 0.0 })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .policySatisfied && $0.value == 1.0 })
     #expect(probeArtifacts.probeMetrics.contains { $0.kind == .teacherDivergenceRegression })
+    let acceptance = try TrainingProbeArtifactValidator().validatedAcceptance(in: directory)
+    #expect(acceptance.sourceCheckpointURL == source)
+    #expect(acceptance.publishedCheckpointURL == result.probeCheckpointDecision.publishedCheckpointURL)
+    #expect(acceptance.datasetCount == probeArtifacts.training.scenarioRuns.reduce(0) { $0 + $1.logCount })
+
+    let externalDirectory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(externalDirectory) }
+    let externalCandidate = externalDirectory.appendingPathComponent("candidate", isDirectory: true)
+    try FileManager.default.createDirectory(at: externalCandidate, withIntermediateDirectories: true)
+    let externalTrainingDecision = CheckpointDecision(
+        runID: probeArtifacts.training.checkpointDecision.runID,
+        state: probeArtifacts.training.checkpointDecision.state,
+        reason: probeArtifacts.training.checkpointDecision.reason,
+        candidateCheckpointID: probeArtifacts.training.checkpointDecision.candidateCheckpointID,
+        candidateCheckpointURL: externalCandidate,
+        publishedCheckpointURL: probeArtifacts.training.checkpointDecision.publishedCheckpointURL,
+        decidedAt: probeArtifacts.training.checkpointDecision.decidedAt
+    )
+    let externalProbeDecision = CheckpointDecision(
+        runID: probeArtifacts.probeCheckpointDecision.runID,
+        state: probeArtifacts.probeCheckpointDecision.state,
+        reason: probeArtifacts.probeCheckpointDecision.reason,
+        candidateCheckpointID: probeArtifacts.probeCheckpointDecision.candidateCheckpointID,
+        candidateCheckpointURL: externalCandidate,
+        publishedCheckpointURL: probeArtifacts.probeCheckpointDecision.publishedCheckpointURL,
+        decidedAt: probeArtifacts.probeCheckpointDecision.decidedAt
+    )
+    let encoder = TrainingRunContractCodec.makeDocumentEncoder()
+    try encoder.encode(externalTrainingDecision).write(
+        to: directory.appendingPathComponent("training/checkpoint-decision.json"),
+        options: [.atomic]
+    )
+    try encoder.encode(externalProbeDecision).write(
+        to: directory.appendingPathComponent("probe-checkpoint-decision.json"),
+        options: [.atomic]
+    )
+    #expect(throws: TrainingProbeArtifactValidator.ValidationError.inconsistentProbeComparison(
+        "candidate checkpoint is outside the probe artifact directory"
+    )) {
+        _ = try TrainingProbeArtifactValidator().validatedAcceptance(in: directory)
+    }
+    try encoder.encode(probeArtifacts.training.checkpointDecision).write(
+        to: directory.appendingPathComponent("training/checkpoint-decision.json"),
+        options: [.atomic]
+    )
+    try encoder.encode(probeArtifacts.probeCheckpointDecision).write(
+        to: directory.appendingPathComponent("probe-checkpoint-decision.json"),
+        options: [.atomic]
+    )
+
+    let candidateLink = directory.appendingPathComponent("candidate-link", isDirectory: true)
+    try FileManager.default.createSymbolicLink(at: candidateLink, withDestinationURL: candidate)
+    let linkedTrainingDecision = CheckpointDecision(
+        runID: probeArtifacts.training.checkpointDecision.runID,
+        state: probeArtifacts.training.checkpointDecision.state,
+        reason: probeArtifacts.training.checkpointDecision.reason,
+        candidateCheckpointID: probeArtifacts.training.checkpointDecision.candidateCheckpointID,
+        candidateCheckpointURL: candidateLink,
+        publishedCheckpointURL: probeArtifacts.training.checkpointDecision.publishedCheckpointURL,
+        decidedAt: probeArtifacts.training.checkpointDecision.decidedAt
+    )
+    let linkedProbeDecision = CheckpointDecision(
+        runID: probeArtifacts.probeCheckpointDecision.runID,
+        state: probeArtifacts.probeCheckpointDecision.state,
+        reason: probeArtifacts.probeCheckpointDecision.reason,
+        candidateCheckpointID: probeArtifacts.probeCheckpointDecision.candidateCheckpointID,
+        candidateCheckpointURL: candidateLink,
+        publishedCheckpointURL: probeArtifacts.probeCheckpointDecision.publishedCheckpointURL,
+        decidedAt: probeArtifacts.probeCheckpointDecision.decidedAt
+    )
+    try encoder.encode(linkedTrainingDecision).write(
+        to: directory.appendingPathComponent("training/checkpoint-decision.json"),
+        options: [.atomic]
+    )
+    try encoder.encode(linkedProbeDecision).write(
+        to: directory.appendingPathComponent("probe-checkpoint-decision.json"),
+        options: [.atomic]
+    )
+    #expect(throws: TrainingProbeArtifactValidator.ValidationError.inconsistentProbeComparison(
+        "candidate checkpoint must not traverse symbolic links"
+    )) {
+        _ = try TrainingProbeArtifactValidator().validatedAcceptance(in: directory)
+    }
+    try encoder.encode(probeArtifacts.training.checkpointDecision).write(
+        to: directory.appendingPathComponent("training/checkpoint-decision.json"),
+        options: [.atomic]
+    )
+    try encoder.encode(probeArtifacts.probeCheckpointDecision).write(
+        to: directory.appendingPathComponent("probe-checkpoint-decision.json"),
+        options: [.atomic]
+    )
+
+    let stricterManifest = TrainingProbeManifest(
+        probeID: probeArtifacts.manifest.probeID,
+        trainingRunID: probeArtifacts.manifest.trainingRunID,
+        startedAt: probeArtifacts.manifest.startedAt,
+        completedAt: probeArtifacts.manifest.completedAt,
+        terminalState: probeArtifacts.manifest.terminalState,
+        failureReason: probeArtifacts.manifest.failureReason,
+        minScoreDelta: 1_000,
+        requireAcceptedCheckpoint: probeArtifacts.manifest.requireAcceptedCheckpoint,
+        requireTeacherPass: probeArtifacts.manifest.requireTeacherPass,
+        requireTrainedPass: probeArtifacts.manifest.requireTrainedPass,
+        sourceCheckpointURL: probeArtifacts.manifest.sourceCheckpointURL
+    )
+    try writeProbeManifest(stricterManifest, to: directory)
+    #expect(throws: TrainingProbeArtifactValidator.ValidationError.inconsistentProbeComparison("comparison does not match probe summaries, training result, and manifest contract")) {
+        _ = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
+    }
+    try writeProbeManifest(probeArtifacts.manifest, to: directory)
+
+    let tamperedMetrics = probeArtifacts.probeMetrics.map { record in
+        guard record.kind == .safetyRegression else { return record }
+        return TrainingMetricRecord(
+            runID: record.runID,
+            iteration: record.iteration,
+            kind: record.kind,
+            value: 1.0,
+            step: record.step,
+            workerIndex: record.workerIndex,
+            snapshotID: record.snapshotID,
+            rolloutShardURL: record.rolloutShardURL,
+            timestamp: record.timestamp
+        )
+    }
+    try writeProbeMetricRecords(tamperedMetrics, to: directory)
+    #expect(throws: TrainingProbeArtifactValidator.ValidationError.inconsistentProbeComparison("safetyRegression metric does not match comparison")) {
+        _ = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
+    }
+
+    let safetyRegressionMetric = try #require(probeArtifacts.probeMetrics.first { $0.kind == .safetyRegression })
+    try writeProbeMetricRecords(probeArtifacts.probeMetrics + [safetyRegressionMetric], to: directory)
+    #expect(throws: TrainingProbeArtifactValidator.ValidationError.inconsistentProbeComparison("safetyRegression metric is duplicated")) {
+        _ = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
+    }
+}
+
+@MainActor
+@Test func TrainingProbeOrchestratorFailsClosedWhenAcceptedCheckpointCannotBePublished() async throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+    let source = directory.appendingPathComponent("probe-source", isDirectory: true)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try Data("source".utf8).write(to: source.appendingPathComponent("model.json"))
+    let candidate = directory.appendingPathComponent("probe-candidate", isDirectory: true)
+    try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
+    try Data("candidate".utf8).write(to: candidate.appendingPathComponent("model.json"))
+    let trainingDirectory = directory.appendingPathComponent("training", isDirectory: true)
+    try FileManager.default.createDirectory(at: trainingDirectory, withIntermediateDirectories: true)
+    try Data("blocks-checkpoint-publication".utf8).write(
+        to: trainingDirectory.appendingPathComponent("checkpoints", isDirectory: false)
+    )
+    let executor = FakeTrainingProbeExecutor()
+    let backend = FakeTrainingBackend(result: TrainingBackendResult(
+        finalLoss: 0.1,
+        epochs: 1,
+        candidateCheckpointID: "probe-ckpt",
+        candidateCheckpointURL: candidate
+    ))
+    let probe = TrainingProbeOrchestrator(scenarioExecutor: executor, backend: backend)
+
+    let result = await probe.run(
+        probeConfig: TrainingProbeConfig(probeID: "probe-publication-failure", minScoreDelta: 0),
+        teacherRequest: try trainingContractRunRequest(),
+        trainingRequest: try trainingContractRunRequest(),
+        trainingConfig: TrainingRunConfig(
+            runID: "probe-publication-failure-training",
+            mode: .supervised,
+            maxIterations: 1,
+            minDelta: 0.01,
+            enableDatasetExport: true,
+            enableTraining: true,
+            policyID: "manasMLX"
+        ),
+        trainingTemplate: TrainingBackendRequest(
+            datasetURL: directory,
+            sequenceLength: 2,
+            epochs: 1,
+            learningRate: 0.001,
+            useAux: false,
+            useQualityGating: true,
+            maxBatches: 1,
+            sourceSnapshot: TrainingBackendSnapshot(
+                snapshotID: "probe-source",
+                checkpointID: "probe-source",
+                checkpointURL: source
+            )
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.comparison.probeAccepted)
+    #expect(result.manifest.terminalState == .failed)
+    #expect(result.manifest.failureReason?.contains("probe-checkpoint-publish-failed") == true)
+    #expect(result.probeCheckpointDecision.state == .failed)
+    #expect(result.probeCheckpointDecision.publishedCheckpointURL == nil)
+    #expect(result.comparison.acceptedCheckpointURL == nil)
+    #expect(result.comparison.selectedCheckpointRole == .source)
+    #expect(result.comparison.selectedCheckpointURL == source)
+
+    let artifacts = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
+    #expect(artifacts.manifest.terminalState == .failed)
+    #expect(throws: TrainingProbeArtifactValidator.ValidationError.inconsistentProbeComparison(
+        "accepted receipt requires a completed probe without failure"
+    )) {
+        _ = try TrainingProbeArtifactValidator().validatedAcceptance(in: directory)
+    }
 }
 
 @Test func TrainingProbeRunDiagnosticsReportsPerIndexControlStatistics() throws {
@@ -1055,9 +1294,16 @@ import Testing
     #expect(!result.comparison.meetsMinimumDelta)
     #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("training/checkpoints/accepted/model.json").path))
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("training/checkpoints/rejected/probe-regression-training-run").path))
-    let probeArtifacts = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+    let probeArtifacts = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
     #expect(probeArtifacts.manifest.terminalState == .rejected)
     #expect(probeArtifacts.probeCheckpointDecision.state == .rejected)
+    let rejectedScoreDelta = try #require(result.comparison.scoreDelta)
+    let rejectedSafetyViolationDelta = try #require(result.comparison.safetyViolationDelta)
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .scoreDelta && $0.value == rejectedScoreDelta })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyViolationDelta && $0.value == rejectedSafetyViolationDelta })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyEvidenceAvailable && $0.value == 1.0 })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyRegression && $0.value == 0.0 })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .policySatisfied && $0.value == 0.0 })
     #expect(probeArtifacts.recoveryRelabelStatus.attempted)
     #expect(probeArtifacts.recoveryRelabelStatus.report?.relabeledEntryCount == 1)
 
@@ -1079,13 +1325,63 @@ import Testing
     )
 
     do {
-        _ = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
         Issue.record("Expected corrupted recovery dataset contract to fail.")
     } catch TrainingProbeArtifactValidator.ValidationError.invalidRecoveryRelabelStatus(let reason) {
         #expect(reason.contains("recovery dataset contract violation"))
     } catch {
         Issue.record("Unexpected error: \(error)")
     }
+}
+
+@MainActor
+@Test func TrainingProbeOrchestratorSeparatesMissingSafetyEvidenceFromSafetyRegression() async throws {
+    let directory = try trainingContractTemporaryDirectory()
+    defer { trainingContractCleanup(directory) }
+    let executor = FakeTrainingProbeExecutor()
+    let backend = FakeTrainingBackend(result: TrainingBackendResult(
+        finalLoss: 0.1,
+        epochs: 1
+    ))
+    let probe = TrainingProbeOrchestrator(scenarioExecutor: executor, backend: backend)
+
+    let result = await probe.run(
+        probeConfig: TrainingProbeConfig(probeID: "probe-missing-safety-evidence", minScoreDelta: 0),
+        teacherRequest: try trainingContractRunRequest(),
+        trainingRequest: try trainingContractRunRequest(),
+        trainingConfig: TrainingRunConfig(
+            runID: "probe-missing-safety-evidence-training-run",
+            mode: .supervised,
+            maxIterations: 6,
+            minDelta: 0.01,
+            enableDatasetExport: true,
+            enableTraining: true,
+            policyID: "manasMLX"
+        ),
+        trainingTemplate: TrainingBackendRequest(
+            datasetURL: directory,
+            sequenceLength: 2,
+            epochs: 1,
+            learningRate: 0.001,
+            useAux: false,
+            useQualityGating: true,
+            maxBatches: 1
+        ),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .rejected)
+    #expect(!result.comparison.trainingAccepted)
+    #expect(!result.comparison.reloadSucceeded)
+    #expect(!result.comparison.safetyEvidenceAvailable)
+    #expect(!result.comparison.safetyNonRegression)
+    #expect(result.comparison.probeRejectionReasons.contains("safety-evidence-missing"))
+    #expect(!result.comparison.probeRejectionReasons.contains("safety-regression"))
+
+    let probeArtifacts = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
+    #expect(probeArtifacts.trained == nil)
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyEvidenceAvailable && $0.value == 0.0 })
+    #expect(probeArtifacts.probeMetrics.contains { $0.kind == .safetyRegression && $0.value == 0.0 })
 }
 
 @MainActor
@@ -1135,7 +1431,7 @@ import Testing
 
     #expect(!result.recoveryRelabelStatus.attempted)
     #expect(result.recoveryRelabelStatus.failureReason == "recovery-relabel-empty")
-    let probeArtifacts = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+    let probeArtifacts = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
     #expect(!probeArtifacts.recoveryRelabelStatus.attempted)
     #expect(probeArtifacts.recoveryRelabelStatus.failureReason == "recovery-relabel-empty")
 }
@@ -1192,7 +1488,7 @@ import Testing
     #expect(result.manifest.terminalState == .rejected)
     #expect(result.comparison.selectedCheckpointRole == .source)
     #expect(result.comparison.selectedCheckpointURL == source)
-    let probeArtifacts = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+    let probeArtifacts = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
     #expect(probeArtifacts.comparison.selectedCheckpointRole == .source)
     #expect(probeArtifacts.comparison.selectedCheckpointURL == source)
 }
@@ -1240,7 +1536,7 @@ import Testing
     try FileManager.default.removeItem(at: directory.appendingPathComponent("trained-run.json"))
 
     #expect(throws: TrainingProbeArtifactValidator.ValidationError.missingTrainedRunForReloadedProbe) {
-        _ = try TrainingProbeArtifactValidator().loadAndValidate(from: directory)
+        _ = try TrainingProbeArtifactValidator().validatedBundle(in: directory)
     }
 }
 
@@ -1329,6 +1625,36 @@ private func metric(
     value: Double
 ) -> TrainingMetricRecord {
     TrainingMetricRecord(runID: runID, iteration: iteration, kind: kind, value: value)
+}
+
+private func writeProbeMetricRecords(
+    _ records: [TrainingMetricRecord],
+    to directory: URL
+) throws {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let lines = try records.map { record in
+        let data = try encoder.encode(record)
+        return try #require(String(data: data, encoding: .utf8))
+    }
+    try (lines.joined(separator: "\n") + "\n").write(
+        to: directory.appendingPathComponent("probe-metrics.jsonl"),
+        atomically: true,
+        encoding: .utf8
+    )
+}
+
+private func writeProbeManifest(
+    _ manifest: TrainingProbeManifest,
+    to directory: URL
+) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(manifest).write(
+        to: directory.appendingPathComponent("probe-manifest.json"),
+        options: [.atomic]
+    )
 }
 
 private func writeTrainingRunArtifact(
@@ -1468,6 +1794,25 @@ private final class FakeSnapshotTrainingBackend: SnapshotTrainingBackend {
     }
 }
 
+private enum TrainingProbeEventMarker: Equatable {
+    case started(TrainingProbeStage)
+    case completed(TrainingProbeStage)
+    case iterationStarted(Int)
+
+    init?(_ event: TrainingProbeEvent) {
+        switch event {
+        case .stageStarted(let stage, _):
+            self = .started(stage)
+        case .stageCompleted(let summary, _):
+            self = .completed(summary.stage)
+        case .training(.iterationStarted(let iteration)):
+            self = .iterationStarted(iteration)
+        case .stageFailed, .training:
+            return nil
+        }
+    }
+}
+
 private struct FakeSnapshotProvider: SnapshotProviding {
     let lease: SnapshotLease
 
@@ -1518,6 +1863,8 @@ private final class FakeTrainingProbeExecutor: TrainingProbeScenarioExecuting {
         case .initialPolicy:
             return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: false))
         case .trainingIteration:
+            return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: true))
+        case .trainingProgress:
             return try TrainingScenarioRunOutput(kuyAtt1: trainingContractRunOutput(passed: true))
         case .trainedPolicy:
             #expect(checkpointURL != nil)

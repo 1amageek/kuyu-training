@@ -2,7 +2,10 @@ import KuyuScenarios
 import KuyuReinforcement
 
 public extension VectorizedTaskQualitySummary {
-    init(referenceQuadrotor summary: ReferenceQuadrotorTaskQualitySummary) throws {
+    init(
+        referenceQuadrotor summary: ReferenceQuadrotorTaskQualitySummary,
+        scenarioSuiteID: String
+    ) throws {
         var metrics: [String: Double] = [:]
         Self.assign(summary.targetZ, to: "targetZ", in: &metrics)
         Self.assign(summary.tolerance, to: "tolerance", in: &metrics)
@@ -15,6 +18,7 @@ public extension VectorizedTaskQualitySummary {
         try self.init(
             profileID: "referenceQuadrotor",
             task: summary.task,
+            scenarioSuiteID: scenarioSuiteID,
             scenarioID: summary.scenarioID,
             seed: summary.seed,
             passed: summary.passed,

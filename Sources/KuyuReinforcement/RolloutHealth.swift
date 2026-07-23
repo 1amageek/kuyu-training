@@ -2,6 +2,17 @@ import Foundation
 import KuyuTrainingContracts
 
 public struct RolloutHealth: Sendable, Codable, Equatable {
+    public enum ValidationError: Error, Sendable, Equatable {
+        case negativeCounter(field: String, value: Int)
+        case counterExceedsEpisodeCount(field: String, value: Int, episodeCount: Int)
+        case horizonCountExceedsTruncationCount(horizon: Int, truncated: Int)
+        case invalidFailureReason(String)
+        case invalidFailureReasonCount(reason: String, count: Int)
+        case failureReasonCountMismatch(expected: Int, actual: Int)
+        case nonFiniteMetric(String)
+        case negativeMagnitude(field: String, value: Double)
+    }
+
     public private(set) var episodeCount: Int
     public private(set) var doneCount: Int
     public private(set) var truncatedCount: Int
@@ -375,6 +386,83 @@ public struct RolloutHealth: Sendable, Codable, Equatable {
             [RolloutStabilityMetricContractViolation].self,
             forKey: .stabilityMetricContractViolations
         )
+        try validateDecodedState()
+    }
+
+    private func validateDecodedState() throws {
+        for (field, value) in [
+            ("episodeCount", episodeCount),
+            ("doneCount", doneCount),
+            ("truncatedCount", truncatedCount),
+            ("failureCount", failureCount),
+            ("cancelledCount", cancelledCount),
+            ("horizonLimitCount", horizonLimitCount),
+            ("terminalStepObservationCount", terminalStepObservationCount),
+            ("terminalStepSum", terminalStepSum),
+            ("nonFiniteMetricCount", nonFiniteMetricCount),
+        ] where value < 0 {
+            throw ValidationError.negativeCounter(field: field, value: value)
+        }
+        for (field, value) in [
+            ("doneCount", doneCount),
+            ("truncatedCount", truncatedCount),
+            ("failureCount", failureCount),
+            ("cancelledCount", cancelledCount),
+            ("terminalStepObservationCount", terminalStepObservationCount),
+        ] where value > episodeCount {
+            throw ValidationError.counterExceedsEpisodeCount(
+                field: field,
+                value: value,
+                episodeCount: episodeCount
+            )
+        }
+        guard horizonLimitCount <= truncatedCount else {
+            throw ValidationError.horizonCountExceedsTruncationCount(
+                horizon: horizonLimitCount,
+                truncated: truncatedCount
+            )
+        }
+        var recordedFailureCount = 0
+        for (reason, count) in failureReasonCounts {
+            let sanitized = Self.sanitizedFailureReason(reason)
+            guard !sanitized.isEmpty, sanitized == reason else {
+                throw ValidationError.invalidFailureReason(reason)
+            }
+            guard count > 0 else {
+                throw ValidationError.invalidFailureReasonCount(
+                    reason: reason,
+                    count: count
+                )
+            }
+            let addition = recordedFailureCount.addingReportingOverflow(count)
+            guard !addition.overflow else {
+                throw ValidationError.invalidFailureReasonCount(
+                    reason: reason,
+                    count: count
+                )
+            }
+            recordedFailureCount = addition.partialValue
+        }
+        guard recordedFailureCount == failureCount else {
+            throw ValidationError.failureReasonCountMismatch(
+                expected: failureCount,
+                actual: recordedFailureCount
+            )
+        }
+        for (field, value) in [
+            ("rewardSum", rewardSum),
+            ("maxOmega", maxOmega),
+            ("maxTilt", maxTilt),
+        ] where !value.isFinite {
+            throw ValidationError.nonFiniteMetric(field)
+        }
+        if let minAltitude, !minAltitude.isFinite {
+            throw ValidationError.nonFiniteMetric("minAltitude")
+        }
+        for (field, value) in [("maxOmega", maxOmega), ("maxTilt", maxTilt)]
+        where value < 0 {
+            throw ValidationError.negativeMagnitude(field: field, value: value)
+        }
     }
 
     public func encode(to encoder: Encoder) throws {

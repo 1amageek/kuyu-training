@@ -46,6 +46,12 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
         case invalidJointRangeCount(expected: Int, actual: Int)
         case actionContractSchemaMismatch(expected: String, actual: String)
         case missingScalar(String)
+        case missingJointScalar(index: Int, candidates: [String])
+        case invalidDriveIntentCount(expected: Int, actual: Int)
+        case invalidDriveIntentIndex(UInt32)
+        case duplicateDriveIntentIndex(Int)
+        case missingDriveIntentIndex(Int)
+        case nonFiniteDriveIntent(index: Int, value: Double)
         case nonFiniteScalar(String)
 
         public var description: String {
@@ -58,6 +64,18 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
                 return "action-contract-schema-mismatch expected=\(expected) actual=\(actual)"
             case .missingScalar(let id):
                 return "missing-scalar id=\(id)"
+            case .missingJointScalar(let index, let candidates):
+                return "missing-joint-scalar index=\(index) candidates=\(candidates.joined(separator: ","))"
+            case .invalidDriveIntentCount(let expected, let actual):
+                return "invalid-drive-intent-count expected=\(expected) actual=\(actual)"
+            case .invalidDriveIntentIndex(let index):
+                return "invalid-drive-intent-index index=\(index)"
+            case .duplicateDriveIntentIndex(let index):
+                return "duplicate-drive-intent-index index=\(index)"
+            case .missingDriveIntentIndex(let index):
+                return "missing-drive-intent-index index=\(index)"
+            case .nonFiniteDriveIntent(let index, let value):
+                return "non-finite-drive-intent index=\(index) value=\(value)"
             case .nonFiniteScalar(let id):
                 return "non-finite-scalar id=\(id)"
             }
@@ -177,17 +195,16 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
     private func extractJointState(from event: WorldStepLog) throws -> RoArmM1JointTargetState {
         var positions: [Double] = []
         var velocities: [Double] = []
-        var targets: [Double] = []
         var torques: [Double] = []
         positions.reserveCapacity(RoArmM1ServoCommandEncoder.jointCount)
         velocities.reserveCapacity(RoArmM1ServoCommandEncoder.jointCount)
-        targets.reserveCapacity(RoArmM1ServoCommandEncoder.jointCount)
         torques.reserveCapacity(RoArmM1ServoCommandEncoder.jointCount)
 
-        for signalID in RoArmM1ArmGripperSemantics.actuatorSignalIDs {
+        let targets = try driveTargets(from: event)
+        for index in 0..<RoArmM1ServoCommandEncoder.jointCount {
+            let signalID = try jointScalarID(at: index, from: event)
             positions.append(try scalar(signalID, from: event))
             velocities.append(try scalar("velocity_\(signalID)", from: event))
-            targets.append(try scalar("target_\(signalID)", from: event))
             torques.append(try scalar("torque_\(signalID)", from: event))
         }
 
@@ -198,6 +215,46 @@ public struct RoArmM1JointTargetTrainingDatasetBuilder: Sendable {
             torques: torques,
             ranges: config.jointRanges
         )
+    }
+
+    private func jointScalarID(at index: Int, from event: WorldStepLog) throws -> String {
+        let candidates = RoArmM1ArmGripperSemantics.jointScalarIDCandidates[index]
+        for candidate in candidates {
+            guard event.plantState.scalars[candidate] != nil,
+                  event.plantState.scalars["velocity_\(candidate)"] != nil,
+                  event.plantState.scalars["torque_\(candidate)"] != nil else {
+                continue
+            }
+            return candidate
+        }
+        throw BuildError.missingJointScalar(index: index, candidates: candidates)
+    }
+
+    private func driveTargets(from event: WorldStepLog) throws -> [Double] {
+        let jointCount = RoArmM1ServoCommandEncoder.jointCount
+        guard event.driveIntents.count == jointCount else {
+            throw BuildError.invalidDriveIntentCount(expected: jointCount, actual: event.driveIntents.count)
+        }
+        var targets = Array(repeating: 0.0, count: jointCount)
+        var seen = Array(repeating: false, count: jointCount)
+        for driveIntent in event.driveIntents {
+            let index = Int(driveIntent.index.rawValue)
+            guard index >= 0, index < jointCount else {
+                throw BuildError.invalidDriveIntentIndex(driveIntent.index.rawValue)
+            }
+            guard !seen[index] else {
+                throw BuildError.duplicateDriveIntentIndex(index)
+            }
+            guard driveIntent.activation.isFinite else {
+                throw BuildError.nonFiniteDriveIntent(index: index, value: driveIntent.activation)
+            }
+            targets[index] = driveIntent.activation
+            seen[index] = true
+        }
+        for (index, wasSeen) in seen.enumerated() where !wasSeen {
+            throw BuildError.missingDriveIntentIndex(index)
+        }
+        return targets
     }
 
     private func scalar(_ id: String, from event: WorldStepLog) throws -> Double {

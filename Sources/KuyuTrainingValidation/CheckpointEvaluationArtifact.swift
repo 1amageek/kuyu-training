@@ -83,21 +83,46 @@ public struct CheckpointEvaluationScenarioHorizon: Sendable, Codable, Hashable, 
 }
 
 public struct CheckpointEvaluationRequest: Sendable, Equatable {
+    public struct InspectionContext: Sendable, Equatable {
+        public let runID: String
+        public let iteration: Int
+        public let candidateID: String
+        public let checkpointRole: TrainingRunInspectionArtifact.CheckpointRole
+        public let checkpointDigest: String?
+
+        public init(
+            runID: String,
+            iteration: Int,
+            candidateID: String,
+            checkpointRole: TrainingRunInspectionArtifact.CheckpointRole,
+            checkpointDigest: String? = nil
+        ) {
+            self.runID = runID
+            self.iteration = iteration
+            self.candidateID = candidateID
+            self.checkpointRole = checkpointRole
+            self.checkpointDigest = checkpointDigest
+        }
+    }
+
     public let evaluationID: String
     public let profile: TaskEvaluationProfile
     public let checkpointURL: URL
     public let artifactRoot: URL
+    public let inspectionContext: InspectionContext?
 
     public init(
         evaluationID: String = "checkpoint-eval-\(UUID().uuidString)",
         profile: TaskEvaluationProfile,
         checkpointURL: URL,
-        artifactRoot: URL
+        artifactRoot: URL,
+        inspectionContext: InspectionContext? = nil
     ) {
         self.evaluationID = evaluationID
         self.profile = profile
         self.checkpointURL = checkpointURL
         self.artifactRoot = artifactRoot
+        self.inspectionContext = inspectionContext
     }
 }
 
@@ -108,6 +133,7 @@ public protocol CheckpointEvaluating: Sendable {
 public struct CheckpointEvaluationArtifact: Sendable, Codable, Equatable {
     public static let currentSchemaVersion = 2
     public static let fileName = "checkpoint-evaluation.json"
+    public static let artifactKind = "checkpoint-evaluation"
 
     public let schemaVersion: Int
     public let evaluationID: String

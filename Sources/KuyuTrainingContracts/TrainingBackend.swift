@@ -12,6 +12,7 @@ public struct TrainingBackendRequest: Sendable, Equatable {
     public let maxBatches: Int?
     public let miniBatchSize: Int?
     public let sourceSnapshot: TrainingBackendSnapshot?
+    public let iteration: Int
 
     public init(
         datasetURL: URL,
@@ -24,7 +25,8 @@ public struct TrainingBackendRequest: Sendable, Equatable {
         useQualityGating: Bool,
         maxBatches: Int? = nil,
         miniBatchSize: Int? = nil,
-        sourceSnapshot: TrainingBackendSnapshot? = nil
+        sourceSnapshot: TrainingBackendSnapshot? = nil,
+        iteration: Int = 0
     ) {
         self.datasetURL = datasetURL
         self.additionalDatasetURLs = additionalDatasetURLs
@@ -37,6 +39,7 @@ public struct TrainingBackendRequest: Sendable, Equatable {
         self.maxBatches = maxBatches
         self.miniBatchSize = miniBatchSize.map { max(1, $0) }
         self.sourceSnapshot = sourceSnapshot
+        self.iteration = max(0, iteration)
     }
 }
 
@@ -59,7 +62,6 @@ public struct TrainingBackendResult: Sendable, Equatable {
     }
 }
 
-@MainActor
-public protocol TrainingBackend {
+public protocol TrainingBackend: Sendable {
     func trainSupervised(request: TrainingBackendRequest) async throws -> TrainingBackendResult
 }

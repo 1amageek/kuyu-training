@@ -89,7 +89,12 @@ let package = Package(
         ),
         .testTarget(
             name: "KuyuTrainingTests",
-            dependencies: ["KuyuTraining"]
+            dependencies: [
+                "KuyuTraining",
+                "KuyuTrainingRuntime",
+                .product(name: "KuyuPhysics", package: "kuyu-physics"),
+                .product(name: "KuyuScenarios", package: "kuyu-scenarios"),
+            ]
         ),
     ]
 )

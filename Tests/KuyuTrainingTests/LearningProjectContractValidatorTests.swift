@@ -32,6 +32,98 @@ import Testing
     }
 }
 
+@Test func learningProjectContractValidatorRejectsGaussianDistributionDimensionMismatch() throws {
+    let action = ReferenceQuadrotorLearningContracts.bodyRateActionContract()
+    let base = ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract()
+    let policy = policy(
+        base,
+        replacing: .fixedGaussian(actionDimension: base.actionDimension - 1)
+    )
+
+    do {
+        try LearningProjectContractValidator().validatePolicy(policy, action: action)
+        Issue.record("Expected distribution dimension mismatch to throw.")
+    } catch LearningProjectContractValidationError.invalidPolicy(let reason) {
+        #expect(reason == "gaussian-log-standard-deviation-dimension-mismatch")
+    }
+}
+
+@Test func learningProjectContractValidatorRejectsPreviousActionDimensionMismatch() throws {
+    let action = ReferenceQuadrotorLearningContracts.bodyRateActionContract()
+    let base = ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract()
+    let policy = LearningProjectPolicyContract(
+        architecture: base.architecture,
+        actionEncoding: base.actionEncoding,
+        actionDistribution: base.actionDistribution,
+        actionDimension: base.actionDimension,
+        temporalWindow: LearningProjectTemporalWindowContract(
+            historyLength: base.temporalWindow.historyLength,
+            observationDimension: base.temporalWindow.observationDimension,
+            previousActionDimension: base.actionDimension - 1,
+            targetTrajectoryPointCount: base.temporalWindow.targetTrajectoryPointCount,
+            execution: base.temporalWindow.execution
+        ),
+        privilegedCritic: base.privilegedCritic,
+        behaviorCloning: base.behaviorCloning,
+        ppo: base.ppo,
+        domainRandomization: base.domainRandomization,
+        actionSafety: base.actionSafety
+    )
+
+    do {
+        try LearningProjectContractValidator().validatePolicy(policy, action: action)
+        Issue.record("Expected previous-action dimension mismatch to throw.")
+    } catch LearningProjectContractValidationError.invalidPolicy(let reason) {
+        #expect(reason == "policy-previous-action-dimension-mismatch")
+    }
+}
+
+@Test func learningProjectContractValidatorRejectsUnknownGaussianDensityContract() throws {
+    let action = ReferenceQuadrotorLearningContracts.bodyRateActionContract()
+    let base = ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract()
+    let policy = policy(
+        base,
+        replacing: LearningProjectPolicyActionDistributionContract(
+            kind: .gaussian,
+            densityContractID: "unknown-density-v1",
+            baseLogStandardDeviations: Array(repeating: -3.2, count: base.actionDimension)
+        )
+    )
+
+    do {
+        try LearningProjectContractValidator().validatePolicy(policy, action: action)
+        Issue.record("Expected unknown density contract to throw.")
+    } catch LearningProjectContractValidationError.invalidPolicy(let reason) {
+        #expect(reason == "unsupported-gaussian-density-contract")
+    }
+}
+
+@Test func learningProjectContractValidatorRejectsGaussianClampedLinearAction() throws {
+    let base = ReferenceQuadrotorLearningContracts.temporalCTBRPolicyContract()
+    let action = LearningProjectActionContract(
+        schemaID: "clamped-ctbr-v1",
+        kind: .continuous,
+        driveCount: base.actionDimension,
+        actuatorCount: base.actionDimension,
+        isBounded: true,
+        channels: LearningProjectActionContract.indexedBoundedChannels(
+            prefix: "drive",
+            count: base.actionDimension,
+            unit: "normalized",
+            lowerBound: -1,
+            upperBound: 1,
+            transform: .clampedLinear
+        )
+    )
+
+    do {
+        try LearningProjectContractValidator().validatePolicy(base, action: action)
+        Issue.record("Expected non-invertible Gaussian action transform to throw.")
+    } catch LearningProjectContractValidationError.invalidPolicy(let reason) {
+        #expect(reason == "gaussian-policy-requires-invertible-action-transform")
+    }
+}
+
 @Test func learningProjectContractValidatorAcceptsHumanoidScaleActionGroups() throws {
     let channelCount = 128
     let action = LearningProjectActionContract(
@@ -241,4 +333,22 @@ import Testing
     } catch {
         Issue.record("Unexpected error: \(error)")
     }
+}
+
+private func policy(
+    _ base: LearningProjectPolicyContract,
+    replacing actionDistribution: LearningProjectPolicyActionDistributionContract
+) -> LearningProjectPolicyContract {
+    LearningProjectPolicyContract(
+        architecture: base.architecture,
+        actionEncoding: base.actionEncoding,
+        actionDistribution: actionDistribution,
+        actionDimension: base.actionDimension,
+        temporalWindow: base.temporalWindow,
+        privilegedCritic: base.privilegedCritic,
+        behaviorCloning: base.behaviorCloning,
+        ppo: base.ppo,
+        domainRandomization: base.domainRandomization,
+        actionSafety: base.actionSafety
+    )
 }

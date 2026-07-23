@@ -138,16 +138,12 @@ public struct TrainingDatasetWriter {
             driveIntents(from: event)
         }
 
-        guard let firstNonEmptyIndex = rawDriveIntents.firstIndex(where: { !$0.isEmpty }) else {
-            return rawDriveIntents
-        }
-
         var filled = rawDriveIntents
-        var lastDriveIntents = rawDriveIntents[firstNonEmptyIndex]
+        var lastDriveIntents: [TrainingDriveIntent]?
         for index in filled.indices {
-            if filled[index].isEmpty {
+            if filled[index].isEmpty, let lastDriveIntents {
                 filled[index] = lastDriveIntents
-            } else {
+            } else if !filled[index].isEmpty {
                 lastDriveIntents = filled[index]
             }
         }

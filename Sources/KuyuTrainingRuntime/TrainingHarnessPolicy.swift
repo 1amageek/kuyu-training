@@ -26,11 +26,6 @@ public enum TrainingHarnessPolicy {
     public static let driveActivationTolerance = 0.05
     /// Minimum altitude (m) required by the lift smoke check (min and final altitude).
     public static let altitudeSmokeThreshold = 0.25
-    /// Failure reasons treated as hard (non-recoverable) safety failures.
-    public static let hardSafetyFailureReasons: Set<String> = [
-        "ground-violation", "sustained-fall", "sustained-violation",
-    ]
-
     public static func report(
         result: TrainingProbeResult,
         requireTaskSolved: Bool
@@ -94,7 +89,9 @@ public enum TrainingHarnessPolicy {
         if !result.comparison.meetsMinimumDelta {
             reasons.append("minimum-delta-not-met")
         }
-        if !result.comparison.safetyNonRegression {
+        if !result.comparison.safetyEvidenceAvailable {
+            reasons.append("safety-evidence-missing")
+        } else if !result.comparison.safetyNonRegression {
             reasons.append("safety-regression")
         }
         if !result.comparison.teacherDivergenceNonRegression {
@@ -104,7 +101,6 @@ public enum TrainingHarnessPolicy {
             reasons.append("missing-trained-run")
             return Array(Set(reasons)).sorted()
         }
-        reasons.append(contentsOf: hardSafetyFailures(trained.diagnostics.failureReasons).map { "hard-safety-failure:\($0)" })
         if !driveActivationCloseEnough(teacher: result.teacher, trained: trained) {
             reasons.append("drive-activation-diverged")
         }
@@ -115,10 +111,6 @@ public enum TrainingHarnessPolicy {
             reasons.append("negative-score-delta")
         }
         return Array(Set(reasons)).sorted()
-    }
-
-    public static func hardSafetyFailures(_ reasons: [String]) -> [String] {
-        reasons.filter { hardSafetyFailureReasons.contains($0) }.sorted()
     }
 
     private static func driveActivationCloseEnough(

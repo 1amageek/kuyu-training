@@ -82,6 +82,9 @@ public extension AttitudeRecoveryRelabeler {
             durationSeconds: durationSeconds,
             cancelled: episode.cancelled,
             steps: relabeledSteps,
+            transitions: nil,
+            physicsTimeStep: episode.physicsTimeStep,
+            controlPeriodSteps: episode.controlPeriodSteps,
             taskReference: episode.taskReference
         )
     }

@@ -20,6 +20,20 @@ public enum RoArmM1ArmGripperSemantics {
         "joint_5",
     ]
 
+    public static let jointScalarIDs = [
+        "base_to_L1",
+        "L1_to_L2",
+        "L2_to_L3",
+        "L3_to_L4",
+        "L4_to_L5_1_A",
+    ]
+
+    public static var jointScalarIDCandidates: [[String]] {
+        zip(jointScalarIDs, zip(driveIDs, actuatorSignalIDs)).map { primary, aliases in
+            [primary, aliases.0, aliases.1]
+        }
+    }
+
     public static var observationChannelNames: [String] {
         driveIDs.map { "\($0)Position" }
             + driveIDs.map { "\($0)Velocity" }

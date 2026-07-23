@@ -93,7 +93,15 @@ import Testing
     #expect(stages.count >= 5)
     #expect(stages.contains { $0.stageID == "hover-stabilization" })
     #expect(stages.contains { $0.stageID == "trajectory-tracking" && $0.kind == .evolution && $0.executionMode == .parallel })
+    #expect(stages.contains {
+        $0.stageID == "world-model-prediction"
+            && $0.kind == .worldModel
+            && $0.dependsOnStageIDs == ["trajectory-tracking"]
+    })
     #expect(stages.contains { $0.stageID == "disturbance-recovery" && $0.kind == .stress && $0.executionMode == .parallel })
+    #expect(stages.first { $0.stageID == "disturbance-recovery" }?.dependsOnStageIDs.contains(
+        "world-model-prediction"
+    ) == true)
     #expect(stages.contains { $0.stageID == "full-regression" && $0.kind == .regression && $0.convergenceGoal.kind == .validationGate })
 }
 
@@ -119,6 +127,7 @@ import Testing
     #expect(template.primaryRunnableTrainingStage?.taskProfileID != nil)
     #expect(template.primaryRunnableTrainingStage?.convergenceGoal.kind == .convergence)
     #expect(template.primaryRunnableTrainingStage?.generationLimit ?? 0 >= 1_000)
+    #expect(template.action == ReferenceQuadrotorLearningContracts.singlePropellerActionContract())
     #expect(template.curriculum.trainingStages.contains { $0.stageID == "single-prop-regression" && $0.kind == .regression })
 }
 

@@ -30,7 +30,7 @@ import Testing
     )
 }
 
-@Test func trainingDatasetContractValidatorLoadAndValidateRejectsStaleDiskDataset() throws {
+@Test func trainingDatasetContractValidatorValidatedDatasetRejectsStaleDiskDataset() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("training-dataset-contract-\(UUID().uuidString)", isDirectory: true)
     let actual = RewardDescriptor(id: "reward", version: "1", configHash: "hash-a")
@@ -44,8 +44,8 @@ import Testing
     try TrainingDatasetWriter().write(dataset: dataset, to: directory)
 
     do {
-        _ = try TrainingDatasetContractValidator().loadAndValidate(
-            from: directory,
+        _ = try TrainingDatasetContractValidator().validatedDataset(
+            in: directory,
             against: TrainingDatasetContract(expectedRewardDescriptor: expected)
         )
         Issue.record("Expected disk dataset reward descriptor mismatch to fail.")
@@ -311,6 +311,250 @@ import Testing
     }
 }
 
+@Test func trainingDatasetContractValidatorAcceptsActionObservationTimingContract() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(recordCount: 2, done: false, truncated: true, terminalReason: "time-limit"),
+        records: [
+            makeRecord(
+                time: 0.005,
+                actionObservationTime: 0,
+                continueValue: 1.0,
+                done: false,
+                truncated: false
+            ),
+            makeRecord(
+                time: 0.010,
+                actionObservationTime: 0.005,
+                continueValue: 0.0,
+                done: false,
+                truncated: true
+            )
+        ]
+    )
+
+    try TrainingDatasetContractValidator().validate(
+        dataset,
+        against: TrainingDatasetContract(requiresActionObservationTiming: true)
+    )
+}
+
+@Test func trainingDatasetContractValidatorRejectsMissingActionObservationTiming() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(done: false, truncated: true, terminalReason: "time-limit"),
+        records: [makeRecord(time: 0.005)]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(
+            dataset,
+            against: TrainingDatasetContract(requiresActionObservationTiming: true)
+        )
+        Issue.record("Expected missing action observation timing to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.missingActionObservationTime(let recordIndex) {
+        #expect(recordIndex == 0)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsActionObservationStepMismatch() throws {
+    let dataset = TrainingDataset(
+        metadata: makeMetadata(done: false, truncated: true, terminalReason: "time-limit"),
+        records: [
+            makeRecord(time: 0.010, actionObservationTime: 0)
+        ]
+    )
+
+    do {
+        try TrainingDatasetContractValidator().validate(
+            dataset,
+            against: TrainingDatasetContract(requiresActionObservationTiming: true)
+        )
+        Issue.record("Expected action observation delta mismatch to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.actionObservationStepMismatch(
+        let recordIndex,
+        let observationTime,
+        let recordTime,
+        let expectedDelta,
+        let actualDelta
+    ) {
+        #expect(recordIndex == 0)
+        #expect(observationTime == 0)
+        #expect(recordTime == 0.010)
+        #expect(expectedDelta == 0.005)
+        #expect(actualDelta == 0.010)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorAcceptsCausalTransitionSequence() throws {
+    try TrainingDatasetContractValidator().validate(
+        makeCausalDataset(),
+        against: causalContract()
+    )
+}
+
+@Test func trainingDatasetContractValidatorAcceptsShortTerminalFailureTransition() throws {
+    let metadata = makeCausalMetadata(recordCount: 1, done: true, truncated: false)
+    let record = makeRecord(
+        time: 0.002,
+        policyDecisionID: "decision-terminal",
+        actionObservationTime: 0,
+        actionObservationState: [0],
+        sensors: [TrainingSensorSample(channelIndex: 0, value: 0, timestamp: 0)],
+        driveIntents: [TrainingDriveIntent(driveIndex: 0, value: 0.2)],
+        actualState: [0.5],
+        actionValues: [0.2],
+        actuatorCommandValues: [0.3],
+        continueValue: 0,
+        reward: -1,
+        done: true,
+        truncated: false
+    )
+
+    try TrainingDatasetContractValidator().validate(
+        TrainingDataset(metadata: metadata, records: [record]),
+        against: causalContract()
+    )
+}
+
+@Test func trainingDatasetContractValidatorRejectsDuplicateCausalDecisionID() throws {
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.duplicatePolicyDecisionID("decision-0")
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(secondDecisionID: "decision-0"),
+            against: causalContract()
+        )
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsCausalStateDiscontinuity() throws {
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.transitionStateDiscontinuity(
+            recordIndex: 1,
+            valueIndex: 0,
+            expected: 1,
+            actual: 9
+        )
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(secondActionObservationState: [9]),
+            against: causalContract()
+        )
+    }
+}
+
+@Test func trainingDatasetContractValidatorAcceptsPolicyAndAppliedActionDifferences() throws {
+    try TrainingDatasetContractValidator().validate(
+        makeCausalDataset(secondActionValues: [0.9]),
+        against: causalContract()
+    )
+}
+
+@Test func trainingDatasetContractValidatorRequiresActionEncodingWhenRequested() throws {
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.missingPolicyActionEncoding(recordIndex: 0)
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(),
+            against: TrainingDatasetContract(
+                expectedPolicyActionEncoding: "ctbr",
+                requiresTerminalFacts: true,
+                requiresCausalTransitions: true
+            )
+        )
+    }
+}
+
+@Test func trainingDatasetContractValidatorRequiresBehaviorStatisticsWhenRequested() throws {
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.missingBehaviorMean(recordIndex: 0)
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(),
+            against: TrainingDatasetContract(
+                requiresTerminalFacts: true,
+                requiresCausalTransitions: true,
+                requiresBehaviorStatistics: true
+            )
+        )
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsMissingAppliedActuatorCommand() throws {
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.missingAppliedActuatorCommand(recordIndex: 0)
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(firstActuatorCommandValues: nil),
+            against: causalContract()
+        )
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsEmptyAppliedActuatorCommand() throws {
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.missingAppliedActuatorCommand(recordIndex: 0)
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(firstActuatorCommandValues: []),
+            against: causalContract()
+        )
+    }
+}
+
+@Test func trainingDatasetContractValidatorRejectsIncompleteNonTerminalControlPeriod() throws {
+    do {
+        try TrainingDatasetContractValidator().validate(
+            makeCausalDataset(secondTime: 0.010, secondTruncated: false),
+            against: causalContract()
+        )
+        Issue.record("Expected incomplete non-terminal transition to fail.")
+    } catch TrainingDatasetContractValidator.ValidationError.incompleteNonTerminalTransition(
+        let recordIndex,
+        let expected,
+        let actual
+    ) {
+        #expect(recordIndex == 1)
+        #expect(expected == 0.006)
+        #expect(abs(actual - 0.004) <= 1.0e-12)
+    } catch {
+        Issue.record("Unexpected error: \(error)")
+    }
+}
+
+@Test func trainingDatasetContractValidatorAcceptsSameTimeBehaviorCloningSample() throws {
+    try TrainingDatasetContractValidator().validate(
+        makeBehaviorCloningDataset(),
+        against: TrainingDatasetContract(
+            requiresTerminalFacts: false,
+            requiresBehaviorCloningSamples: true
+        )
+    )
+}
+
+@Test func trainingDatasetContractValidatorRejectsPostActionBehaviorCloningLabel() throws {
+    let dataset = makeBehaviorCloningDataset(actionObservationTime: 0)
+
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.behaviorCloningObservationTimeMismatch(
+            recordIndex: 0,
+            observationTime: 0,
+            recordTime: 0.005
+        )
+    ) {
+        try TrainingDatasetContractValidator().validate(
+            dataset,
+            against: TrainingDatasetContract(
+                requiresTerminalFacts: false,
+                requiresBehaviorCloningSamples: true
+            )
+        )
+    }
+}
+
 private func makeDataset(
     rewardDescriptor: RewardDescriptor?,
     taskReference: TrainingTaskReferenceMetadata? = nil,
@@ -339,12 +583,16 @@ private func makeDataset(
 
 private func makeRecord(
     time: Double = 0,
+    policyDecisionID: String? = nil,
+    actionObservationTime: Double? = nil,
+    actionObservationState: [Double]? = nil,
     sensors: [TrainingSensorSample] = [],
     driveIntents: [TrainingDriveIntent] = [],
     reflexCorrections: [TrainingReflexCorrection] = [],
     physicsState: [Double]? = nil,
     actualState: [Double]? = nil,
     actionValues: [Double]? = nil,
+    actuatorCommandValues: [Double]? = nil,
     continueValue: Double? = 0.0,
     reward: Double? = nil,
     cost: Double? = nil,
@@ -353,18 +601,129 @@ private func makeRecord(
 ) -> TrainingDatasetRecord {
     TrainingDatasetRecord(
         time: time,
+        policyDecisionID: policyDecisionID,
+        actionObservationTime: actionObservationTime,
+        actionObservationState: actionObservationState,
         sensors: sensors,
         driveIntents: driveIntents,
         reflexCorrections: reflexCorrections,
         physicsState: physicsState,
         actualState: actualState,
         actionValues: actionValues,
+        actuatorCommandValues: actuatorCommandValues,
         continueValue: continueValue,
         reward: reward,
         cost: cost,
         done: done,
         truncated: truncated
     )
+}
+
+private func causalContract() -> TrainingDatasetContract {
+    TrainingDatasetContract(
+        requiresTerminalFacts: true,
+        requiresCausalTransitions: true
+    )
+}
+
+private func makeCausalDataset(
+    firstActuatorCommandValues: [Double]? = [0.3],
+    secondDecisionID: String = "decision-1",
+    secondActionObservationState: [Double] = [1],
+    secondActionValues: [Double] = [0.4],
+    secondTime: Double = 0.012,
+    secondTruncated: Bool = true
+) -> TrainingDataset {
+    let records = [
+        makeRecord(
+            time: 0.006,
+            policyDecisionID: "decision-0",
+            actionObservationTime: 0,
+            actionObservationState: [0],
+            sensors: [TrainingSensorSample(channelIndex: 0, value: 0, timestamp: 0)],
+            driveIntents: [TrainingDriveIntent(driveIndex: 0, value: 0.2)],
+            actualState: [1],
+            actionValues: [0.2],
+            actuatorCommandValues: firstActuatorCommandValues,
+            continueValue: 1,
+            reward: 1,
+            done: false,
+            truncated: false
+        ),
+        makeRecord(
+            time: secondTime,
+            policyDecisionID: secondDecisionID,
+            actionObservationTime: 0.006,
+            actionObservationState: secondActionObservationState,
+            sensors: [TrainingSensorSample(channelIndex: 0, value: 1, timestamp: 0.006)],
+            driveIntents: [TrainingDriveIntent(driveIndex: 0, value: 0.4)],
+            actualState: [2],
+            actionValues: secondActionValues,
+            actuatorCommandValues: [0.5],
+            continueValue: 0,
+            reward: 2,
+            done: false,
+            truncated: secondTruncated
+        ),
+    ]
+    return TrainingDataset(
+        metadata: makeCausalMetadata(recordCount: records.count, done: false, truncated: true),
+        records: records
+    )
+}
+
+private func makeCausalMetadata(
+    recordCount: Int,
+    done: Bool,
+    truncated: Bool
+) -> TrainingDatasetMetadata {
+    TrainingDatasetMetadata(
+        scenarioId: "causal-scenario",
+        seed: 1,
+        timeStep: 0.006,
+        determinismTier: "tier1",
+        configHash: "causal-config",
+        channelCount: 1,
+        driveCount: 1,
+        recordCount: recordCount,
+        purpose: .reinforcementRollout,
+        physicsTimeStep: 0.002,
+        controlPeriodSteps: 3,
+        done: done,
+        truncated: truncated,
+        terminalReason: done ? "ground-violation" : "time-limit"
+    )
+}
+
+private func makeBehaviorCloningDataset(
+    actionObservationTime: Double = 0.005
+) -> TrainingDataset {
+    let record = makeRecord(
+        time: 0.005,
+        actionObservationTime: actionObservationTime,
+        actionObservationState: [1],
+        driveIntents: [TrainingDriveIntent(driveIndex: 0, value: 0.25)],
+        actualState: [1],
+        actionValues: [0.25],
+        continueValue: 1,
+        reward: 1,
+        done: false,
+        truncated: false
+    )
+    let metadata = TrainingDatasetMetadata(
+        scenarioId: "behavior-cloning",
+        seed: 1,
+        timeStep: 0.005,
+        determinismTier: "tier1",
+        configHash: "behavior-cloning",
+        channelCount: 0,
+        driveCount: 1,
+        recordCount: 1,
+        purpose: .behaviorCloning,
+        physicsTimeStep: 0.005,
+        controlPeriodSteps: 1
+    )
+    return TrainingDataset(metadata: metadata, records: [record])
 }
 
 private func makeMetadata(

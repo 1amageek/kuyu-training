@@ -26,6 +26,16 @@ public struct TaskEvaluationProfileContractValidator: Sendable {
         try require(!profile.regressionSuiteIDs.isEmpty, profile, "empty-regression-suites")
         try require(profile.baseEvaluationSuiteIDs.allSatisfy { $0 >= 0 }, profile, "negative-base-evaluation-suite")
         try require(profile.regressionSuiteIDs.allSatisfy { $0 >= 0 }, profile, "negative-regression-suite")
+        try validate(
+            profile.baselineMotorNerveSettings,
+            field: "baseline-motor-nerve",
+            profile: profile
+        )
+        try validate(
+            profile.policyMotorNerveSettings,
+            field: "policy-motor-nerve",
+            profile: profile
+        )
         if let minimumRewardAverage = profile.minimumRewardAverage {
             try require(minimumRewardAverage.isFinite, profile, "non-finite-minimum-reward")
         }
@@ -82,6 +92,25 @@ public struct TaskEvaluationProfileContractValidator: Sendable {
                 profile.liftThresholdSource != "scenario.liftEnvelope",
                 profile,
                 "reference-quadrotor-lift-threshold-leak"
+            )
+        }
+    }
+
+    private func validate(
+        _ settings: TaskMotorNerveSettings,
+        field: String,
+        profile: TaskEvaluationProfile
+    ) throws {
+        try require(
+            settings.rateLimitPerSecond.isFinite && settings.rateLimitPerSecond > 0,
+            profile,
+            "\(field)-invalid-rate-limit"
+        )
+        if let smoothingTimeConstant = settings.smoothingTimeConstant {
+            try require(
+                smoothingTimeConstant.isFinite && smoothingTimeConstant > 0,
+                profile,
+                "\(field)-invalid-smoothing-time-constant"
             )
         }
     }

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import KuyuTraining
+@testable import KuyuTrainingRuntime
 
 @Suite("TrainingRunContract")
 struct TrainingRunContractTests {
@@ -41,7 +42,8 @@ struct TrainingRunContractTests {
                 buildConfiguration: "Debug"
             ),
             determinism: TrainingRunManifest.DeterminismStamp(
-                mlxGlobalSeed: 7,
+                mlxRandomSeedBase: 7,
+                mlxRandomnessContractID: "test-task-local-rng-v1",
                 noiseSeedSalt: 11,
                 tier: tier
             ),
@@ -58,6 +60,14 @@ struct TrainingRunContractTests {
         )
     }
 
+    private func makeDriver(runID: String, runRoot: URL) throws -> TrainingRunDriver {
+        let writer = try TrainingRunArchiveWriter.create(
+            manifest: makeManifest(runID: runID),
+            in: runRoot
+        )
+        return TrainingRunDriver(writer: writer)
+    }
+
     private func makeRecord(iteration: Int) -> TrainingRunIterationRecord {
         TrainingRunIterationRecord(
             iteration: iteration,
@@ -70,7 +80,12 @@ struct TrainingRunContractTests {
             ),
             decision: TrainingRunIterationRecord.CandidateDecision(
                 accepted: iteration % 2 == 0,
+                materiallyImproved: iteration % 2 == 0,
                 rejectionReasons: iteration % 2 == 0 ? [] : ["frontier-regression"],
+                progressSignals: iteration % 2 == 0 ? ["reward-average-improved"] : [],
+                progressRejectionReasons: iteration % 2 == 0
+                    ? []
+                    : ["candidate-not-retained"],
                 horizonHealth: ["support": 0.93, "frontier": 0.61]
             ),
             evaluation: TrainingRunIterationRecord.EvaluationRecord(
@@ -87,6 +102,15 @@ struct TrainingRunContractTests {
             ],
             phaseTimings: ["rollout": 41.5, "update": 12.25],
             environmentSample: ["motorTimeConstant": 0.021],
+            constraint: TrainingRunIterationRecord.ConstraintState(
+                metricID: "mean-undiscounted-on-policy-episode-cost-v1",
+                observedCost: 0.5,
+                costLimit: 0.04,
+                constraintGap: 0.46,
+                dualLambda: 0.023,
+                episodeCount: 30,
+                transitionCount: 81_000
+            ),
             checkpoint: TrainingRunIterationRecord.CheckpointReference(
                 path: "checkpoints/iter-\(iteration).safetensors",
                 sha256Digest: String(repeating: "a", count: 64)
@@ -292,6 +316,7 @@ struct TrainingRunContractTests {
         let artifacts = try #require(journal.records.first?.evaluation?.artifacts)
 
         #expect(artifacts.isEmpty)
+        #expect(journal.records.first?.constraint == nil)
     }
 
     @Test func evaluationArtifactReferenceValidatorAcceptsExistingRelativeArtifacts() throws {
@@ -378,6 +403,47 @@ struct TrainingRunContractTests {
                 kind: "checkpoint-evaluation",
                 path: "evaluations/iteration-0/missing.json"
             )
+        }
+    }
+
+    @Test func evaluationArtifactReferenceValidatorRejectsDigestMismatch() throws {
+        let root = try makeTemporaryRunRoot()
+        let artifactDirectory = root
+            .appendingPathComponent("evaluations", isDirectory: true)
+            .appendingPathComponent("iteration-0", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: artifactDirectory,
+            withIntermediateDirectories: true
+        )
+        let artifactURL = artifactDirectory.appendingPathComponent(
+            "checkpoint-evaluation.json",
+            isDirectory: false
+        )
+        try Data("original".utf8).write(to: artifactURL, options: .atomic)
+        let expectedDigest = try TrainingRunArtifactDigest().sha256(at: artifactURL)
+        let reference = TrainingRunIterationRecord.EvaluationRecord.ArtifactReference(
+            kind: "checkpoint-evaluation",
+            path: "evaluations/iteration-0/checkpoint-evaluation.json",
+            sha256Digest: expectedDigest
+        )
+        try Data("rewritten".utf8).write(to: artifactURL, options: .atomic)
+        let actualDigest = try TrainingRunArtifactDigest().sha256(at: artifactURL)
+
+        #expect {
+            try TrainingRunEvaluationArtifactReferenceValidator().validate(
+                artifacts: [reference],
+                iteration: 0,
+                runDirectory: root
+            )
+        } throws: { error in
+            error as? TrainingRunEvaluationArtifactReferenceValidator.ValidationError
+                == .digestMismatch(
+                    iteration: 0,
+                    kind: "checkpoint-evaluation",
+                    path: "evaluations/iteration-0/checkpoint-evaluation.json",
+                    expected: expectedDigest,
+                    actual: actualDigest
+                )
         }
     }
 
@@ -875,12 +941,17 @@ struct TrainingRunContractTests {
             .appendingPathComponent("artifacts", isDirectory: true)
             .appendingPathComponent("checkpoints", isDirectory: true)
             .appendingPathComponent("accepted", isDirectory: true)
+        let candidate = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("candidate", isDirectory: true)
 
         let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
             runID: manifest.runID.rawValue,
             terminalState: .completed,
             convergenceAccepted: true,
             checkpointState: .accepted,
+            candidateCheckpointURL: candidate,
             publishedCheckpointURL: published
         ))
 
@@ -899,18 +970,70 @@ struct TrainingRunContractTests {
             .appendingPathComponent("artifacts", isDirectory: true)
             .appendingPathComponent("checkpoints", isDirectory: true)
             .appendingPathComponent("accepted", isDirectory: true)
+        let candidate = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("candidate", isDirectory: true)
 
         let classification = TrainingRunResultTerminalClassifier().classify(result: makeDriverFinishTrainingRunResult(
             runID: manifest.runID.rawValue,
             terminalState: .completed,
             convergenceAccepted: true,
             checkpointState: .accepted,
+            candidateCheckpointURL: candidate,
             publishedCheckpointURL: published
         ))
 
         #expect(classification.status == .accepted)
         #expect(classification.accepted)
         #expect(classification.acceptedCheckpointPath == published.path)
+    }
+
+    @Test func terminalClassifierRejectsAcceptedRunWithoutPublishedCheckpoint() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-terminal-classifier-missing-published")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let candidate = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("candidate", isDirectory: true)
+
+        let classification = TrainingRunResultTerminalClassifier().classify(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: true,
+            checkpointState: .accepted,
+            candidateCheckpointURL: candidate
+        ))
+
+        #expect(classification.status == .rejected)
+        #expect(!classification.accepted)
+        #expect(classification.reason == "accepted-checkpoint-published-url-missing")
+        #expect(classification.acceptedCheckpointPath == nil)
+    }
+
+    @Test func driverFinishResultDoesNotPublishAcceptedDecisionWithoutPublishedCheckpoint() throws {
+        let root = try makeTemporaryRunRoot()
+        let manifest = makeManifest(runID: "run-driver-finish-missing-published")
+        let writer = try TrainingRunArchiveWriter.create(manifest: manifest, in: root)
+        let driver = try TrainingRunDriver.resume(runID: manifest.runID.rawValue, runRoot: root)
+        let candidate = writer.runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("checkpoints", isDirectory: true)
+            .appendingPathComponent("candidate", isDirectory: true)
+
+        let disposition = try driver.finish(result: makeDriverFinishTrainingRunResult(
+            runID: manifest.runID.rawValue,
+            terminalState: .completed,
+            convergenceAccepted: true,
+            checkpointState: .accepted,
+            candidateCheckpointURL: candidate
+        ))
+
+        let outcome = try TrainingRunArchiveReader(runDirectory: writer.runDirectory).loadOutcome()
+        #expect(disposition == .completed)
+        #expect(outcome.status == .completed)
+        #expect(outcome.acceptedCheckpointPath == nil)
     }
 
     @Test func driverFinishResultDoesNotPublishCheckpointForRejectedDecision() throws {
@@ -1386,5 +1509,85 @@ struct TrainingRunContractTests {
         }
         let defaultRoot = try TrainingRunContractSchema.resolveRunRoot(environment: [:])
         #expect(defaultRoot.path.hasSuffix(".kuyu/runs"))
+    }
+
+    // MARK: - Checkpoint integrity
+
+    @Test func checkpointDigestIsIndependentOfSymlinkedRootPath() throws {
+        let root = try makeTemporaryRunRoot()
+        let checkpoint = root.appendingPathComponent("checkpoint.manasbundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkpoint, withIntermediateDirectories: false)
+        try Data("weights".utf8).write(
+            to: checkpoint.appendingPathComponent("core.safetensors"),
+            options: .atomic
+        )
+        try Data("{}".utf8).write(
+            to: checkpoint.appendingPathComponent("model.json"),
+            options: .atomic
+        )
+        let linkedCheckpoint = root.appendingPathComponent("checkpoint-link.manasbundle", isDirectory: true)
+        try FileManager.default.createSymbolicLink(
+            at: linkedCheckpoint,
+            withDestinationURL: checkpoint
+        )
+
+        let driver = try makeDriver(
+            runID: "checkpoint-digest-test",
+            runRoot: root.appendingPathComponent("runs", isDirectory: true)
+        )
+        let directReference = try driver.checkpointReference(for: checkpoint)
+        let linkedReference = try driver.checkpointReference(for: linkedCheckpoint)
+
+        #expect(directReference.sha256Digest == linkedReference.sha256Digest)
+        #expect(
+            directReference.digestAlgorithm
+                == TrainingRunIterationRecord.CheckpointReference.DigestAlgorithm.relativePathV2
+        )
+        #expect(
+            linkedReference.digestAlgorithm
+                == TrainingRunIterationRecord.CheckpointReference.DigestAlgorithm.relativePathV2
+        )
+    }
+
+    @Test func legacyCheckpointReferenceDecodesWithExplicitLegacyAlgorithm() throws {
+        let data = Data(
+            #"{"path":"/tmp/checkpoint.manasbundle","sha256Digest":"abc"}"#.utf8
+        )
+        let reference = try JSONDecoder().decode(
+            TrainingRunIterationRecord.CheckpointReference.self,
+            from: data
+        )
+
+        #expect(reference.digestAlgorithm == .legacyRootReplacementV1)
+    }
+
+    @Test func checkpointDigestIsIndependentOfSystemTemporaryDirectoryAlias() throws {
+        let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("kuyu-checkpoint-alias-tests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let checkpoint = root.appendingPathComponent("checkpoint.manasbundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkpoint, withIntermediateDirectories: true)
+        try Data("weights".utf8).write(
+            to: checkpoint.appendingPathComponent("core.safetensors"),
+            options: .atomic
+        )
+        try Data("{}".utf8).write(
+            to: checkpoint.appendingPathComponent("model.json"),
+            options: .atomic
+        )
+        let privateCheckpoint = URL(
+            fileURLWithPath: "/private\(checkpoint.path)",
+            isDirectory: true
+        )
+        let driver = try makeDriver(
+            runID: "checkpoint-alias-test",
+            runRoot: root.appendingPathComponent("runs", isDirectory: true)
+        )
+
+        let temporaryReference = try driver.checkpointReference(for: checkpoint)
+        let privateReference = try driver.checkpointReference(for: privateCheckpoint)
+
+        #expect(temporaryReference.sha256Digest == privateReference.sha256Digest)
+        #expect(temporaryReference.sha256Digest.count == 64)
     }
 }

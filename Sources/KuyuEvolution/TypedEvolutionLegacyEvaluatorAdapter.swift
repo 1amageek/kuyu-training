@@ -30,6 +30,7 @@ where
             generationIndex: request.candidate.generationIndex,
             candidateID: evaluation.candidateID,
             taskID: request.config.taskID,
+            evaluationFidelity: request.config.searchEvaluationFidelity,
             scalarFitness: evaluation.fitness,
             rewardAverage: evaluation.rewardAverage ?? evaluation.fitness,
             taskPassRate: evaluation.taskPassRate ?? 0,

@@ -7,6 +7,14 @@ public struct TrainingRunEvaluationArtifactReferenceValidator: Sendable {
         case absolutePath(iteration: Int, kind: String, path: String)
         case parentDirectoryEscape(iteration: Int, kind: String, path: String)
         case missingFile(iteration: Int, kind: String, path: String)
+        case invalidDigest(iteration: Int, kind: String, digest: String)
+        case digestMismatch(
+            iteration: Int,
+            kind: String,
+            path: String,
+            expected: String,
+            actual: String
+        )
         case duplicateKind(iteration: Int, kind: String)
         case duplicatePath(iteration: Int, kind: String, path: String)
 
@@ -22,6 +30,10 @@ public struct TrainingRunEvaluationArtifactReferenceValidator: Sendable {
                 return "artifact path escapes run directory at iteration \(iteration) kind=\(kind) path=\(path)"
             case .missingFile(let iteration, let kind, let path):
                 return "missing artifact file at iteration \(iteration) kind=\(kind) path=\(path)"
+            case .invalidDigest(let iteration, let kind, let digest):
+                return "invalid artifact digest at iteration \(iteration) kind=\(kind) digest=\(digest)"
+            case .digestMismatch(let iteration, let kind, let path, let expected, let actual):
+                return "artifact digest mismatch at iteration \(iteration) kind=\(kind) path=\(path) expected=\(expected) actual=\(actual)"
             case .duplicateKind(let iteration, let kind):
                 return "duplicate artifact kind at iteration \(iteration) kind=\(kind)"
             case .duplicatePath(let iteration, let kind, let path):
@@ -103,6 +115,25 @@ public struct TrainingRunEvaluationArtifactReferenceValidator: Sendable {
                 kind: artifact.kind,
                 path: artifact.path
             )
+        }
+        if let expectedDigest = artifact.sha256Digest {
+            guard TrainingRunArtifactDigest.isValidSHA256(expectedDigest) else {
+                throw ValidationError.invalidDigest(
+                    iteration: iteration,
+                    kind: artifact.kind,
+                    digest: expectedDigest
+                )
+            }
+            let actualDigest = try TrainingRunArtifactDigest().sha256(at: url)
+            guard actualDigest == expectedDigest else {
+                throw ValidationError.digestMismatch(
+                    iteration: iteration,
+                    kind: artifact.kind,
+                    path: artifact.path,
+                    expected: expectedDigest,
+                    actual: actualDigest
+                )
+            }
         }
     }
 }

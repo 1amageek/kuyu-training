@@ -69,7 +69,10 @@ public struct EvolutionQualityDiversityArchiveBuilder: Sendable {
         fitness: [FitnessSummary]
     ) -> EvolutionQualityDiversityArchive {
         var cells: [String: EvolutionQualityDiversityCell] = [:]
-        for summary in fitness where summary.scalarFitness.isFinite {
+        for summary in fitness
+        where summary.evaluationFidelity.isFullScenario
+            && summary.scalarFitness.isFinite
+            && summary.failureReasons.isEmpty {
             let descriptor = behaviorDescriptor(for: summary)
             let cellID = self.cellID(descriptor: descriptor)
             let cell = EvolutionQualityDiversityCell(

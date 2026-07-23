@@ -11,7 +11,7 @@ import KuyuTrainingValidation
 /// cross-client contract and must not be renamed casually.
 public enum TrainingRunContractSchema {
     /// Current contract schema version stamped into `manifest.json`.
-    public static let version = 1
+    public static let version = 3
 
     public static let manifestFileName = "manifest.json"
     public static let journalFileName = "iterations.jsonl"

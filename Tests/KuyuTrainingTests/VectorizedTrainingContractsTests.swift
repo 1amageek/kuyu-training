@@ -91,6 +91,7 @@ import Testing
     let quality = try VectorizedTaskQualitySummary(
         profileID: "manipulator",
         task: "joint-target-tracking",
+        scenarioSuiteID: "arm-baseline",
         scenarioID: "arm-target-a",
         seed: 7,
         passed: true,
@@ -119,6 +120,7 @@ import Testing
     #expect(throws: VectorizedTaskQualitySummaryError.emptyMetricID) {
         _ = try VectorizedTaskQualitySummary(
             task: "joint-target-tracking",
+            scenarioSuiteID: "arm-baseline",
             scenarioID: "arm-target-a",
             seed: 7,
             passed: false,
@@ -130,6 +132,7 @@ import Testing
     #expect(throws: VectorizedTaskQualitySummaryError.nonFiniteMetric("targetError")) {
         _ = try VectorizedTaskQualitySummary(
             task: "joint-target-tracking",
+            scenarioSuiteID: "arm-baseline",
             scenarioID: "arm-target-a",
             seed: 7,
             passed: false,
@@ -157,10 +160,14 @@ import Testing
         maxVerticalVelocityAfterWarmup: 0.02
     )
 
-    let quality = try VectorizedTaskQualitySummary(referenceQuadrotor: reference)
+    let quality = try VectorizedTaskQualitySummary(
+        referenceQuadrotor: reference,
+        scenarioSuiteID: "6"
+    )
 
     #expect(quality.profileID == "referenceQuadrotor")
     #expect(quality.task == "lift")
+    #expect(quality.scenarioSuiteID == "6")
     #expect(quality.metrics["targetZ"] == 1.2)
     #expect(quality.metrics["maxVerticalVelocityAfterWarmup"] == 0.02)
 }

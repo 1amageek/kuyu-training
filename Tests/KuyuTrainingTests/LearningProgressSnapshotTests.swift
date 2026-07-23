@@ -18,7 +18,10 @@ func learningProgressSnapshotPreservesIterationMetrics() throws {
             recordedAt: Date(timeIntervalSince1970: 1),
             decision: TrainingRunIterationRecord.CandidateDecision(
                 accepted: true,
+                materiallyImproved: true,
                 rejectionReasons: [],
+                progressSignals: ["reward-average-improved"],
+                progressRejectionReasons: [],
                 horizonHealth: [
                     "failureRate": 0.2,
                     "episodeCount": 5,

@@ -134,7 +134,7 @@ public struct TrainingTaskReferenceMetadata: Sendable, Codable, Equatable {
 }
 
 public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
-    public static let currentSchemaVersion = 4
+    public static let currentSchemaVersion = 6
 
     public let schemaVersion: Int
     public let scenarioId: String
@@ -145,6 +145,9 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
     public let channelCount: Int
     public let driveCount: Int
     public let recordCount: Int
+    public let purpose: TrainingDatasetPurpose?
+    public let physicsTimeStep: Double?
+    public let controlPeriodSteps: UInt64?
     public let failureReason: String?
     public let failureTime: Double?
     public let episodeId: String?
@@ -168,6 +171,9 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         driveCount: Int,
         recordCount: Int,
         schemaVersion: Int = TrainingDatasetMetadata.currentSchemaVersion,
+        purpose: TrainingDatasetPurpose? = nil,
+        physicsTimeStep: Double? = nil,
+        controlPeriodSteps: UInt64? = nil,
         failureReason: String? = nil,
         failureTime: Double? = nil,
         episodeId: String? = nil,
@@ -190,6 +196,9 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         self.channelCount = channelCount
         self.driveCount = driveCount
         self.recordCount = recordCount
+        self.purpose = purpose
+        self.physicsTimeStep = physicsTimeStep
+        self.controlPeriodSteps = controlPeriodSteps
         self.failureReason = failureReason
         self.failureTime = failureTime
         self.episodeId = episodeId
@@ -214,6 +223,9 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         case channelCount
         case driveCount
         case recordCount
+        case purpose
+        case physicsTimeStep
+        case controlPeriodSteps
         case failureReason
         case failureTime
         case episodeId
@@ -239,6 +251,9 @@ public struct TrainingDatasetMetadata: Sendable, Codable, Equatable {
         channelCount = try container.decode(Int.self, forKey: .channelCount)
         driveCount = try container.decode(Int.self, forKey: .driveCount)
         recordCount = try container.decode(Int.self, forKey: .recordCount)
+        purpose = try container.decodeIfPresent(TrainingDatasetPurpose.self, forKey: .purpose)
+        physicsTimeStep = try container.decodeIfPresent(Double.self, forKey: .physicsTimeStep)
+        controlPeriodSteps = try container.decodeIfPresent(UInt64.self, forKey: .controlPeriodSteps)
         failureReason = try container.decodeIfPresent(String.self, forKey: .failureReason)
         failureTime = try container.decodeIfPresent(Double.self, forKey: .failureTime)
         episodeId = try container.decodeIfPresent(String.self, forKey: .episodeId)
@@ -294,17 +309,27 @@ public struct TrainingReflexCorrection: Sendable, Codable, Equatable {
 
 public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
     public let time: Double
+    public let policyDecisionID: String?
+    public let actionObservationTime: Double?
+    public let actionObservationState: [Double]?
     public let sensors: [TrainingSensorSample]
     public let driveIntents: [TrainingDriveIntent]
     public let reflexCorrections: [TrainingReflexCorrection]
     public let physicsState: [Double]?
     public let actualState: [Double]?
+    /// Values in the policy action space, before control-law realization.
     public let actionValues: [Double]?
+    public let policyActionEncoding: String?
+    public let behaviorMean: [Double]?
+    public let behaviorLogProbability: Double?
+    /// Reserved for a future rollout producer that records the behavior critic.
+    public let behaviorValue: Double?
+    public let actuatorCommandValues: [Double]?
     public let continueValue: Double?
     public let reward: Double?
     /// Per-step safety cost for constrained RL. Nil means no cost signal was
     /// recorded; constrained pipelines must fail closed instead of assuming zero.
-    public let cost: Double?
+    public private(set) var cost: Double?
     public let done: Bool?
     public let truncated: Bool?
     public let episodeId: String?
@@ -312,12 +337,20 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
 
     public init(
         time: Double,
+        policyDecisionID: String? = nil,
+        actionObservationTime: Double? = nil,
+        actionObservationState: [Double]? = nil,
         sensors: [TrainingSensorSample],
         driveIntents: [TrainingDriveIntent],
         reflexCorrections: [TrainingReflexCorrection],
         physicsState: [Double]? = nil,
         actualState: [Double]? = nil,
         actionValues: [Double]? = nil,
+        policyActionEncoding: String? = nil,
+        behaviorMean: [Double]? = nil,
+        behaviorLogProbability: Double? = nil,
+        behaviorValue: Double? = nil,
+        actuatorCommandValues: [Double]? = nil,
         continueValue: Double? = nil,
         reward: Double? = nil,
         cost: Double? = nil,
@@ -327,12 +360,20 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
         policyId: String? = nil
     ) {
         self.time = time
+        self.policyDecisionID = policyDecisionID
+        self.actionObservationTime = actionObservationTime
+        self.actionObservationState = actionObservationState
         self.sensors = sensors
         self.driveIntents = driveIntents
         self.reflexCorrections = reflexCorrections
         self.physicsState = physicsState
         self.actualState = actualState
         self.actionValues = actionValues
+        self.policyActionEncoding = policyActionEncoding
+        self.behaviorMean = behaviorMean
+        self.behaviorLogProbability = behaviorLogProbability
+        self.behaviorValue = behaviorValue
+        self.actuatorCommandValues = actuatorCommandValues
         self.continueValue = continueValue
         self.reward = reward
         self.cost = cost
@@ -341,10 +382,16 @@ public struct TrainingDatasetRecord: Sendable, Codable, Equatable {
         self.episodeId = episodeId
         self.policyId = policyId
     }
+
+    public func replacingCost(with cost: Double?) -> TrainingDatasetRecord {
+        var record = self
+        record.cost = cost
+        return record
+    }
 }
 
 public struct TrainingDataset: Sendable, Equatable {
-    public static let supportedSchemaVersions: Set<Int> = [3, TrainingDatasetMetadata.currentSchemaVersion]
+    public static let supportedSchemaVersions: Set<Int> = [3, 4, 5, TrainingDatasetMetadata.currentSchemaVersion]
 
     public enum LoadError: Error, Equatable {
         case unsupportedSchemaVersion(found: Int, supported: [Int])

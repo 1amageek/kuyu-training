@@ -7,18 +7,36 @@ import KuyuReinforcement
 public struct TrainingDatasetContract: Sendable, Equatable {
     public let expectedRewardDescriptor: RewardDescriptor?
     public let expectedTaskReference: TrainingTaskReferenceMetadata?
+    public let expectedPolicyActionEncoding: String?
     public let requiresTerminalFacts: Bool
+    public let requiresActionObservationTiming: Bool
+    public let requiresCausalTransitions: Bool
+    public let requiresBehaviorCloningSamples: Bool
+    public let requiresBehaviorStatistics: Bool
+    public let actionObservationTimingTolerance: Double
     public let allowedSchemaVersions: Set<Int>
 
     public init(
         expectedRewardDescriptor: RewardDescriptor? = nil,
         expectedTaskReference: TrainingTaskReferenceMetadata? = nil,
+        expectedPolicyActionEncoding: String? = nil,
         requiresTerminalFacts: Bool = true,
+        requiresActionObservationTiming: Bool = false,
+        requiresCausalTransitions: Bool = false,
+        requiresBehaviorCloningSamples: Bool = false,
+        requiresBehaviorStatistics: Bool = false,
+        actionObservationTimingTolerance: Double = 1e-9,
         allowedSchemaVersions: Set<Int> = [TrainingDatasetMetadata.currentSchemaVersion]
     ) {
         self.expectedRewardDescriptor = expectedRewardDescriptor
         self.expectedTaskReference = expectedTaskReference
+        self.expectedPolicyActionEncoding = expectedPolicyActionEncoding
         self.requiresTerminalFacts = requiresTerminalFacts
+        self.requiresActionObservationTiming = requiresActionObservationTiming
+        self.requiresCausalTransitions = requiresCausalTransitions
+        self.requiresBehaviorCloningSamples = requiresBehaviorCloningSamples
+        self.requiresBehaviorStatistics = requiresBehaviorStatistics
+        self.actionObservationTimingTolerance = actionObservationTimingTolerance
         self.allowedSchemaVersions = allowedSchemaVersions
     }
 }
@@ -40,6 +58,45 @@ public struct TrainingDatasetContractValidator: Sendable {
             recordTruncated: Bool?
         )
         case terminalDatasetRequiresZeroContinueValue(actual: Double?)
+        case invalidActionObservationTimingTolerance(Double)
+        case missingActionObservationTime(recordIndex: Int)
+        case actionObservationTimeAfterRecord(recordIndex: Int, observationTime: Double, recordTime: Double)
+        case actionObservationStepMismatch(
+            recordIndex: Int,
+            observationTime: Double,
+            recordTime: Double,
+            expectedDelta: Double,
+            actualDelta: Double
+        )
+        case invalidCausalPurpose(TrainingDatasetPurpose?)
+        case missingPhysicsTimeStep
+        case missingControlPeriodSteps
+        case controlTimeStepMismatch(expected: Double, actual: Double)
+        case missingPolicyDecisionID(recordIndex: Int)
+        case duplicatePolicyDecisionID(String)
+        case missingActionObservationState(recordIndex: Int)
+        case missingActualState(recordIndex: Int)
+        case missingPolicyAction(recordIndex: Int)
+        case missingPolicyActionEncoding(recordIndex: Int)
+        case policyActionEncodingMismatch(recordIndex: Int, expected: String, actual: String?)
+        case missingBehaviorMean(recordIndex: Int)
+        case missingBehaviorLogProbability(recordIndex: Int)
+        case missingAppliedActuatorCommand(recordIndex: Int)
+        case transitionTimeDiscontinuity(recordIndex: Int, expected: Double, actual: Double)
+        case transitionStateDiscontinuity(recordIndex: Int, valueIndex: Int, expected: Double, actual: Double)
+        case nonPositiveTransitionDuration(recordIndex: Int, duration: Double)
+        case transitionDurationExceedsControlPeriod(recordIndex: Int, maximum: Double, actual: Double)
+        case incompleteNonTerminalTransition(recordIndex: Int, expected: Double, actual: Double)
+        case incompatibleSampleRequirements
+        case invalidBehaviorCloningPurpose(TrainingDatasetPurpose?)
+        case behaviorCloningObservationTimeMismatch(recordIndex: Int, observationTime: Double, recordTime: Double)
+        case behaviorCloningStateMismatch(recordIndex: Int, valueIndex: Int, expected: Double, actual: Double)
+        case sensorTimestampAfterActionObservation(
+            recordIndex: Int,
+            sensorIndex: Int,
+            sensorTimestamp: Double,
+            actionObservationTime: Double
+        )
         case negativeMetadataCount(field: String, value: Int)
         case nonPositiveTimeStep(Double)
         case nonFiniteMetadataValue(field: String, value: Double)
@@ -53,8 +110,8 @@ public struct TrainingDatasetContractValidator: Sendable {
 
     public init() {}
 
-    public func loadAndValidate(
-        from directory: URL,
+    public func validatedDataset(
+        in directory: URL,
         against contract: TrainingDatasetContract = TrainingDatasetContract()
     ) throws -> TrainingDataset {
         let dataset = try TrainingDataset.load(from: directory)
@@ -74,6 +131,7 @@ public struct TrainingDatasetContractValidator: Sendable {
         }
 
         try validateMetadataShape(dataset.metadata)
+        try validateContractShape(contract)
 
         guard dataset.metadata.recordCount == dataset.records.count else {
             throw ValidationError.recordCountMismatch(
@@ -83,6 +141,23 @@ public struct TrainingDatasetContractValidator: Sendable {
         }
 
         try validateRecordPayloads(dataset)
+        if contract.requiresCausalTransitions {
+            try validateCausalTransitions(
+                dataset,
+                tolerance: contract.actionObservationTimingTolerance,
+                requiresBehaviorStatistics: contract.requiresBehaviorStatistics
+            )
+        } else if contract.requiresBehaviorCloningSamples {
+            try validateBehaviorCloningSamples(
+                dataset,
+                tolerance: contract.actionObservationTimingTolerance
+            )
+        } else if contract.requiresActionObservationTiming {
+            try validateActionObservationTiming(
+                dataset,
+                tolerance: contract.actionObservationTimingTolerance
+            )
+        }
 
         if let expected = contract.expectedRewardDescriptor {
             guard let actual = dataset.metadata.rewardDescriptor else {
@@ -100,6 +175,10 @@ public struct TrainingDatasetContractValidator: Sendable {
             guard actual == expected else {
                 throw ValidationError.taskReferenceMismatch(expected: expected, actual: actual)
             }
+        }
+
+        if let expected = contract.expectedPolicyActionEncoding {
+            try validatePolicyActionEncoding(dataset, expected: expected)
         }
 
         if contract.requiresTerminalFacts {
@@ -129,12 +208,44 @@ public struct TrainingDatasetContractValidator: Sendable {
         if let rewardSum = metadata.rewardSum {
             try validateFiniteMetadataValue(rewardSum, field: "rewardSum")
         }
+        if let physicsTimeStep = metadata.physicsTimeStep {
+            try validateFiniteMetadataValue(physicsTimeStep, field: "physicsTimeStep")
+            guard physicsTimeStep > 0 else {
+                throw ValidationError.nonPositiveTimeStep(physicsTimeStep)
+            }
+        }
+    }
+
+    private func validateContractShape(_ contract: TrainingDatasetContract) throws {
+        guard contract.actionObservationTimingTolerance.isFinite,
+              contract.actionObservationTimingTolerance >= 0 else {
+            throw ValidationError.invalidActionObservationTimingTolerance(
+                contract.actionObservationTimingTolerance
+            )
+        }
+        guard !(contract.requiresCausalTransitions && contract.requiresBehaviorCloningSamples) else {
+            throw ValidationError.incompatibleSampleRequirements
+        }
     }
 
     private func validateRecordPayloads(_ dataset: TrainingDataset) throws {
         var previousTime: Double?
         for (recordIndex, record) in dataset.records.enumerated() {
             try validateFiniteRecordValue(record.time, recordIndex: recordIndex, field: "time")
+            if let actionObservationTime = record.actionObservationTime {
+                try validateFiniteRecordValue(
+                    actionObservationTime,
+                    recordIndex: recordIndex,
+                    field: "actionObservationTime"
+                )
+            }
+            if let actionObservationState = record.actionObservationState {
+                try validateFiniteRecordVectorValue(
+                    actionObservationState,
+                    recordIndex: recordIndex,
+                    field: "actionObservationState"
+                )
+            }
             if let previous = previousTime, record.time < previous {
                 throw ValidationError.nonMonotonicRecordTime(
                     recordIndex: recordIndex,
@@ -194,6 +305,27 @@ public struct TrainingDatasetContractValidator: Sendable {
             if let actionValues = record.actionValues {
                 try validateFiniteRecordVectorValue(actionValues, recordIndex: recordIndex, field: "actionValues")
             }
+            if let behaviorMean = record.behaviorMean {
+                try validateFiniteRecordVectorValue(
+                    behaviorMean,
+                    recordIndex: recordIndex,
+                    field: "behaviorMean"
+                )
+            }
+            if let behaviorLogProbability = record.behaviorLogProbability {
+                try validateFiniteRecordValue(
+                    behaviorLogProbability,
+                    recordIndex: recordIndex,
+                    field: "behaviorLogProbability"
+                )
+            }
+            if let actuatorCommandValues = record.actuatorCommandValues {
+                try validateFiniteRecordVectorValue(
+                    actuatorCommandValues,
+                    recordIndex: recordIndex,
+                    field: "actuatorCommandValues"
+                )
+            }
             if let continueValue = record.continueValue {
                 try validateFiniteRecordValue(continueValue, recordIndex: recordIndex, field: "continueValue")
             }
@@ -202,6 +334,52 @@ public struct TrainingDatasetContractValidator: Sendable {
             }
             if let cost = record.cost {
                 try validateFiniteRecordValue(cost, recordIndex: recordIndex, field: "cost")
+            }
+        }
+    }
+
+    private func validatePolicyActionEncoding(
+        _ dataset: TrainingDataset,
+        expected: String
+    ) throws {
+        for (recordIndex, record) in dataset.records.enumerated() {
+            guard let actual = record.policyActionEncoding else {
+                throw ValidationError.missingPolicyActionEncoding(recordIndex: recordIndex)
+            }
+            guard actual == expected else {
+                throw ValidationError.policyActionEncodingMismatch(
+                    recordIndex: recordIndex,
+                    expected: expected,
+                    actual: actual
+                )
+            }
+        }
+    }
+
+    private func validateActionObservationTiming(
+        _ dataset: TrainingDataset,
+        tolerance: Double
+    ) throws {
+        for (recordIndex, record) in dataset.records.enumerated() {
+            guard let actionObservationTime = record.actionObservationTime else {
+                throw ValidationError.missingActionObservationTime(recordIndex: recordIndex)
+            }
+            guard actionObservationTime <= record.time + tolerance else {
+                throw ValidationError.actionObservationTimeAfterRecord(
+                    recordIndex: recordIndex,
+                    observationTime: actionObservationTime,
+                    recordTime: record.time
+                )
+            }
+            let actualDelta = record.time - actionObservationTime
+            guard abs(actualDelta - dataset.metadata.timeStep) <= tolerance else {
+                throw ValidationError.actionObservationStepMismatch(
+                    recordIndex: recordIndex,
+                    observationTime: actionObservationTime,
+                    recordTime: record.time,
+                    expectedDelta: dataset.metadata.timeStep,
+                    actualDelta: actualDelta
+                )
             }
         }
     }

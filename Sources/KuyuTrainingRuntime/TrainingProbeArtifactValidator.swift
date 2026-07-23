@@ -62,7 +62,7 @@ public struct TrainingProbeArtifactValidator: Sendable {
         self.trainingValidator = trainingValidator
     }
 
-    public func loadAndValidate(from artifactDirectory: URL) throws -> TrainingProbeArtifactBundle {
+    public func validatedBundle(in artifactDirectory: URL) throws -> TrainingProbeArtifactBundle {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -107,8 +107,8 @@ public struct TrainingProbeArtifactValidator: Sendable {
             directory: artifactDirectory,
             decoder: decoder
         )
-        let training = try trainingValidator.loadAndValidate(
-            from: artifactDirectory.appendingPathComponent("training", isDirectory: true)
+        let training = try trainingValidator.validatedBundle(
+            in: artifactDirectory.appendingPathComponent("training", isDirectory: true)
         )
 
         try validate(
@@ -198,6 +198,14 @@ public struct TrainingProbeArtifactValidator: Sendable {
               comparison.trainedTeacherFinalAltitudeDelta?.isFinite ?? true else {
             throw ValidationError.nonFiniteScore(file: "comparison.json")
         }
+        guard manifest.minScoreDelta.isFinite else {
+            throw ValidationError.nonFiniteScore(file: "probe-manifest.json")
+        }
+        if manifest.requireAcceptedCheckpoint && !training.convergence.accepted && trained != nil {
+            throw ValidationError.inconsistentProbeComparison(
+                "requireAcceptedCheckpoint forbids trained-run evidence before accepted training"
+            )
+        }
         if comparison.reloadSucceeded, trained == nil {
             throw ValidationError.missingTrainedRunForReloadedProbe
         }
@@ -207,6 +215,15 @@ public struct TrainingProbeArtifactValidator: Sendable {
         if let trained, comparison.trainedPassed != trained.suitePassed {
             throw ValidationError.inconsistentProbeComparison("trainedPassed does not match trained-run suitePassed")
         }
+        try validateComparison(
+            comparison,
+            manifest: manifest,
+            teacher: teacher,
+            initial: initial,
+            trained: trained,
+            training: training,
+            probeCheckpointDecision: probeCheckpointDecision
+        )
         if manifest.terminalState == .completed, !comparison.policySatisfied {
             throw ValidationError.inconsistentProbeComparison("completed probe requires a policy-satisfied trained run")
         }
@@ -223,9 +240,60 @@ public struct TrainingProbeArtifactValidator: Sendable {
         if manifest.terminalState == .completed, !comparison.probeAccepted {
             throw ValidationError.inconsistentProbeComparison("completed probe requires probeAccepted")
         }
-        try validateSelectedCheckpoint(comparison)
+        if manifest.terminalState == .completed,
+           probeCheckpointDecision.state != .accepted || probeCheckpointDecision.publishedCheckpointURL == nil {
+            throw ValidationError.inconsistentProbeComparison(
+                "completed probe requires an accepted published checkpoint"
+            )
+        }
+        if manifest.terminalState == .failed,
+           comparison.probeAccepted,
+           probeCheckpointDecision.state == .accepted,
+           probeCheckpointDecision.publishedCheckpointURL != nil {
+            throw ValidationError.inconsistentProbeComparison(
+                "failed probe cannot include a completed acceptance decision"
+            )
+        }
+        try validateSelectedCheckpoint(
+            comparison,
+            manifest: manifest,
+            probeCheckpointDecision: probeCheckpointDecision
+        )
         try validateProbeMetrics(probeMetrics, manifest: manifest, comparison: comparison)
         try validateRecoveryRelabelStatus(recoveryRelabelStatus)
+    }
+
+    private func validateComparison(
+        _ comparison: TrainingProbeComparison,
+        manifest: TrainingProbeManifest,
+        teacher: TrainingProbeRunSummary,
+        initial: TrainingProbeRunSummary,
+        trained: TrainingProbeRunSummary?,
+        training: TrainingRunArtifactBundle,
+        probeCheckpointDecision: CheckpointDecision
+    ) throws {
+        let expected = TrainingProbeComparison(
+            probeID: manifest.probeID,
+            trainingRunID: manifest.trainingRunID,
+            teacher: teacher,
+            initial: initial,
+            trained: trained,
+            training: TrainingRunResult(
+                manifest: training.manifest,
+                metrics: training.metrics,
+                convergence: training.convergence,
+                checkpointDecision: training.checkpointDecision
+            ),
+            minScoreDelta: manifest.minScoreDelta,
+            requireTeacherPass: manifest.requireTeacherPass,
+            requireTrainedPass: manifest.requireTrainedPass,
+            sourceCheckpointURL: manifest.sourceCheckpointURL
+        ).selectingCheckpoint(from: probeCheckpointDecision)
+        guard comparison == expected else {
+            throw ValidationError.inconsistentProbeComparison(
+                "comparison does not match probe summaries, training result, and manifest contract"
+            )
+        }
     }
 
     private func validateRecoveryRelabelStatus(_ status: TrainingProbeRecoveryRelabelStatus) throws {
@@ -257,7 +325,7 @@ public struct TrainingProbeArtifactValidator: Sendable {
         for dataset in datasets {
             let loaded: TrainingDataset
             do {
-                loaded = try TrainingDatasetContractValidator().loadAndValidate(from: dataset)
+                loaded = try TrainingDatasetContractValidator().validatedDataset(in: dataset)
             } catch let error as TrainingDatasetContractValidator.ValidationError {
                 throw ValidationError.invalidRecoveryRelabelStatus("recovery dataset contract violation: \(error)")
             }
@@ -267,18 +335,31 @@ public struct TrainingProbeArtifactValidator: Sendable {
         }
     }
 
-    private func validateSelectedCheckpoint(_ comparison: TrainingProbeComparison) throws {
+    private func validateSelectedCheckpoint(
+        _ comparison: TrainingProbeComparison,
+        manifest: TrainingProbeManifest,
+        probeCheckpointDecision: CheckpointDecision
+    ) throws {
         switch comparison.selectedCheckpointRole {
         case .candidate:
-            if !comparison.probeAccepted {
-                throw ValidationError.inconsistentProbeComparison("candidate checkpoint cannot be selected when probe is rejected")
+            if manifest.terminalState != .completed
+                || !comparison.probeAccepted
+                || probeCheckpointDecision.state != .accepted {
+                throw ValidationError.inconsistentProbeComparison(
+                    "candidate checkpoint selection requires completed probe acceptance"
+                )
             }
-            if comparison.selectedCheckpointURL == nil {
-                throw ValidationError.inconsistentProbeComparison("candidate checkpoint selection requires selectedCheckpointURL")
+            if comparison.selectedCheckpointURL == nil
+                || comparison.selectedCheckpointURL != probeCheckpointDecision.publishedCheckpointURL {
+                throw ValidationError.inconsistentProbeComparison(
+                    "candidate checkpoint selection must match publishedCheckpointURL"
+                )
             }
         case .source:
-            if comparison.probeAccepted {
-                throw ValidationError.inconsistentProbeComparison("source checkpoint cannot be selected when probe is accepted")
+            if manifest.terminalState == .completed {
+                throw ValidationError.inconsistentProbeComparison(
+                    "source checkpoint cannot be selected by a completed probe"
+                )
             }
             if comparison.sourceCheckpointURL == nil || comparison.selectedCheckpointURL != comparison.sourceCheckpointURL {
                 throw ValidationError.inconsistentProbeComparison("source checkpoint selection must match sourceCheckpointURL")
@@ -340,12 +421,79 @@ public struct TrainingProbeArtifactValidator: Sendable {
                 actual: metrics.first { $0.runID != manifest.trainingRunID }?.runID ?? ""
             )
         }
-        guard let divergenceMetric = metrics.last(where: { $0.kind == .teacherDivergenceRegression }) else {
+        try validateMetric(
+            metrics,
+            kind: .scoreDelta,
+            expected: comparison.scoreDelta,
+            missingMessage: "scoreDelta metric is missing"
+        )
+        try validateMetric(
+            metrics,
+            kind: .safetyViolationDelta,
+            expected: comparison.safetyViolationDelta,
+            missingMessage: "safetyViolationDelta metric is missing"
+        )
+        try validateMetric(
+            metrics,
+            kind: .safetyEvidenceAvailable,
+            expected: comparison.safetyEvidenceAvailable ? 1.0 : 0.0,
+            missingMessage: "safetyEvidenceAvailable metric is missing"
+        )
+        try validateMetric(
+            metrics,
+            kind: .safetyRegression,
+            expected: comparison.safetyEvidenceAvailable && !comparison.safetyNonRegression ? 1.0 : 0.0,
+            missingMessage: "safetyRegression metric is missing"
+        )
+        try validateMetric(
+            metrics,
+            kind: .policySatisfied,
+            expected: comparison.policySatisfied ? 1.0 : 0.0,
+            missingMessage: "policySatisfied metric is missing"
+        )
+        try validateMetric(
+            metrics,
+            kind: .teacherDivergenceRegression,
+            expected: comparison.teacherDivergenceNonRegression ? 0.0 : 1.0,
+            missingMessage: "teacherDivergenceRegression metric is missing"
+        )
+    }
+
+    private func validateMetric(
+        _ metrics: [TrainingMetricRecord],
+        kind: TrainingMetricKind,
+        expected: Double?,
+        missingMessage: String
+    ) throws {
+        let matchingMetrics = metrics.filter { $0.kind == kind }
+        guard let expected else {
+            if !matchingMetrics.isEmpty {
+                throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric is unexpected")
+            }
             return
         }
-        let expected = comparison.teacherDivergenceNonRegression ? 0.0 : 1.0
-        if divergenceMetric.value != expected {
-            throw ValidationError.inconsistentProbeComparison("teacherDivergenceRegression metric does not match comparison")
+        guard !matchingMetrics.isEmpty else {
+            throw ValidationError.inconsistentProbeComparison(missingMessage)
+        }
+        guard matchingMetrics.count == 1, let metric = matchingMetrics.first else {
+            throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric is duplicated")
+        }
+        guard let step = metric.step else {
+            throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric step is missing")
+        }
+        if metric.iteration != step {
+            throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric iteration does not match step")
+        }
+        guard metric.workerIndex == nil,
+              metric.snapshotID == nil,
+              metric.rolloutShardURL == nil else {
+            throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric must be probe-scoped")
+        }
+        guard metric.iteration >= 0 else {
+            throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric iteration is invalid")
+        }
+        if metric.value != expected {
+            throw ValidationError.inconsistentProbeComparison("\(kind.rawValue) metric does not match comparison")
         }
     }
 

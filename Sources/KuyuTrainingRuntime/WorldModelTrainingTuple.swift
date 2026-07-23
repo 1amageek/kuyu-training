@@ -59,28 +59,43 @@ public struct WorldModelTrainingTuple: Sendable, Codable, Equatable {
 }
 
 public struct WorldModelTupleBuilder: Sendable {
+    public enum BuildError: Error, Sendable, Equatable {
+        case missingCausalTransitions
+        case transitionCountMismatch(expected: Int, actual: Int)
+    }
+
     public init() {}
 
     public func makeTuples(from episode: RolloutEpisode) throws -> [WorldModelTrainingTuple] {
-        guard episode.steps.count >= 2 else { return [] }
+        guard let transitions = episode.transitions else {
+            throw BuildError.missingCausalTransitions
+        }
+        guard transitions.count == episode.steps.count else {
+            throw BuildError.transitionCountMismatch(
+                expected: episode.steps.count,
+                actual: transitions.count
+            )
+        }
         var tuples: [WorldModelTrainingTuple] = []
-        tuples.reserveCapacity(episode.steps.count - 1)
+        tuples.reserveCapacity(transitions.count)
 
-        for index in 0..<(episode.steps.count - 1) {
-            let current = episode.steps[index]
-            let next = episode.steps[index + 1]
-            let terminal = next.done || next.truncated
+        for (index, transition) in transitions.enumerated() {
+            let outcome = transition.outcome
+            let terminal = outcome.done || outcome.truncated
             tuples.append(try WorldModelTrainingTuple(
                 episodeId: episode.episodeId,
                 stepIndex: index,
-                observation: current.observation,
-                action: action(from: current.log),
-                physicsPrediction: physicsPrediction(from: current.observation, to: next.observation),
-                actualObservation: next.observation,
-                reward: next.reward,
+                observation: transition.actionObservation,
+                action: transition.action,
+                physicsPrediction: physicsPrediction(
+                    from: transition.actionObservation,
+                    to: outcome.observation
+                ),
+                actualObservation: outcome.observation,
+                reward: outcome.reward,
                 continueValue: terminal ? 0.0 : 1.0,
-                done: next.done,
-                truncated: next.truncated,
+                done: outcome.done,
+                truncated: outcome.truncated,
                 robotManifestID: episode.robotManifestID,
                 scenarioId: episode.scenarioId,
                 seed: episode.seed
@@ -94,13 +109,6 @@ public struct WorldModelTupleBuilder: Sendable {
         try episodes.flatMap { episode in
             try makeTuples(from: episode)
         }
-    }
-
-    private func action(from log: WorldStepLog) -> EnvironmentAction {
-        if !log.actuatorValues.isEmpty {
-            return .actuatorValues(log.actuatorValues)
-        }
-        return .driveIntents(log.driveIntents, corrections: log.reflexCorrections)
     }
 
     private func physicsPrediction(

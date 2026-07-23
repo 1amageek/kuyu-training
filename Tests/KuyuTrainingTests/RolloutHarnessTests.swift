@@ -134,6 +134,9 @@ import KuyuScenarios
 
     #expect(meta.episodeId == episode.episodeId)
     #expect(meta.schemaVersion == TrainingDatasetMetadata.currentSchemaVersion)
+    #expect(meta.purpose == .reinforcementRollout)
+    #expect(meta.physicsTimeStep == definition.config.timeStep.delta)
+    #expect(meta.controlPeriodSteps == 1)
     #expect(meta.policyId == "teacherActiveAltitudeHold")
     #expect(meta.rewardSum == episode.rewardSum)
     #expect(meta.rewardDescriptor == episode.rewardDescriptor)
@@ -143,9 +146,13 @@ import KuyuScenarios
     #expect(meta.terminalReason == episode.terminalReason)
     #expect(record.reward != nil)
     #expect(record.episodeId == episode.episodeId)
+    #expect(record.policyDecisionID == episode.transitions?.first?.decisionID)
+    #expect(record.actionObservationTime == episode.transitions?.first?.actionObservation.time.time)
+    #expect(record.actionObservationState?.count == 13)
     #expect(record.physicsState?.count == 13)
     #expect(record.actualState?.count == 13)
     #expect(record.actionValues?.isEmpty == false)
+    #expect(record.actuatorCommandValues?.isEmpty == false)
     #expect(record.continueValue == 0.0 || record.continueValue == 1.0)
     #expect(records.last?.done == episode.done)
     #expect(records.last?.truncated == episode.truncated)
@@ -154,6 +161,136 @@ import KuyuScenarios
         guard let physics = record.physicsState, let actual = record.actualState else { return false }
         return zip(physics, actual).contains { abs($0 - $1) > 1e-12 }
     })
+}
+
+@Test func rolloutRunnerPreservesCausalTransitionsAcrossControlPeriods() async throws {
+    for (controlPeriodSteps, duration) in [(UInt64(2), 0.018), (UInt64(3), 0.020)] {
+        let definition = try makeShortAttitudeScenario(
+            id: "KUY-RL-CAUSAL/\(controlPeriodSteps)",
+            seed: 230 + controlPeriodSteps,
+            duration: duration
+        )
+        let runner = RolloutRunner(
+            schedule: try SimulationSchedule.baseline(cutPeriodSteps: controlPeriodSteps),
+            determinism: .tier1Baseline,
+            motorNerveRateLimitPerSecond: 100.0,
+            motorNerveSmoothingTimeConstant: nil
+        )
+        let gains = try ImuRateDampingCutGains(kp: 2.0, kd: 0.25, yawDamping: 0.2)
+        let episode = try await runner.runEpisode(
+            definition: definition,
+            policyFactory: KuyAtt1BaselinePolicyFactory(gains: gains, mode: .teacher)
+        )
+        let transitions = try #require(episode.transitions)
+        let physicsStepCount = Int((duration / definition.config.timeStep.delta).rounded(.down))
+        let expectedCount = (physicsStepCount + Int(controlPeriodSteps) - 1) / Int(controlPeriodSteps)
+        let expectedDuration = definition.config.timeStep.delta * Double(controlPeriodSteps)
+
+        #expect(episode.steps.count == expectedCount)
+        #expect(transitions.count == expectedCount)
+        #expect(Set(transitions.map(\.decisionID)).count == expectedCount)
+        #expect(transitions.dropLast().allSatisfy { abs($0.duration - expectedDuration) <= 1.0e-12 })
+        let expectedFinalDuration = definition.config.timeStep.delta
+            * Double(physicsStepCount - (expectedCount - 1) * Int(controlPeriodSteps))
+        #expect(abs((transitions.last?.duration ?? 0) - expectedFinalDuration) <= 1.0e-12)
+        for index in transitions.indices.dropFirst() {
+            #expect(transitions[index].actionObservation == transitions[index - 1].outcome.observation)
+        }
+
+        let dataset = TrainingDatasetWriter().makeDataset(
+            episode: episode,
+            timeStep: definition.config.timeStep.delta,
+            determinismTier: "tier1"
+        )
+        try TrainingDatasetContractValidator().validate(
+            dataset,
+            against: TrainingDatasetContract(
+                requiresTerminalFacts: true,
+                requiresCausalTransitions: true
+            )
+        )
+        #expect(dataset.metadata.timeStep == expectedDuration)
+        #expect(dataset.metadata.physicsTimeStep == definition.config.timeStep.delta)
+        #expect(dataset.metadata.controlPeriodSteps == controlPeriodSteps)
+        #expect(dataset.records.map(\.policyDecisionID) == transitions.map { Optional($0.decisionID) })
+        #expect(dataset.records.map(\.actionObservationTime) == transitions.map { Optional($0.actionObservation.time.time) })
+        for (record, transition) in zip(dataset.records, transitions) {
+            #expect(record.actionValues == transition.action.driveIntents.map(\.activation))
+            #expect(record.driveIntents.map(\.value) == transition.action.driveIntents.map(\.activation))
+            #expect(record.actuatorCommandValues == transition.outcome.log.actuatorValues.map(\.value))
+        }
+    }
+}
+
+@Test func rolloutRunnerPersistsShortTerminalFailureTransition() async throws {
+    let definition = try makeShortAttitudeScenario(
+        id: "KUY-RL-CAUSAL/SHORT-TERMINAL",
+        seed: 241,
+        duration: 0.018,
+        groundZ: 3.0
+    )
+    let runner = RolloutRunner(
+        schedule: try SimulationSchedule.baseline(cutPeriodSteps: 3),
+        determinism: .tier1Baseline,
+        motorNerveRateLimitPerSecond: 100.0,
+        motorNerveSmoothingTimeConstant: nil
+    )
+    let gains = try ImuRateDampingCutGains(kp: 2.0, kd: 0.25, yawDamping: 0.2)
+
+    let episode = try await runner.runEpisode(
+        definition: definition,
+        policyFactory: KuyAtt1BaselinePolicyFactory(gains: gains, mode: .teacher)
+    )
+    let transitions = try #require(episode.transitions)
+    let transition = try #require(transitions.first)
+    let dataset = TrainingDatasetWriter().makeDataset(
+        episode: episode,
+        timeStep: definition.config.timeStep.delta,
+        determinismTier: "tier1"
+    )
+
+    #expect(episode.done)
+    #expect(!episode.truncated)
+    #expect(transitions.count == 1)
+    #expect(transition.outcome.info.failureReason == .groundViolation)
+    #expect(abs(transition.duration - definition.config.timeStep.delta) <= 1.0e-12)
+    #expect(dataset.metadata.timeStep == definition.config.timeStep.delta * 3.0)
+    #expect(dataset.records.count == 1)
+    #expect(dataset.records.first?.time == definition.config.timeStep.delta)
+    try TrainingDatasetContractValidator().validate(
+        dataset,
+        against: TrainingDatasetContract(
+            requiresTerminalFacts: true,
+            requiresCausalTransitions: true
+        )
+    )
+}
+
+@Test func rolloutDatasetRejectsDirectActuatorActionInsteadOfRelabelingItAsDriveIntent() async throws {
+    let definition = try makeShortAttitudeScenario(id: "KUY-RL-CAUSAL/DIRECT", seed: 242)
+    let runner = RolloutRunner(
+        schedule: try SimulationSchedule.baseline(cutPeriodSteps: 1),
+        determinism: .tier1Baseline,
+        motorNerveRateLimitPerSecond: 100.0,
+        motorNerveSmoothingTimeConstant: nil
+    )
+    let episode = try await runner.runEpisode(
+        definition: definition,
+        policyFactory: DirectActuatorPolicyFactory()
+    )
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("kuyu-direct-action-\(UUID().uuidString)", isDirectory: true)
+
+    #expect(
+        throws: TrainingDatasetContractValidator.ValidationError.missingPolicyAction(recordIndex: 0)
+    ) {
+        _ = try TrainingDatasetWriter().write(
+            episode: episode,
+            timeStep: definition.config.timeStep.delta,
+            determinismTier: "tier1",
+            to: root
+        )
+    }
 }
 
 @Test func rolloutEpisodeBuildsFiniteWorldModelTrainingTuplesWithoutCrossingEpisodeBoundary() async throws {
@@ -171,13 +308,20 @@ import KuyuScenarios
 
     let tuples = try WorldModelTupleBuilder().makeTuples(from: episode)
 
-    #expect(tuples.count == max(episode.steps.count - 1, 0))
+    let transitions = try #require(episode.transitions)
+    #expect(tuples.count == transitions.count)
     #expect(tuples.allSatisfy { $0.episodeId == episode.episodeId })
     #expect(tuples.allSatisfy { $0.scenarioId == episode.scenarioId })
     #expect(tuples.allSatisfy { $0.seed == episode.seed })
     #expect(tuples.allSatisfy { $0.reward.isFinite })
     #expect(tuples.allSatisfy { $0.continueValue == 0.0 || $0.continueValue == 1.0 })
     #expect(tuples.last?.continueValue == 0.0)
+    for (tuple, transition) in zip(tuples, transitions) {
+        #expect(tuple.observation == transition.actionObservation)
+        #expect(tuple.action == transition.action)
+        #expect(tuple.actualObservation == transition.outcome.observation)
+        #expect(tuple.reward == transition.outcome.reward)
+    }
     #expect(tuples.contains { tuple in
         let prediction = tuple.physicsPrediction.plantState.root.position
         let actual = tuple.actualObservation.plantState.root.position
@@ -351,20 +495,51 @@ private struct ScopedProbePolicy: ReferenceQuadrotorEnvironmentPolicy {
     }
 }
 
-private func makeShortAttitudeScenario(id: String, seed: UInt64) throws -> ReferenceQuadrotorScenarioDefinition {
+private struct DirectActuatorPolicyFactory: ReferenceQuadrotorPolicyFactory {
+    let policyID = "direct-actuator-test"
+
+    func makePolicy(
+        definition: ReferenceQuadrotorScenarioDefinition,
+        workerIndex: Int
+    ) throws -> any ReferenceQuadrotorEnvironmentPolicy {
+        _ = definition
+        _ = workerIndex
+        return DirectActuatorPolicy(policyID: policyID)
+    }
+}
+
+private struct DirectActuatorPolicy: ReferenceQuadrotorEnvironmentPolicy {
+    let policyID: String
+
+    mutating func action(for observation: EnvironmentObservation) async throws -> EnvironmentAction {
+        _ = observation
+        return .actuatorValues(
+            try (0..<4).map { index in
+                try ActuatorValue(index: ActuatorIndex(UInt32(index)), value: 0.5)
+            }
+        )
+    }
+}
+
+private func makeShortAttitudeScenario(
+    id: String,
+    seed: UInt64,
+    duration: Double = 0.02,
+    groundZ: Double = 0.0
+) throws -> ReferenceQuadrotorScenarioDefinition {
     let timeStep = try TimeStep(delta: 0.001)
     let envelope = try SafetyEnvelope(
         omegaSafeMax: 20.0,
         tiltSafeMaxDegrees: 60.0,
         sustainedViolationSeconds: 0.200,
-        groundZ: 0.0,
+        groundZ: groundZ,
         fallDurationSeconds: 0.5,
         fallVelocityThreshold: 0.05
     )
     let config = try ScenarioConfig(
         id: ScenarioID(id),
         seed: ScenarioSeed(seed),
-        duration: 0.02,
+        duration: duration,
         timeStep: timeStep
     )
     return ReferenceQuadrotorScenarioDefinition(

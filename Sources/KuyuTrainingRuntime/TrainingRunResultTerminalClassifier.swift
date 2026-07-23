@@ -49,11 +49,26 @@ public struct TrainingRunResultTerminalClassifier: Sendable {
             guard result.checkpointDecision.state == .accepted else {
                 return Classification(status: .rejected, reason: result.checkpointDecision.reason)
             }
+            guard let candidateCheckpointID = result.checkpointDecision.candidateCheckpointID,
+                  !candidateCheckpointID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return Classification(status: .rejected, reason: "accepted-checkpoint-candidate-id-missing")
+            }
+            guard result.checkpointDecision.candidateCheckpointURL != nil else {
+                return Classification(status: .rejected, reason: "accepted-checkpoint-candidate-url-missing")
+            }
+            guard let publishedCheckpointURL = result.checkpointDecision.publishedCheckpointURL else {
+                return Classification(status: .rejected, reason: "accepted-checkpoint-published-url-missing")
+            }
+            guard result.manifest.outputCheckpointID == candidateCheckpointID else {
+                return Classification(
+                    status: .rejected,
+                    reason: "output-checkpoint-mismatch: expected=\(candidateCheckpointID) actual=\(result.manifest.outputCheckpointID ?? "nil")"
+                )
+            }
             return Classification(
                 status: .accepted,
                 reason: result.checkpointDecision.reason,
-                acceptedCheckpointPath: result.checkpointDecision.publishedCheckpointURL?.path
-                    ?? result.checkpointDecision.candidateCheckpointURL?.path
+                acceptedCheckpointPath: publishedCheckpointURL.path
             )
         case .rejected:
             return Classification(

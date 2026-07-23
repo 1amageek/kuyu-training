@@ -13,6 +13,7 @@ public struct TrainingRunProgressEvent: Sendable, Codable, Equatable {
     public let seed: String?
     public let generationIndex: Int?
     public let candidateID: String?
+    public let workProgress: TrainingWorkProgress?
     public let progressFraction: Double?
     public let fitness: Double?
     public let rewardAverage: Double?
@@ -44,6 +45,7 @@ public struct TrainingRunProgressEvent: Sendable, Codable, Equatable {
         seed: String? = nil,
         generationIndex: Int? = nil,
         candidateID: String? = nil,
+        workProgress: TrainingWorkProgress? = nil,
         progressFraction: Double? = nil,
         fitness: Double? = nil,
         rewardAverage: Double? = nil,
@@ -74,6 +76,7 @@ public struct TrainingRunProgressEvent: Sendable, Codable, Equatable {
         self.seed = seed
         self.generationIndex = generationIndex
         self.candidateID = candidateID
+        self.workProgress = workProgress
         self.progressFraction = progressFraction
         self.fitness = fitness
         self.rewardAverage = rewardAverage

@@ -183,6 +183,75 @@ import KuyuPhysics
     #expect(health.failureReasonCounts.isEmpty)
 }
 
+@Test func rolloutHealthDecodeRejectsNegativeFailureReasonCount() throws {
+    let payload = rolloutHealthPayload(
+        failureCount: 1,
+        failureReasonCountsJSON: "\"ground-violation\" : -1"
+    )
+
+    #expect(
+        throws: RolloutHealth.ValidationError.invalidFailureReasonCount(
+            reason: "ground-violation",
+            count: -1
+        )
+    ) {
+        _ = try JSONDecoder().decode(RolloutHealth.self, from: payload)
+    }
+}
+
+@Test func rolloutHealthDecodeRejectsEmptyFailureReason() throws {
+    let payload = rolloutHealthPayload(
+        failureCount: 1,
+        failureReasonCountsJSON: "\" \" : 1"
+    )
+
+    #expect(throws: RolloutHealth.ValidationError.invalidFailureReason(" ")) {
+        _ = try JSONDecoder().decode(RolloutHealth.self, from: payload)
+    }
+}
+
+@Test func rolloutHealthDecodeRejectsFailureReasonCountMismatch() throws {
+    let payload = rolloutHealthPayload(
+        failureCount: 2,
+        failureReasonCountsJSON: "\"ground-violation\" : 1"
+    )
+
+    #expect(
+        throws: RolloutHealth.ValidationError.failureReasonCountMismatch(
+            expected: 2,
+            actual: 1
+        )
+    ) {
+        _ = try JSONDecoder().decode(RolloutHealth.self, from: payload)
+    }
+}
+
+private func rolloutHealthPayload(
+    failureCount: Int,
+    failureReasonCountsJSON: String
+) -> Data {
+    Data("""
+    {
+      "cancelledCount" : 0,
+      "doneCount" : \(failureCount),
+      "episodeCount" : 2,
+      "failureCount" : \(failureCount),
+      "failureReasonCounts" : { \(failureReasonCountsJSON) },
+      "horizonLimitCount" : 0,
+      "maxOmega" : 0.5,
+      "maxTilt" : 0.05,
+      "minAltitude" : 1.0,
+      "nonFiniteMetricCount" : 0,
+      "rewardSum" : 0.0,
+      "stabilityMetricContractViolations" : [],
+      "stabilityMetrics" : {},
+      "terminalStepObservationCount" : 2,
+      "terminalStepSum" : 2,
+      "truncatedCount" : 0
+    }
+    """.utf8)
+}
+
 @Test func rolloutHealthAddsSummariesAndMergesWithoutEpisodes() {
     var baseline = RolloutHealth()
     baseline.addEpisodeSummary(

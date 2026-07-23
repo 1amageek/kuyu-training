@@ -11,6 +11,7 @@ public struct TrainingRunArtifactBundle: Sendable, Equatable {
     public let scenarioRuns: [TrainingScenarioRunArtifact]
     public let convergence: ConvergenceSummary
     public let checkpointDecision: CheckpointDecision
+    public let observabilityArtifact: ConsciousUnconsciousObservabilityArtifact
 
     public init(
         artifactDirectory: URL,
@@ -19,7 +20,8 @@ public struct TrainingRunArtifactBundle: Sendable, Equatable {
         metrics: [TrainingMetricRecord],
         scenarioRuns: [TrainingScenarioRunArtifact] = [],
         convergence: ConvergenceSummary,
-        checkpointDecision: CheckpointDecision
+        checkpointDecision: CheckpointDecision,
+        observabilityArtifact: ConsciousUnconsciousObservabilityArtifact
     ) {
         self.artifactDirectory = artifactDirectory
         self.contract = contract
@@ -28,6 +30,7 @@ public struct TrainingRunArtifactBundle: Sendable, Equatable {
         self.scenarioRuns = scenarioRuns
         self.convergence = convergence
         self.checkpointDecision = checkpointDecision
+        self.observabilityArtifact = observabilityArtifact
     }
 }
 
@@ -57,11 +60,12 @@ public struct TrainingRunArtifactValidator: Sendable {
         case stagedCheckpointMissingCandidateURL
         case unexpectedOutputCheckpointID(state: CheckpointDecisionState, outputCheckpointID: String)
         case outputCheckpointMismatch(expected: String, actual: String?)
+        case observabilityProjectionMismatch
     }
 
     public init() {}
 
-    public func loadAndValidate(from artifactDirectory: URL) throws -> TrainingRunArtifactBundle {
+    public func validatedBundle(in artifactDirectory: URL) throws -> TrainingRunArtifactBundle {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let contract = try decode(
@@ -98,13 +102,18 @@ public struct TrainingRunArtifactValidator: Sendable {
             from: artifactDirectory.appendingPathComponent(TrainingScenarioRunArtifact.fileName),
             decoder: decoder
         )
+        let observabilityArtifact = try ConsciousUnconsciousObservabilityArtifactStore().validatedArtifact(
+            at: ConsciousUnconsciousObservabilityArtifact.fileName,
+            relativeTo: artifactDirectory
+        )
 
         try validate(
             manifest: manifest,
             metrics: metrics,
             scenarioRuns: scenarioRuns,
             convergence: convergence,
-            checkpointDecision: checkpointDecision
+            checkpointDecision: checkpointDecision,
+            observabilityArtifact: observabilityArtifact
         )
         return TrainingRunArtifactBundle(
             artifactDirectory: artifactDirectory,
@@ -113,7 +122,8 @@ public struct TrainingRunArtifactValidator: Sendable {
             metrics: metrics,
             scenarioRuns: scenarioRuns,
             convergence: convergence,
-            checkpointDecision: checkpointDecision
+            checkpointDecision: checkpointDecision,
+            observabilityArtifact: observabilityArtifact
         )
     }
 
@@ -137,7 +147,8 @@ public struct TrainingRunArtifactValidator: Sendable {
         metrics: [TrainingMetricRecord],
         scenarioRuns: [TrainingScenarioRunArtifact],
         convergence: ConvergenceSummary,
-        checkpointDecision: CheckpointDecision
+        checkpointDecision: CheckpointDecision,
+        observabilityArtifact: ConsciousUnconsciousObservabilityArtifact
     ) throws {
         guard !manifest.runID.isEmpty else {
             throw ValidationError.emptyRunID
@@ -194,6 +205,15 @@ public struct TrainingRunArtifactValidator: Sendable {
             metrics: metrics,
             scenarioRuns: scenarioRuns
         )
+        let expectedObservabilityArtifact = try TrainingRunObservabilityProjection().artifact(
+            manifest: manifest,
+            metrics: metrics,
+            convergence: convergence,
+            checkpointDecision: checkpointDecision
+        )
+        guard observabilityArtifact == expectedObservabilityArtifact else {
+            throw ValidationError.observabilityProjectionMismatch
+        }
     }
 
     private func validateScenarioRuns(

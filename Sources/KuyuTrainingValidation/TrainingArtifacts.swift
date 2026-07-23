@@ -35,7 +35,7 @@ public extension MetricsWriting {
 
 public struct TrainingRunArtifactContract: Sendable, Codable, Equatable {
     public static let currentSchemaVersion = 1
-    public static let currentContractVersion = 2
+    public static let currentContractVersion = 3
     public static let fileName = "artifact-contract.json"
 
     public let schemaVersion: Int
@@ -53,6 +53,7 @@ public struct TrainingRunArtifactContract: Sendable, Codable, Equatable {
             TrainingScenarioRunArtifact.fileName,
             "convergence.json",
             "checkpoint-decision.json",
+            ConsciousUnconsciousObservabilityArtifact.fileName,
         ]
     ) {
         self.schemaVersion = schemaVersion
@@ -73,6 +74,12 @@ public struct TrainingArtifactWriter: MetricsWriting {
         scenarioRuns: [TrainingScenarioRunArtifact],
         to directory: URL
     ) throws {
+        let observabilityArtifact = try TrainingRunObservabilityProjection().artifact(
+            manifest: manifest,
+            metrics: metrics,
+            convergence: convergence,
+            checkpointDecision: checkpointDecision
+        )
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -93,6 +100,11 @@ public struct TrainingArtifactWriter: MetricsWriting {
         try encoder.encode(checkpointDecision).write(
             to: directory.appendingPathComponent("checkpoint-decision.json"),
             options: [.atomic]
+        )
+        _ = try ConsciousUnconsciousObservabilityArtifactStore().write(
+            observabilityArtifact,
+            to: directory,
+            fileName: ConsciousUnconsciousObservabilityArtifact.fileName
         )
 
         let jsonlEncoder = JSONEncoder()

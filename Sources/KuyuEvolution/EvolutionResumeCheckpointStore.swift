@@ -192,6 +192,7 @@ public struct EvolutionResumeCheckpointStore: Sendable {
             runID: latest.runID,
             startGenerationIndex: latest.lastCommittedGeneration + 1,
             currentPopulation: latest.nextPopulation,
+            candidateAcceptanceMode: latest.candidateAcceptanceMode,
             generations: generations,
             candidates: candidates,
             fitness: fitness,
@@ -201,7 +202,7 @@ public struct EvolutionResumeCheckpointStore: Sendable {
             earlyStopping: latest.earlyStopping,
             incumbentCandidateID: latest.incumbentCandidateID,
             incumbentFitness: latest.incumbentFitness,
-            bestAcceptedFitness: latest.bestAcceptedFitness
+            bestSearchFitness: latest.bestSearchFitness
         )
     }
 

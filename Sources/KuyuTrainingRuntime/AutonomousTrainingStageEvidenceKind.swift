@@ -6,7 +6,10 @@ public enum AutonomousTrainingStageEvidenceKind: String, Codable, Sendable, Equa
     case trainingRunArtifact
     case checkpointEvaluation
     case regressionSummary
+    case reinforcementStageArtifact
     case evolutionArtifact
+    case worldModelArtifact
+    case projectEvidencePack
     case modelBundle
     case campaignSummary
     case external

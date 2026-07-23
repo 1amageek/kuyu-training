@@ -218,15 +218,18 @@ public struct LearningProjectContractValidator: Sendable {
         if policy.temporalWindow.historyLength <= 0 {
             throw LearningProjectContractValidationError.invalidPolicy(reason: "non-positive-history-length")
         }
+        if policy.temporalWindow.previousActionDimension != policy.actionDimension {
+            throw LearningProjectContractValidationError.invalidPolicy(
+                reason: "policy-previous-action-dimension-mismatch"
+            )
+        }
         if let driveCount = action.driveCount, policy.actionDimension != driveCount {
             throw LearningProjectContractValidationError.invalidPolicy(reason: "policy-action-drive-count-mismatch")
         }
         if policy.actionDimension != action.channels.count {
             throw LearningProjectContractValidationError.invalidPolicy(reason: "policy-action-channel-count-mismatch")
         }
-        if policy.actionDistribution == .gaussian && !policy.ppo.isEnabled {
-            throw LearningProjectContractValidationError.invalidPolicy(reason: "gaussian-policy-requires-ppo")
-        }
+        try validateActionDistribution(policy.actionDistribution, policy: policy, action: action)
         if policy.privilegedCritic.isEnabled {
             if policy.privilegedCritic.privilegedDimension <= 0 {
                 throw LearningProjectContractValidationError.invalidPolicy(reason: "privileged-critic-missing-dimension")
@@ -244,6 +247,9 @@ public struct LearningProjectContractValidator: Sendable {
             }
             if !policy.ppo.gaeLambda.isFinite || policy.ppo.gaeLambda < 0 || policy.ppo.gaeLambda > 1 {
                 throw LearningProjectContractValidationError.invalidPolicy(reason: "invalid-ppo-gae-lambda")
+            }
+            if !policy.ppo.valueLossCoefficient.isFinite || policy.ppo.valueLossCoefficient < 0 {
+                throw LearningProjectContractValidationError.invalidPolicy(reason: "invalid-value-loss-coefficient")
             }
             if !policy.ppo.actionSmoothnessCoefficient.isFinite || policy.ppo.actionSmoothnessCoefficient < 0 {
                 throw LearningProjectContractValidationError.invalidPolicy(reason: "invalid-action-smoothness-coefficient")
@@ -280,6 +286,55 @@ public struct LearningProjectContractValidator: Sendable {
                 policy.actionSafety.smoothingAlpha < 0 ||
                 policy.actionSafety.smoothingAlpha > 1 {
                 throw LearningProjectContractValidationError.invalidPolicy(reason: "invalid-action-safety-smoothing-alpha")
+            }
+        }
+    }
+
+    private func validateActionDistribution(
+        _ distribution: LearningProjectPolicyActionDistributionContract,
+        policy: LearningProjectPolicyContract,
+        action: LearningProjectActionContract
+    ) throws {
+        switch distribution.kind {
+        case .deterministic:
+            guard distribution.densityContractID
+                    == LearningProjectPolicyActionDistributionContract.deterministicDensityContractID,
+                  distribution.baseLogStandardDeviations.isEmpty else {
+                throw LearningProjectContractValidationError.invalidPolicy(
+                    reason: "invalid-deterministic-distribution-contract"
+                )
+            }
+        case .gaussian:
+            guard policy.ppo.isEnabled else {
+                throw LearningProjectContractValidationError.invalidPolicy(
+                    reason: "gaussian-policy-requires-ppo"
+                )
+            }
+            guard distribution.densityContractID
+                    == LearningProjectPolicyActionDistributionContract.fixedGaussianDensityContractID else {
+                throw LearningProjectContractValidationError.invalidPolicy(
+                    reason: "unsupported-gaussian-density-contract"
+                )
+            }
+            guard distribution.baseLogStandardDeviations.count == policy.actionDimension else {
+                throw LearningProjectContractValidationError.invalidPolicy(
+                    reason: "gaussian-log-standard-deviation-dimension-mismatch"
+                )
+            }
+            for logStandardDeviation in distribution.baseLogStandardDeviations {
+                let standardDeviation = Float(Foundation.exp(logStandardDeviation))
+                guard logStandardDeviation.isFinite,
+                      standardDeviation.isFinite,
+                      standardDeviation > 0 else {
+                    throw LearningProjectContractValidationError.invalidPolicy(
+                        reason: "invalid-gaussian-log-standard-deviation"
+                    )
+                }
+            }
+            guard action.channels.allSatisfy({ $0.outputTransform != .clampedLinear }) else {
+                throw LearningProjectContractValidationError.invalidPolicy(
+                    reason: "gaussian-policy-requires-invertible-action-transform"
+                )
             }
         }
     }

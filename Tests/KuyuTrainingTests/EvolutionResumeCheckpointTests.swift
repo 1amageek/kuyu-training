@@ -10,24 +10,26 @@ import Testing
 /// compared bit-for-bit against an uninterrupted one.
 private struct ResumeFakeBackend: EvolutionaryTrainingBackend {
     func seedPopulation(request: EvolutionSeedRequest) async throws -> EvolutionPopulation {
-        population(
+        try population(
             config: request.config,
             generationIndex: 0,
             parents: [],
             mutationRate: request.mutationRate,
             mutationNoiseScale: request.mutationNoiseScale,
-            commonRandomSeed: request.commonRandomSeed
+            commonRandomSeed: request.commonRandomSeed,
+            artifactRoot: request.artifactDirectory
         )
     }
 
     func produceNextGeneration(request: EvolutionGenerationRequest) async throws -> EvolutionPopulation {
-        population(
+        try population(
             config: request.config,
             generationIndex: request.previousPopulation.generationIndex + 1,
             parents: request.parentCandidateIDs,
             mutationRate: request.mutationRate,
             mutationNoiseScale: request.mutationNoiseScale,
-            commonRandomSeed: request.commonRandomSeed
+            commonRandomSeed: request.commonRandomSeed,
+            artifactRoot: artifactRoot(for: request.generationArtifactDirectory)
         )
     }
 
@@ -37,29 +39,47 @@ private struct ResumeFakeBackend: EvolutionaryTrainingBackend {
         parents: [String],
         mutationRate: Double,
         mutationNoiseScale: Double,
-        commonRandomSeed: UInt64
-    ) -> EvolutionPopulation {
-        EvolutionPopulation(
+        commonRandomSeed: UInt64,
+        artifactRoot: URL
+    ) throws -> EvolutionPopulation {
+        let candidates = try (0..<config.populationSize).map { index in
+            let isIncumbent = generationIndex == 0 && index == 0
+            let candidateID = "g\(generationIndex)-c\(index)"
+            let checkpointID = "checkpoint-\(candidateID)"
+            let checkpointURL = artifactRoot
+                .appendingPathComponent("candidate-checkpoints", isDirectory: true)
+                .appendingPathComponent(checkpointID, isDirectory: true)
+            try FileManager.default.createDirectory(at: checkpointURL, withIntermediateDirectories: true)
+            try Data("\(config.runID):\(checkpointID)".utf8).write(
+                to: checkpointURL.appendingPathComponent("weights.bin", isDirectory: false),
+                options: [.atomic]
+            )
+            return GenomeCandidate(
+                runID: config.runID,
+                generationIndex: generationIndex,
+                candidateID: candidateID,
+                genomeID: "genome-\(candidateID)",
+                parentCandidateIDs: parents,
+                checkpointID: checkpointID,
+                checkpointURL: checkpointURL,
+                mutationRate: isIncumbent ? 0 : mutationRate,
+                mutationNoiseScale: isIncumbent ? 0 : mutationNoiseScale,
+                commonRandomSeed: commonRandomSeed,
+                mutationSummary: isIncumbent ? "incumbent" : (generationIndex == 0 ? "seeded" : "mutated"),
+                isIncumbent: isIncumbent
+            )
+        }
+        return EvolutionPopulation(
             runID: config.runID,
             generationIndex: generationIndex,
-            candidates: (0..<config.populationSize).map { index in
-                let isIncumbent = generationIndex == 0 && index == 0
-                return GenomeCandidate(
-                    runID: config.runID,
-                    generationIndex: generationIndex,
-                    candidateID: "g\(generationIndex)-c\(index)",
-                    genomeID: "genome-g\(generationIndex)-c\(index)",
-                    parentCandidateIDs: parents,
-                    checkpointID: "checkpoint-g\(generationIndex)-c\(index)",
-                    checkpointURL: URL(fileURLWithPath: "/tmp/checkpoint-g\(generationIndex)-c\(index)"),
-                    mutationRate: isIncumbent ? 0 : mutationRate,
-                    mutationNoiseScale: isIncumbent ? 0 : mutationNoiseScale,
-                    commonRandomSeed: commonRandomSeed,
-                    mutationSummary: isIncumbent ? "incumbent" : (generationIndex == 0 ? "seeded" : "mutated"),
-                    isIncumbent: isIncumbent
-                )
-            }
+            candidates: candidates
         )
+    }
+
+    private func artifactRoot(for generationArtifactDirectory: URL) -> URL {
+        generationArtifactDirectory
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 }
 
@@ -133,6 +153,82 @@ private func sortedCandidates(_ candidates: [GenomeCandidate]) -> [GenomeCandida
     candidates.sorted { ($0.generationIndex, $0.candidateID) < ($1.generationIndex, $1.candidateID) }
 }
 
+private struct ResumeCandidateSignature: Equatable {
+    let runID: String
+    let generationIndex: Int
+    let candidateID: String
+    let genomeID: String
+    let parentCandidateIDs: [String]
+    let checkpointID: String?
+    let checkpointRelativePath: String?
+    let mutationRate: Double?
+    let mutationNoiseScale: Double?
+    let commonRandomSeed: UInt64?
+    let antitheticPairID: String?
+    let antitheticSign: Int?
+    let mutationSummary: String?
+    let isIncumbent: Bool?
+}
+
+private func candidateSignatures(
+    _ candidates: [GenomeCandidate],
+    relativeTo artifactRoot: URL
+) -> [ResumeCandidateSignature] {
+    let rootComponents = artifactRoot.standardizedFileURL.pathComponents
+    return sortedCandidates(candidates).map { candidate in
+        let checkpointRelativePath = candidate.checkpointURL.map { checkpointURL in
+            checkpointURL.standardizedFileURL.pathComponents
+                .dropFirst(rootComponents.count)
+                .joined(separator: "/")
+        }
+        return ResumeCandidateSignature(
+            runID: candidate.runID,
+            generationIndex: candidate.generationIndex,
+            candidateID: candidate.candidateID,
+            genomeID: candidate.genomeID,
+            parentCandidateIDs: candidate.parentCandidateIDs,
+            checkpointID: candidate.checkpointID,
+            checkpointRelativePath: checkpointRelativePath,
+            mutationRate: candidate.mutationRate,
+            mutationNoiseScale: candidate.mutationNoiseScale,
+            commonRandomSeed: candidate.commonRandomSeed,
+            antitheticPairID: candidate.antitheticPairID,
+            antitheticSign: candidate.antitheticSign,
+            mutationSummary: candidate.mutationSummary,
+            isIncumbent: candidate.isIncumbent
+        )
+    }
+}
+
+private struct ResumeCheckpointSignature: Equatable {
+    let checkpointID: String
+    let sha256Digest: String
+    let fileCount: Int
+    let byteCount: Int
+}
+
+private func checkpointSignatures(
+    _ candidates: [GenomeCandidate],
+    artifactRoot: URL
+) throws -> [ResumeCheckpointSignature] {
+    let integrity = EvolutionCheckpointIntegrity()
+    return try sortedCandidates(candidates).map { candidate in
+        let checkpointID = try #require(candidate.checkpointID)
+        let checkpointURL = try #require(candidate.checkpointURL)
+        let reference = try integrity.reference(
+            checkpointID: checkpointID,
+            checkpointURL: checkpointURL,
+            artifactRoot: artifactRoot
+        )
+        return ResumeCheckpointSignature(
+            checkpointID: reference.checkpointID,
+            sha256Digest: reference.sha256Digest,
+            fileCount: reference.fileCount,
+            byteCount: reference.byteCount
+        )
+    }
+}
+
 private func sortedFitness(_ fitness: [FitnessSummary]) -> [FitnessSummary] {
     fitness.sorted { ($0.generationIndex, $0.candidateID) < ($1.generationIndex, $1.candidateID) }
 }
@@ -169,7 +265,7 @@ private func runCampaign(
 
 // MARK: - T1: Tier-0 equivalence
 
-@Test func resumeProducesBitIdenticalCandidatesAndFitness() async throws {
+@Test func resumeProducesEquivalentCandidatesAndBitIdenticalFitness() async throws {
     let canonicalDir = try resumeTemporaryDirectory()
     let resumeDir = try resumeTemporaryDirectory()
     defer { cleanup(canonicalDir); cleanup(resumeDir) }
@@ -208,10 +304,18 @@ private func runCampaign(
     )
     #expect(resumed.manifest.terminalState == .completed)
 
-    // Acceptance line: resumed run is bit-identical to the uninterrupted run.
+    // Acceptance line: metadata, checkpoint bytes, and fitness are identical
+    // after normalizing the distinct artifact roots.
     #expect(resumed.candidates.count == canonical.candidates.count)
     #expect(resumed.fitness.count == canonical.fitness.count)
-    #expect(sortedCandidates(resumed.candidates) == sortedCandidates(canonical.candidates))
+    #expect(
+        candidateSignatures(resumed.candidates, relativeTo: resumeDir)
+            == candidateSignatures(canonical.candidates, relativeTo: canonicalDir)
+    )
+    #expect(
+        try checkpointSignatures(resumed.candidates, artifactRoot: resumeDir)
+            == checkpointSignatures(canonical.candidates, artifactRoot: canonicalDir)
+    )
     #expect(sortedFitness(resumed.fitness) == sortedFitness(canonical.fitness))
 }
 
@@ -236,10 +340,13 @@ private func runCampaign(
 
     // The population to re-run at generation 2 matches the canonical generation-2
     // population, so the discarded in-flight generation is recomputed identically.
-    let canonicalGen2 = sortedCandidates(canonical.candidates.filter { $0.generationIndex == 2 })
-    let restoredGen2 = sortedCandidates(resumeState.currentPopulation.candidates)
+    let canonicalGen2 = canonical.candidates.filter { $0.generationIndex == 2 }
+    let restoredGen2 = resumeState.currentPopulation.candidates
     #expect(resumeState.currentPopulation.generationIndex == 2)
-    #expect(restoredGen2 == canonicalGen2)
+    #expect(
+        candidateSignatures(restoredGen2, relativeTo: resumeDir)
+            == candidateSignatures(canonicalGen2, relativeTo: canonicalDir)
+    )
 
     let resumed = await runCampaign(
         runID: "resume-crash",

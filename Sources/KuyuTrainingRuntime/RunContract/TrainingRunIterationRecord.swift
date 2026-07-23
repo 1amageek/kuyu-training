@@ -26,15 +26,28 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
     }
 
     /// Candidate accept/reject decision with typed rejection reasons and
-    /// per-horizon health metrics.
+    /// health metrics for the policy retained after the decision.
     public struct CandidateDecision: Sendable, Codable, Equatable {
         public let accepted: Bool
+        public let materiallyImproved: Bool
         public let rejectionReasons: [String]
+        public let progressSignals: [String]
+        public let progressRejectionReasons: [String]
         public let horizonHealth: [String: Double]
 
-        public init(accepted: Bool, rejectionReasons: [String], horizonHealth: [String: Double]) {
+        public init(
+            accepted: Bool,
+            materiallyImproved: Bool,
+            rejectionReasons: [String],
+            progressSignals: [String],
+            progressRejectionReasons: [String],
+            horizonHealth: [String: Double]
+        ) {
             self.accepted = accepted
+            self.materiallyImproved = materiallyImproved
             self.rejectionReasons = rejectionReasons
+            self.progressSignals = progressSignals
+            self.progressRejectionReasons = progressRejectionReasons
             self.horizonHealth = horizonHealth
         }
     }
@@ -44,10 +57,16 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
         public struct ArtifactReference: Sendable, Codable, Equatable {
             public let kind: String
             public let path: String
+            public let sha256Digest: String?
 
-            public init(kind: String, path: String) {
+            public init(
+                kind: String,
+                path: String,
+                sha256Digest: String? = nil
+            ) {
                 self.kind = kind
                 self.path = path
+                self.sha256Digest = sha256Digest
             }
         }
 
@@ -108,12 +127,70 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
 
     /// Reference to a checkpoint written during this iteration.
     public struct CheckpointReference: Sendable, Codable, Equatable {
+        public enum DigestAlgorithm: String, Sendable, Codable, Equatable {
+            case legacyRootReplacementV1 = "sha256-root-replacement-v1"
+            case relativePathV2 = "sha256-relative-path-v2"
+        }
+
         public let path: String
         public let sha256Digest: String
+        public let digestAlgorithm: DigestAlgorithm
 
-        public init(path: String, sha256Digest: String) {
+        public init(
+            path: String,
+            sha256Digest: String,
+            digestAlgorithm: DigestAlgorithm = .relativePathV2
+        ) {
             self.path = path
             self.sha256Digest = sha256Digest
+            self.digestAlgorithm = digestAlgorithm
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case path
+            case sha256Digest
+            case digestAlgorithm
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            path = try container.decode(String.self, forKey: .path)
+            sha256Digest = try container.decode(String.self, forKey: .sha256Digest)
+            digestAlgorithm = try container.decodeIfPresent(
+                DigestAlgorithm.self,
+                forKey: .digestAlgorithm
+            ) ?? .legacyRootReplacementV1
+        }
+    }
+
+    /// Constraint statistic and dual state committed for this iteration.
+    /// The metric identity is explicit because cost limits are meaningful only
+    /// relative to their aggregation contract.
+    public struct ConstraintState: Sendable, Codable, Equatable {
+        public let metricID: String
+        public let observedCost: Double
+        public let costLimit: Double
+        public let constraintGap: Double
+        public let dualLambda: Double
+        public let episodeCount: Int
+        public let transitionCount: Int
+
+        public init(
+            metricID: String,
+            observedCost: Double,
+            costLimit: Double,
+            constraintGap: Double,
+            dualLambda: Double,
+            episodeCount: Int,
+            transitionCount: Int
+        ) {
+            self.metricID = metricID
+            self.observedCost = observedCost
+            self.costLimit = costLimit
+            self.constraintGap = constraintGap
+            self.dualLambda = dualLambda
+            self.episodeCount = episodeCount
+            self.transitionCount = transitionCount
         }
     }
 
@@ -126,6 +203,7 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
     public let failureEpisodes: [FailureEpisode]
     public let phaseTimings: [String: Double]
     public let environmentSample: [String: Double]
+    public let constraint: ConstraintState?
     public let checkpoint: CheckpointReference?
 
     public init(
@@ -137,6 +215,7 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
         failureEpisodes: [FailureEpisode] = [],
         phaseTimings: [String: Double] = [:],
         environmentSample: [String: Double] = [:],
+        constraint: ConstraintState? = nil,
         checkpoint: CheckpointReference? = nil
     ) {
         self.iteration = iteration
@@ -147,6 +226,7 @@ public struct TrainingRunIterationRecord: Sendable, Codable, Equatable {
         self.failureEpisodes = failureEpisodes
         self.phaseTimings = phaseTimings
         self.environmentSample = environmentSample
+        self.constraint = constraint
         self.checkpoint = checkpoint
     }
 }

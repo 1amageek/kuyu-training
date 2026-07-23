@@ -14,27 +14,25 @@ public enum LearningProjectPolicyActionEncoding: String, Codable, Sendable, Equa
     case vehicleSteerThrottleBrake
 }
 
-public enum LearningProjectPolicyActionDistribution: String, Codable, Sendable, Equatable, CaseIterable {
-    case deterministic
-    case gaussian
-}
-
 public struct LearningProjectTemporalWindowContract: Codable, Sendable, Equatable {
     public let historyLength: Int
     public let observationDimension: Int
     public let previousActionDimension: Int
     public let targetTrajectoryPointCount: Int
+    public let execution: LearningProjectTemporalExecutionContract
 
     public init(
         historyLength: Int,
         observationDimension: Int,
         previousActionDimension: Int,
-        targetTrajectoryPointCount: Int
+        targetTrajectoryPointCount: Int,
+        execution: LearningProjectTemporalExecutionContract = .fixedWindowZeroState
     ) {
         self.historyLength = max(1, historyLength)
         self.observationDimension = max(1, observationDimension)
         self.previousActionDimension = max(0, previousActionDimension)
         self.targetTrajectoryPointCount = max(0, targetTrajectoryPointCount)
+        self.execution = execution
     }
 
     public var actorTensorShapeDescription: String {
@@ -64,8 +62,8 @@ public struct LearningProjectPPOContract: Codable, Sendable, Equatable {
     public let discount: Double
     public let gaeLambda: Double
     public let valueLossCoefficient: Double
-    public let entropyCoefficient: Double
     public let actionSmoothnessCoefficient: Double
+    public let entropyRegularization: LearningProjectPPOEntropyRegularization
     public let epochCount: Int
     public let minibatchSize: Int
 
@@ -75,8 +73,8 @@ public struct LearningProjectPPOContract: Codable, Sendable, Equatable {
         discount: Double,
         gaeLambda: Double,
         valueLossCoefficient: Double,
-        entropyCoefficient: Double,
         actionSmoothnessCoefficient: Double,
+        entropyRegularization: LearningProjectPPOEntropyRegularization = .none,
         epochCount: Int,
         minibatchSize: Int
     ) {
@@ -85,8 +83,8 @@ public struct LearningProjectPPOContract: Codable, Sendable, Equatable {
         self.discount = discount
         self.gaeLambda = gaeLambda
         self.valueLossCoefficient = valueLossCoefficient
-        self.entropyCoefficient = entropyCoefficient
         self.actionSmoothnessCoefficient = actionSmoothnessCoefficient
+        self.entropyRegularization = entropyRegularization
         self.epochCount = max(1, epochCount)
         self.minibatchSize = max(1, minibatchSize)
     }
@@ -159,7 +157,7 @@ public struct LearningProjectActionSafetyContract: Codable, Sendable, Equatable 
 public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
     public let architecture: LearningProjectPolicyArchitecture
     public let actionEncoding: LearningProjectPolicyActionEncoding
-    public let actionDistribution: LearningProjectPolicyActionDistribution
+    public let actionDistribution: LearningProjectPolicyActionDistributionContract
     public let actionDimension: Int
     public let temporalWindow: LearningProjectTemporalWindowContract
     public let privilegedCritic: LearningProjectPrivilegedCriticContract
@@ -171,7 +169,7 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
     public init(
         architecture: LearningProjectPolicyArchitecture,
         actionEncoding: LearningProjectPolicyActionEncoding,
-        actionDistribution: LearningProjectPolicyActionDistribution,
+        actionDistribution: LearningProjectPolicyActionDistributionContract,
         actionDimension: Int,
         temporalWindow: LearningProjectTemporalWindowContract,
         privilegedCritic: LearningProjectPrivilegedCriticContract,
@@ -225,7 +223,6 @@ public struct LearningProjectPolicyContract: Codable, Sendable, Equatable {
                 discount: 0.99,
                 gaeLambda: 0.95,
                 valueLossCoefficient: 0.5,
-                entropyCoefficient: 0,
                 actionSmoothnessCoefficient: 0,
                 epochCount: 1,
                 minibatchSize: 1

@@ -68,12 +68,24 @@ public struct RolloutStabilityRegressionEnvelope: Sendable, Codable, Equatable {
         relativeTo baseline: RolloutHealth,
         toleranceScale: Double
     ) -> Bool {
-        checks.contains {
+        !materiallyImprovedMetricIDs(
+            candidate: candidate,
+            relativeTo: baseline,
+            toleranceScale: toleranceScale
+        ).isEmpty
+    }
+
+    public func materiallyImprovedMetricIDs(
+        candidate: RolloutHealth,
+        relativeTo baseline: RolloutHealth,
+        toleranceScale: Double
+    ) -> [RolloutStabilityMetricID] {
+        checks.compactMap {
             $0.isMateriallyDirectionallyImproved(
                 candidate: candidate,
                 relativeTo: baseline,
                 toleranceScale: toleranceScale
-            )
+            ) ? $0.metricID : nil
         }
     }
 }

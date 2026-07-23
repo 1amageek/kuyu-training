@@ -186,6 +186,9 @@ struct TrainingDatasetMixerTests {
         #expect(limited[0].metadata.rewardSum == 3)
         #expect(limited[0].metadata.truncated == true)
         #expect(limited[0].metadata.terminalReason == "time-limit")
+        #expect(limited[0].metadata.purpose == .reinforcementRollout)
+        #expect(limited[0].metadata.physicsTimeStep == 0.005)
+        #expect(limited[0].metadata.controlPeriodSteps == 2)
     }
 
     @Test func prefixBudgetClearsTerminalMetadataWhenWindowStopsBeforeTerminal() {
@@ -327,6 +330,9 @@ private func makeBudgetDataset(
         channelCount: 1,
         driveCount: 1,
         recordCount: records.count,
+        purpose: .reinforcementRollout,
+        physicsTimeStep: 0.005,
+        controlPeriodSteps: 2,
         episodeId: episodeID,
         policyId: "test-policy",
         rewardSum: records.reduce(0.0) { partial, record in

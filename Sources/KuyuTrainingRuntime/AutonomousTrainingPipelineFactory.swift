@@ -47,8 +47,12 @@ public struct AutonomousTrainingPipelineFactory: Sendable {
                 taskProfileIDs: taskProfileIDs,
                 capabilities: [.stateEstimation, .obstacleAvoidance, .faultDetection],
                 requiredEntryGates: [.modelBundleValidated],
-                requiredExitGates: [.modelBundleValidated, .telemetryComplete],
-                producesModelBundle: true
+                requiredExitGates: [
+                    .deterministicReplayValidated,
+                    .telemetryComplete,
+                    .artifactLineageComplete,
+                ],
+                producesModelBundle: false
             ),
             AutonomousTrainingStagePlan(
                 stageID: "stress-and-rare-case",

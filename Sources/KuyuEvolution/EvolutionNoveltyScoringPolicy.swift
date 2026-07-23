@@ -23,6 +23,7 @@ public struct EvolutionNoveltyScoringPolicy: Sendable {
     ) -> Double {
         let references = (archive + currentGeneration).filter { other in
             other.candidateID != summary.candidateID
+                && other.evaluationFidelity == summary.evaluationFidelity
         }
         guard !references.isEmpty else { return 1 }
         let descriptor = behaviorDescriptor(for: summary)
@@ -58,6 +59,7 @@ public struct EvolutionNoveltyScoringPolicy: Sendable {
             generationIndex: summary.generationIndex,
             candidateID: summary.candidateID,
             taskID: summary.taskID,
+            evaluationFidelity: summary.evaluationFidelity,
             scalarFitness: summary.scalarFitness,
             rewardAverage: summary.rewardAverage,
             taskPassRate: summary.taskPassRate,

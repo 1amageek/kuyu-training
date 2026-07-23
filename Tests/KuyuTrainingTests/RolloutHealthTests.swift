@@ -662,3 +662,15 @@ private func makeRolloutHealthEpisode(
         steps: [step]
     )
 }
+
+@Test func rolloutHealthAcceptancePolicyValidatesSafetyCostTolerance() throws {
+    #expect(throws: RolloutHealthAcceptancePolicyError.invalidTolerance) {
+        _ = try RolloutHealthAcceptancePolicy(safetyCostTolerance: -0.01)
+    }
+    #expect(throws: RolloutHealthAcceptancePolicyError.invalidTolerance) {
+        _ = try RolloutHealthAcceptancePolicy(safetyCostTolerance: .infinity)
+    }
+    let strict = try RolloutHealthAcceptancePolicy(safetyCostTolerance: nil)
+    #expect(strict.effectiveSafetyCostTolerance == 0)
+    #expect(RolloutHealthAcceptancePolicy.conservative.effectiveSafetyCostTolerance == 0.02)
+}

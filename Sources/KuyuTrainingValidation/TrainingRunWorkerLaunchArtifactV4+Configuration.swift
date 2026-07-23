@@ -367,6 +367,7 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
       maxBatches: settings.maxBatches,
       dualLearningRate: settings.dualLearningRate,
       dualInitialLambda: settings.dualInitialLambda,
+      trainingSuites: settings.trainingSuites,
       stopping: .init(settings.stopping)
     )
   }
@@ -407,6 +408,7 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
       maxBatches: maxBatches,
       dualLearningRate: dualRate,
       dualInitialLambda: dualInitial,
+      trainingSuites: trainingSuites,
       stopping: try stopping?.domainSettings() ?? .conservative
     )
   }

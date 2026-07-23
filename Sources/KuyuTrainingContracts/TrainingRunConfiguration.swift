@@ -198,6 +198,10 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
     /// deadlock; a positive initial lambda applies pressure from the first
     /// iteration. nil keeps the backend default of 0.
     public let dualInitialLambda: Double?
+    /// A1 suite IDs whose graded scenarios are injected into the RR PPO
+    /// training distribution at the search stress severity. nil keeps the
+    /// base task-scenario distribution.
+    public let trainingSuites: [Int]?
     public let stopping: TrainingReinforcementStoppingSettings
 
     public init(
@@ -209,6 +213,7 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         maxBatches: Int? = nil,
         dualLearningRate: Double? = nil,
         dualInitialLambda: Double? = nil,
+        trainingSuites: [Int]? = nil,
         stopping: TrainingReinforcementStoppingSettings = .conservative
     ) {
         self.warmupEnabled = warmupEnabled
@@ -223,6 +228,7 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         self.dualInitialLambda = dualInitialLambda.flatMap {
             $0.isFinite && $0 >= 0 ? $0 : nil
         }
+        self.trainingSuites = trainingSuites.flatMap { $0.isEmpty ? nil : $0.sorted() }
         self.stopping = stopping
     }
 }

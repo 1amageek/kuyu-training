@@ -105,6 +105,33 @@ public enum ReferenceQuadrotorLearningContracts {
         )
     }
 
+    /// v2 of the temporal CTBR observation: channels 40-43 carry the
+    /// achieved per-motor actuator output so an actuator swap becomes
+    /// directly observable instead of requiring implicit system
+    /// identification from kinematic response. Dimension is unchanged, so
+    /// v1 checkpoints load; their weights on these previously-zero channels
+    /// are unconstrained, so switching schemas requires fine-tuning.
+    public static func temporalCTBRMotorFeedbackObservationContract()
+        -> LearningProjectObservationContract
+    {
+        let base = temporalCTBRObservationContract()
+        let channels = base.channels.map { channel -> LearningProjectObservationChannel in
+            guard (40...43).contains(channel.index) else { return channel }
+            return LearningProjectObservationChannel(
+                index: channel.index,
+                name: "motorAchievedOutput\(channel.index - 40)",
+                unit: "normalized",
+                isStateChannel: false,
+                isStressable: true
+            )
+        }
+        return LearningProjectObservationContract(
+            schemaID: "reference-quadrotor-temporal-ctbr-64ch-v2",
+            channelCount: 64,
+            channels: channels
+        )
+    }
+
     public static func bodyRateActionContract() -> LearningProjectActionContract {
         LearningProjectActionContract(
             schemaID: "reference-quadrotor-body-rate-control-action-v1",

@@ -46,6 +46,32 @@ public enum ReferenceQuadrotorLearningContracts {
         )
     }
 
+    /// Body-rate observation extended with achieved per-motor outputs at
+    /// channels 16-19, so an actuator swap becomes directly observable for
+    /// the 16-channel policy lineage. Checkpoints migrate from the 16ch
+    /// schema via explicit derivation that expands the actor/critic input
+    /// projections with zero-initialized columns (function-identical at
+    /// initialization).
+    public static func bodyRateMotorFeedbackObservationContract()
+        -> LearningProjectObservationContract
+    {
+        let base = bodyRateObservationContract()
+        let motor = (0..<4).map { offset in
+            LearningProjectObservationChannel(
+                index: 16 + offset,
+                name: "motorAchievedOutput\(offset)",
+                unit: "normalized",
+                isStateChannel: false,
+                isStressable: true
+            )
+        }
+        return LearningProjectObservationContract(
+            schemaID: "reference-quadrotor-body-rate-motor-feedback-20ch-v1",
+            channelCount: 20,
+            channels: base.channels + motor
+        )
+    }
+
     public static func temporalCTBRObservationContract() -> LearningProjectObservationContract {
         let channels: [LearningProjectObservationChannel] = [
             LearningProjectObservationChannel(index: 0, name: "rotationMatrix00", unit: nil, isStateChannel: true, isStressable: true),

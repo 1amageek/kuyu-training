@@ -115,12 +115,24 @@ public extension TrainingDatasetWriter {
         return transitions.map { transition in
             let step = transition.outcome
             let event = step.log
-            let sensors = transition.actionObservation.sensorSamples.map { sample in
+            var sensors = transition.actionObservation.sensorSamples.map { sample in
                 TrainingSensorSample(
                     channelIndex: sample.channelIndex,
                     value: sample.value,
                     timestamp: sample.timestamp
                 )
+            }
+            // Achieved per-motor actuator outputs at channels 16-19 so
+            // motor-feedback (20ch) tensor materialization can read them;
+            // additive and ignored by 16ch consumers.
+            let telemetry = transition.actionObservation.actuatorTelemetry.channels
+                .sorted { $0.id < $1.id }
+            for (offset, channel) in telemetry.prefix(4).enumerated() {
+                sensors.append(TrainingSensorSample(
+                    channelIndex: UInt32(16 + offset),
+                    value: channel.value,
+                    timestamp: transition.actionObservation.time.time
+                ))
             }
             let reflex = reflexCorrections(from: transition.action)
             return TrainingDatasetRecord(

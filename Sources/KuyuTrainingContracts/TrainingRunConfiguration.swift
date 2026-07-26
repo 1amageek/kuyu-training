@@ -198,6 +198,15 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
     /// deadlock; a positive initial lambda applies pressure from the first
     /// iteration. nil keeps the backend default of 0.
     public let dualInitialLambda: Double?
+    /// Safety-cost budget the dual ascends against during training. The dual
+    /// observes stochastic on-policy episodes, whose cost sits far above the
+    /// task's terminal budget until the policy stops failing; pinned there,
+    /// the constraint gap never changes sign and the multiplier only ratchets
+    /// upward. A budget inside the range the policy currently reaches gives
+    /// the dual something to control, and a campaign lowers it across
+    /// segments. nil trains against the task's terminal budget. The promotion
+    /// budget is never affected.
+    public let dualCostLimit: Double?
     /// A1 suite IDs whose graded scenarios are injected into the RR PPO
     /// training distribution at the search stress severity. nil keeps the
     /// base task-scenario distribution.
@@ -213,6 +222,7 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         maxBatches: Int? = nil,
         dualLearningRate: Double? = nil,
         dualInitialLambda: Double? = nil,
+        dualCostLimit: Double? = nil,
         trainingSuites: [Int]? = nil,
         stopping: TrainingReinforcementStoppingSettings = .conservative
     ) {
@@ -227,6 +237,9 @@ public struct TrainingReinforcementSettings: Sendable, Codable, Equatable {
         }
         self.dualInitialLambda = dualInitialLambda.flatMap {
             $0.isFinite && $0 >= 0 ? $0 : nil
+        }
+        self.dualCostLimit = dualCostLimit.flatMap {
+            $0.isFinite && $0 > 0 ? $0 : nil
         }
         self.trainingSuites = trainingSuites.flatMap { $0.isEmpty ? nil : $0.sorted() }
         self.stopping = stopping

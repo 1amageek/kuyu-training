@@ -367,6 +367,7 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
       maxBatches: settings.maxBatches,
       dualLearningRate: settings.dualLearningRate,
       dualInitialLambda: settings.dualInitialLambda,
+      dualCostLimit: settings.dualCostLimit,
       trainingSuites: settings.trainingSuites,
       stopping: .init(settings.stopping)
     )
@@ -399,6 +400,12 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
     if let dualInitial, dualInitial < 0 {
       throw invalid("configuration.reinforcement.dualInitialLambda", "must be non-negative")
     }
+    let dualLimit = try dualCostLimit.map {
+      try finite($0, field: "configuration.reinforcement.dualCostLimit")
+    }
+    if let dualLimit, dualLimit <= 0 {
+      throw invalid("configuration.reinforcement.dualCostLimit", "must be positive")
+    }
     return TrainingReinforcementSettings(
       warmupEnabled: warmupEnabled,
       requiresTemporalActorCritic: requiresTemporalActorCritic,
@@ -408,6 +415,7 @@ extension TrainingRunWorkerLaunchArtifactV4.ReinforcementSettings {
       maxBatches: maxBatches,
       dualLearningRate: dualRate,
       dualInitialLambda: dualInitial,
+      dualCostLimit: dualLimit,
       trainingSuites: trainingSuites,
       stopping: try stopping?.domainSettings() ?? .conservative
     )

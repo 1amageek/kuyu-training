@@ -267,6 +267,7 @@ struct TrainingRunWorkerLaunchArtifactV4: Codable, Equatable {
     let maxBatches: Int?
     let dualLearningRate: Double?
     let dualInitialLambda: Double?
+    let dualCostLimit: Double?
     let trainingSuites: [Int]?
     let stopping: ReinforcementStoppingSettings?
   }

@@ -212,6 +212,49 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorWritesValidArtifactsWhenNextPopulationIsEmpty() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let orchestrator = EvolutionRunOrchestrator(
+        backend: EmptyNextGenerationEvolutionBackend(artifactDirectory: directory),
+        evaluator: FakeEvolutionEvaluator()
+    )
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-empty-next-population",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 2,
+            eliteCount: 1,
+            workerCount: 1,
+            mutationRate: 0.08
+        ),
+        gatePolicy: strictEvolutionGatePolicy(),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .failed)
+    #expect(result.manifest.failureReason == "empty-population-1")
+    // Generation 0 was fully evaluated before the empty population appeared, so
+    // its candidates and their traces must both reach the bundle.
+    #expect(result.candidates.map(\.candidateID) == ["g0-c0", "g0-c1", "g0-c2"])
+    #expect(
+        result.evaluationTraces.map(\.candidateID).sorted()
+            == ["g0-c0", "g0-c1", "g0-c2"]
+    )
+
+    let artifacts = try EvolutionRunArtifactValidator().validatedBundle(in: directory)
+    #expect(artifacts.manifest.failureReason == "empty-population-1")
+    #expect(
+        artifacts.evaluationTraces.map(\.candidateID).sorted()
+            == ["g0-c0", "g0-c1", "g0-c2"]
+    )
+}
+
+@MainActor
 @Test func qualityDiversityResumeIgnoresPreviouslyPrunedGateFailures() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
@@ -2128,6 +2171,31 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
             runID: config.runID,
             generationIndex: generationIndex,
             candidates: candidates
+        )
+    }
+}
+
+/// Seeds a normal generation and then returns an empty next population.
+///
+/// Drives the orchestrator's `empty-population-N` terminal exit while earlier
+/// generations already contributed candidates and evaluation traces.
+@MainActor
+private final class EmptyNextGenerationEvolutionBackend: EvolutionaryTrainingBackend {
+    private let seedBackend: FakeEvolutionBackend
+
+    init(artifactDirectory: URL) {
+        self.seedBackend = FakeEvolutionBackend(artifactDirectory: artifactDirectory)
+    }
+
+    func seedPopulation(request: EvolutionSeedRequest) async throws -> EvolutionPopulation {
+        try await seedBackend.seedPopulation(request: request)
+    }
+
+    func produceNextGeneration(request: EvolutionGenerationRequest) async throws -> EvolutionPopulation {
+        EvolutionPopulation(
+            runID: request.config.runID,
+            generationIndex: request.previousPopulation.generationIndex + 1,
+            candidates: []
         )
     }
 }

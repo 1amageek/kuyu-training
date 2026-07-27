@@ -88,6 +88,12 @@ extension EvolutionRunOrchestrator {
                     generations: allGenerations,
                     candidates: allCandidates,
                     fitness: allFitness,
+                    // Earlier generations are already in `allCandidates`, and the
+                    // artifact validator requires one evaluation trace per
+                    // candidate, so the accumulated traces must be written here
+                    // too. Dropping them emits a bundle that fails its own
+                    // validator with `missingEvaluationTrace`.
+                    evaluationTraces: allEvaluationTraces,
                     acceptanceEvaluations: allAcceptanceEvaluations,
                     artifactDirectory: artifactDirectory,
                     onEvent: onEvent

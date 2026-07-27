@@ -7,7 +7,7 @@ import Testing
 @Test func evolutionRunOrchestratorStopsEarlyWhenFitnessAndTaskQualityPlateau() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator(taskPassRate: 1, fixedFitness: 1)
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -56,7 +56,7 @@ import Testing
 @Test func evolutionRunOrchestratorWritesAutonomousEvolutionArtifacts() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -74,7 +74,6 @@ import Testing
             searchStrategy: .qualityDiversity,
             bootstrapSource: .teacher,
             worldModelUsage: .evaluationAssist,
-            antitheticSampling: true,
             commonRandomSeed: 42,
             mutationRate: 0.08,
             mutationNoiseScale: 0.04,
@@ -106,7 +105,7 @@ import Testing
     #expect(result.manifest.searchStrategy == .qualityDiversity)
     #expect(result.manifest.bootstrapSource == .teacher)
     #expect(result.manifest.worldModelUsage == .evaluationAssist)
-    #expect(result.manifest.antitheticSampling)
+    #expect(result.manifest.antitheticSampling == false)
     #expect(result.manifest.commonRandomSeed == 42)
     #expect(backend.seedRequests.count == 1)
     #expect(backend.nextGenerationRequests.count == 1)
@@ -141,6 +140,78 @@ import Testing
 }
 
 @MainActor
+@Test func evolutionRunOrchestratorRecordsAntitheticSamplingForPairedPopulation() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let orchestrator = EvolutionRunOrchestrator(
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
+        evaluator: FakeEvolutionEvaluator()
+    )
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-antithetic",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 3,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            antitheticSampling: true,
+            commonRandomSeed: 42,
+            mutationRate: 0.08
+        ),
+        gatePolicy: strictEvolutionGatePolicy(),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .completed)
+    #expect(result.manifest.antitheticSampling)
+    let pairedCandidates = result.candidates.filter { $0.antitheticPairID != nil }
+    #expect(pairedCandidates.count == 2)
+    #expect(Set(pairedCandidates.map(\.antitheticPairID)) == ["g0-p0"])
+    #expect(Set(pairedCandidates.compactMap(\.antitheticSign)) == [1, -1])
+
+    let artifacts = try EvolutionRunArtifactValidator().validatedBundle(in: directory)
+    #expect(artifacts.manifest.antitheticSampling)
+}
+
+@MainActor
+@Test func evolutionRunOrchestratorRejectsAntitheticPopulationWithoutCompletePairs() async throws {
+    let directory = try evolutionTemporaryDirectory()
+    defer { evolutionCleanup(directory) }
+    let orchestrator = EvolutionRunOrchestrator(
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
+        evaluator: FakeEvolutionEvaluator()
+    )
+
+    let result = await orchestrator.run(
+        config: EvolutionRunConfig(
+            runID: "evolution-antithetic-unpaired",
+            taskID: "lift",
+            configHash: "config-hash",
+            policyID: "manasMLX",
+            populationSize: 4,
+            generationCount: 1,
+            eliteCount: 1,
+            workerCount: 1,
+            antitheticSampling: true,
+            commonRandomSeed: 42,
+            mutationRate: 0.08
+        ),
+        gatePolicy: strictEvolutionGatePolicy(),
+        artifactDirectory: directory
+    )
+
+    #expect(result.manifest.terminalState == .failed)
+    let reason = try #require(result.manifest.failureReason)
+    #expect(reason.contains("invalid-evolution-config"))
+    #expect(reason.contains("invalidAntitheticPopulationSize(4)"))
+    #expect(result.candidates.isEmpty)
+}
+
+@MainActor
 @Test func qualityDiversityResumeIgnoresPreviouslyPrunedGateFailures() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
@@ -157,7 +228,7 @@ import Testing
         mutationRate: 0.08
     )
     let gatePolicy = strictEvolutionGatePolicy()
-    let initialBackend = FakeEvolutionBackend()
+    let initialBackend = FakeEvolutionBackend(artifactDirectory: directory)
     let initialRun = await EvolutionRunOrchestrator(
         backend: initialBackend,
         evaluator: FakeEvolutionEvaluator(unsafeCandidateID: "g0-c2"),
@@ -182,7 +253,7 @@ import Testing
         expectedConfigHash: config.configHash
     )
     let resumed = await EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(unsafeCandidateID: "g0-c2"),
         candidateArtifactRetainer: EvolutionCompactCandidateArtifactRetainer()
     ).run(
@@ -202,7 +273,7 @@ import Testing
     defer { evolutionCleanup(directory) }
     let acceptanceEvaluator = FakeEvolutionAcceptanceEvaluator(taskPassRate: 0)
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: acceptanceEvaluator,
@@ -249,7 +320,7 @@ import Testing
     defer { evolutionCleanup(directory) }
     let acceptanceEvaluator = FakeEvolutionAcceptanceEvaluator(taskPassRate: 1)
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: acceptanceEvaluator,
@@ -296,7 +367,7 @@ import Testing
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: FakeEvolutionAcceptanceEvaluator(
@@ -338,7 +409,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     defer { evolutionCleanup(directory) }
     let reporter = RecordingTrainingProgressReporter()
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: FakeEvolutionAcceptanceEvaluator(taskPassRate: 1),
@@ -365,7 +436,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: FakeEvolutionAcceptanceEvaluator(taskPassRate: 1),
@@ -395,7 +466,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: FakeEvolutionAcceptanceEvaluator(taskPassRate: 1),
@@ -428,7 +499,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: FakeEvolutionAcceptanceEvaluator(
@@ -455,7 +526,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: FakeEvolutionAcceptanceEvaluator(
@@ -485,7 +556,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     defer { evolutionCleanup(directory) }
     let acceptanceEvaluator = FakeEvolutionAcceptanceEvaluator(taskPassRate: 1)
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(taskPassRate: 0),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: acceptanceEvaluator,
@@ -517,7 +588,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
         returnedCandidateID: "unexpected-candidate"
     )
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: FakeEvolutionEvaluator(),
         candidateAcceptanceStage: EvolutionCandidateAcceptanceStage(
             evaluator: acceptanceEvaluator,
@@ -547,7 +618,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
 @Test func evolutionRunOrchestratorEvaluatesCandidatesConcurrently() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let probe = EvaluationConcurrencyProbe()
     let evaluator = SlowEvolutionEvaluator(probe: probe)
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
@@ -583,7 +654,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
 @Test func evolutionRunOrchestratorUsesBatchEvaluatorWhenAvailable() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeBatchEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -634,7 +705,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToDedicatedAcceptance() as
     defer { evolutionCleanup(directory) }
     let evaluator = FakePopulationBatchEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: evaluator
     )
 
@@ -676,7 +747,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
     let evaluator = FakeBatchEvolutionEvaluator()
     let reporter = RecordingTrainingProgressReporter()
     let orchestrator = EvolutionRunOrchestrator(
-        backend: FakeEvolutionBackend(),
+        backend: FakeEvolutionBackend(artifactDirectory: directory),
         evaluator: evaluator
     )
 
@@ -709,7 +780,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorStreamsCandidateEventsBeforeGenerationCompletion() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = SlowEvolutionEvaluator(probe: EvaluationConcurrencyProbe())
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
     let events = Mutex<[String]>([])
@@ -768,7 +839,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorWritesValidArtifactsWhenBatchEvaluationIsCancelledMidRun() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = CancellingBatchEvolutionEvaluator(cancelAtGeneration: 1)
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -819,7 +890,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorDoesNotDecayMutationWhenAcceptedGenerationDoesNotBeatIncumbent() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator(fixedFitness: 1)
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -866,7 +937,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorRejectsWhenNoCandidatePassesGate() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator(taskPassRate: 0.5)
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -911,7 +982,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorRejectsLowNoveltyCandidatesWhenRequired() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -946,7 +1017,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorComputesNoveltyForDuplicateBehavior() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = DuplicateBehaviorEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -982,7 +1053,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorDoesNotPublishScalarImprovementWithTaskRegression() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = PublishRegressionEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -1024,7 +1095,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorArchivesButDoesNotPublishWhenNoCandidateImprovesOnIncumbent() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator(fixedFitness: 1.0)
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -1068,7 +1139,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionRunOrchestratorKeepsEarlierAcceptedEliteWhenLaterGenerationRegresses() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator(generationTaskPassRates: [0: 1.0, 1: 0.0])
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -1107,7 +1178,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionArtifactValidatorRejectsNonFiniteFitness() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator(nonFiniteCandidateID: "g0-c1")
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -1138,7 +1209,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
 @Test func evolutionArtifactValidatorRejectsTamperedQualityDiversityArchive() async throws {
     let directory = try evolutionTemporaryDirectory()
     defer { evolutionCleanup(directory) }
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator()
     let orchestrator = EvolutionRunOrchestrator(backend: backend, evaluator: evaluator)
 
@@ -1201,7 +1272,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
         mutationRate: 0.08,
         mutationNoiseScale: 0.04
     )
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let evaluator = FakeEvolutionEvaluator()
     // Drive the generic TypedTrainingBackend contract end-to-end through the real
     // legacy→typed adapter, proving the typed layer is functional and connected to the
@@ -1294,7 +1365,7 @@ func evolutionRunOrchestratorForwardsTypedWorkProgressToBatchEvaluator() async t
         workerCount: 1,
         mutationRate: 0.01
     )
-    let backend = FakeEvolutionBackend()
+    let backend = FakeEvolutionBackend(artifactDirectory: directory)
     let typed = EvolutionTypedBackendAdapter(
         config: config,
         backend: backend,
@@ -1971,12 +2042,24 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
     private(set) var seedRequests: [EvolutionSeedRequest] = []
     private(set) var nextGenerationRequests: [EvolutionGenerationRequest] = []
 
+    /// Root the candidate checkpoints are written under.
+    ///
+    /// `EvolutionCandidateArtifactRetentionStore` resolves, protects and prunes
+    /// checkpoints only inside `<artifactDirectory>/candidates`, and rejects any
+    /// path outside it, so a backend that writes elsewhere fails every retention
+    /// pass. Production wires `ManasMLXEvolutionBackend` to the same root.
+    private let candidateRootDirectory: URL
+
+    init(artifactDirectory: URL) {
+        self.candidateRootDirectory = artifactDirectory
+            .appendingPathComponent("candidates", isDirectory: true)
+    }
+
     func seedPopulation(request: EvolutionSeedRequest) async throws -> EvolutionPopulation {
         seedRequests.append(request)
         return try population(
             config: request.config,
             generationIndex: 0,
-            artifactDirectory: request.artifactDirectory,
             parents: [],
             mutationRate: request.mutationRate,
             mutationNoiseScale: request.mutationNoiseScale,
@@ -1989,7 +2072,6 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
         return try population(
             config: request.config,
             generationIndex: request.previousPopulation.generationIndex + 1,
-            artifactDirectory: request.generationArtifactDirectory,
             parents: request.parentCandidateIDs,
             mutationRate: request.mutationRate,
             mutationNoiseScale: request.mutationNoiseScale,
@@ -2000,7 +2082,6 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
     private func population(
         config: EvolutionRunConfig,
         generationIndex: Int,
-        artifactDirectory: URL,
         parents: [String],
         mutationRate: Double,
         mutationNoiseScale: Double,
@@ -2008,9 +2089,14 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
     ) throws -> EvolutionPopulation {
         let candidates = try (0..<config.populationSize).map { index in
             let isIncumbent = generationIndex == 0 && index == 0
+            // Antithetic pairing mirrors the production convention: candidate 0
+            // preserves the incumbent and carries no pair, and the remaining
+            // candidates form +/- pairs by variation index.
+            let variationIndex = index - 1
+            let isAntithetic = config.antitheticSampling && variationIndex >= 0
             let checkpointID = "checkpoint-g\(generationIndex)-c\(index)"
-            let checkpointURL = artifactDirectory
-                .appendingPathComponent("checkpoints", isDirectory: true)
+            let checkpointURL = candidateRootDirectory
+                .appendingPathComponent("generation-\(generationIndex)", isDirectory: true)
                 .appendingPathComponent(checkpointID, isDirectory: true)
             try FileManager.default.createDirectory(at: checkpointURL, withIntermediateDirectories: true)
             try Data("checkpoint:\(checkpointID)".utf8).write(
@@ -2028,8 +2114,12 @@ private final class FakeEvolutionBackend: EvolutionaryTrainingBackend {
                 mutationRate: isIncumbent ? 0 : mutationRate,
                 mutationNoiseScale: isIncumbent ? 0 : mutationNoiseScale,
                 commonRandomSeed: commonRandomSeed,
-                antitheticPairID: config.antitheticSampling ? "g\(generationIndex)-p\(index / 2)" : nil,
-                antitheticSign: config.antitheticSampling ? (index.isMultiple(of: 2) ? 1 : -1) : nil,
+                antitheticPairID: isAntithetic
+                    ? "g\(generationIndex)-p\(variationIndex / 2)"
+                    : nil,
+                antitheticSign: isAntithetic
+                    ? (variationIndex.isMultiple(of: 2) ? 1 : -1)
+                    : nil,
                 mutationSummary: isIncumbent ? "incumbent-parent" : (generationIndex == 0 ? "seeded" : "mutated"),
                 isIncumbent: isIncumbent
             )

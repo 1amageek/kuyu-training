@@ -46,57 +46,56 @@ extension EvolutionRunOrchestrator {
             resume?.generations ?? []
         )
 
+        // Every terminal exit from the loop writes the same accumulated run
+        // state. Call sites vary only in the terminal state, the failure reason,
+        // the partial fitness/traces a failing evaluation contributes, and
+        // whether a best candidate is archived. `bestFitness` stays an explicit
+        // argument because three of the failure exits archive none while the
+        // rest do; the validator only requires one for `.completed` runs.
+        func terminate(
+            _ state: EvolutionRunTerminalState,
+            _ failureReason: String,
+            fitness: [FitnessSummary]? = nil,
+            evaluationTraces: [EvolutionCandidateEvaluationTrace]? = nil,
+            bestFitness: FitnessSummary?
+        ) async -> EvolutionRunResult {
+            await finish(
+                manifest: manifest,
+                state: state,
+                failureReason: failureReason,
+                generations: allGenerations,
+                candidates: allCandidates,
+                fitness: fitness ?? allFitness,
+                // The artifact validator requires one evaluation trace per
+                // candidate, so every exit must carry the traces accumulated for
+                // the candidates it reports.
+                evaluationTraces: evaluationTraces ?? allEvaluationTraces,
+                acceptanceEvaluations: allAcceptanceEvaluations,
+                bestFitness: bestFitness,
+                artifactDirectory: artifactDirectory,
+                onEvent: onEvent
+            )
+        }
+
         for generationIndex in startGenerationIndex..<config.generationCount {
             if Task.isCancelled {
-                return await finish(
-                    manifest: manifest,
-                    state: .cancelled,
-                    failureReason: "cancelled",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
-                )
+                return await terminate(.cancelled, "cancelled", bestFitness: bestSearchFitness)
             }
             if stopRequested() {
                 // Cooperative graceful stop: the previous generation's checkpoint
                 // is already durable, so this run is resumable from there.
-                return await finish(
-                    manifest: manifest,
-                    state: .paused,
-                    failureReason: "paused-at-generation-\(generationIndex)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                return await terminate(
+                    .paused,
+                    "paused-at-generation-\(generationIndex)",
+                    bestFitness: bestSearchFitness
                 )
             }
             onEvent?(.generationStarted(generationIndex))
             guard !currentPopulation.candidates.isEmpty else {
-                return await finish(
-                    manifest: manifest,
-                    state: .failed,
-                    failureReason: "empty-population-\(generationIndex)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    // Earlier generations are already in `allCandidates`, and the
-                    // artifact validator requires one evaluation trace per
-                    // candidate, so the accumulated traces must be written here
-                    // too. Dropping them emits a bundle that fails its own
-                    // validator with `missingEvaluationTrace`.
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                return await terminate(
+                    .failed,
+                    "empty-population-\(generationIndex)",
+                    bestFitness: nil
                 )
             }
             let generationDirectory = artifactDirectory
@@ -131,18 +130,12 @@ extension EvolutionRunOrchestrator {
                     config: config,
                     candidates: currentPopulation.candidates
                 )
-                return await finish(
-                    manifest: manifest,
-                    state: .cancelled,
-                    failureReason: "cancelled",
-                    generations: allGenerations,
-                    candidates: allCandidates,
+                return await terminate(
+                    .cancelled,
+                    "cancelled",
                     fitness: allFitness + cancelledFitness,
                     evaluationTraces: allEvaluationTraces + cancelledTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                    bestFitness: bestSearchFitness
                 )
             } catch {
                 let failedFitness = evaluationFailureFitness(
@@ -157,17 +150,12 @@ extension EvolutionRunOrchestrator {
                 for summary in failedFitness {
                     onEvent?(.candidateEvaluated(summary))
                 }
-                return await finish(
-                    manifest: manifest,
-                    state: .failed,
-                    failureReason: "evolution-evaluation-failed: \(error)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
+                return await terminate(
+                    .failed,
+                    "evolution-evaluation-failed: \(error)",
                     fitness: allFitness + failedFitness,
                     evaluationTraces: allEvaluationTraces + failedTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                    bestFitness: nil
                 )
             }
             allFitness.append(contentsOf: generationFitness)
@@ -279,31 +267,12 @@ extension EvolutionRunOrchestrator {
                     generationArtifactDirectory: generationDirectory
                 ))
             } catch is CancellationError {
-                return await finish(
-                    manifest: manifest,
-                    state: .cancelled,
-                    failureReason: "cancelled",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
-                )
+                return await terminate(.cancelled, "cancelled", bestFitness: bestSearchFitness)
             } catch {
-                return await finish(
-                    manifest: manifest,
-                    state: .failed,
-                    failureReason: "evolution-backend-failed: \(error)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                return await terminate(
+                    .failed,
+                    "evolution-backend-failed: \(error)",
+                    bestFitness: nil
                 )
             }
             // Commit point: generation `generationIndex` is fully evaluated and the
@@ -325,18 +294,10 @@ extension EvolutionRunOrchestrator {
             do {
                 try candidateArtifactRetainer.validate(retentionRequest)
             } catch {
-                return await finish(
-                    manifest: manifest,
-                    state: .failed,
-                    failureReason: "candidate-artifact-retention-live-set-invalid: \(error)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                return await terminate(
+                    .failed,
+                    "candidate-artifact-retention-live-set-invalid: \(error)",
+                    bestFitness: bestSearchFitness
                 )
             }
             do {
@@ -361,35 +322,19 @@ extension EvolutionRunOrchestrator {
                     to: artifactDirectory
                 )
             } catch {
-                return await finish(
-                    manifest: manifest,
-                    state: .failed,
-                    failureReason: "resume-checkpoint-write-failed: \(error)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                return await terminate(
+                    .failed,
+                    "resume-checkpoint-write-failed: \(error)",
+                    bestFitness: bestSearchFitness
                 )
             }
             do {
                 try candidateArtifactRetainer.retain(retentionRequest)
             } catch {
-                return await finish(
-                    manifest: manifest,
-                    state: .failed,
-                    failureReason: "candidate-artifact-retention-failed: \(error)",
-                    generations: allGenerations,
-                    candidates: allCandidates,
-                    fitness: allFitness,
-                    evaluationTraces: allEvaluationTraces,
-                    acceptanceEvaluations: allAcceptanceEvaluations,
-                    bestFitness: bestSearchFitness,
-                    artifactDirectory: artifactDirectory,
-                    onEvent: onEvent
+                return await terminate(
+                    .failed,
+                    "candidate-artifact-retention-failed: \(error)",
+                    bestFitness: bestSearchFitness
                 )
             }
         }

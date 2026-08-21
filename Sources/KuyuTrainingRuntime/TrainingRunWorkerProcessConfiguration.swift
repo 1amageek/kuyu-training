@@ -6,16 +6,32 @@ public struct TrainingRunWorkerProcessConfiguration: Sendable, Equatable {
     case invalidCachePathComponent(String)
   }
 
-  public let executableURL: URL
+  public let executableSource: TrainingRunWorkerExecutableSource
   public let launchRootDirectory: URL
   public let resourceBundles: [TrainingRunWorkerResourceBundle]
+
+  public var executableURL: URL {
+    executableSource.executableURL
+  }
 
   public init(
     executableURL: URL,
     launchRootDirectory: URL,
     resourceBundles: [TrainingRunWorkerResourceBundle] = []
   ) {
-    self.executableURL = executableURL
+    self.executableSource = TrainingRunWorkerExecutableSource(
+      executableURL: executableURL
+    )
+    self.launchRootDirectory = launchRootDirectory
+    self.resourceBundles = resourceBundles
+  }
+
+  public init(
+    executableSource: TrainingRunWorkerExecutableSource,
+    launchRootDirectory: URL,
+    resourceBundles: [TrainingRunWorkerResourceBundle] = []
+  ) {
+    self.executableSource = executableSource
     self.launchRootDirectory = launchRootDirectory
     self.resourceBundles = resourceBundles
   }
@@ -26,6 +42,36 @@ public struct TrainingRunWorkerProcessConfiguration: Sendable, Equatable {
     pathComponents: [String] = ["Kuyu", "TrainingWorkerLaunches"],
     fileManager: FileManager = .default
   ) throws -> Self {
+    return Self(
+      executableURL: executableURL,
+      launchRootDirectory: try userCacheLaunchRoot(
+        pathComponents: pathComponents,
+        fileManager: fileManager
+      ),
+      resourceBundles: resourceBundles
+    )
+  }
+
+  public static func userCache(
+    executableSource: TrainingRunWorkerExecutableSource,
+    resourceBundles: [TrainingRunWorkerResourceBundle] = [],
+    pathComponents: [String] = ["Kuyu", "TrainingWorkerLaunches"],
+    fileManager: FileManager = .default
+  ) throws -> Self {
+    Self(
+      executableSource: executableSource,
+      launchRootDirectory: try userCacheLaunchRoot(
+        pathComponents: pathComponents,
+        fileManager: fileManager
+      ),
+      resourceBundles: resourceBundles
+    )
+  }
+
+  private static func userCacheLaunchRoot(
+    pathComponents: [String],
+    fileManager: FileManager
+  ) throws -> URL {
     guard let cacheDirectory = fileManager.urls(
       for: .cachesDirectory,
       in: .userDomainMask
@@ -43,10 +89,6 @@ public struct TrainingRunWorkerProcessConfiguration: Sendable, Equatable {
       }
       launchRootDirectory.appendPathComponent(component, isDirectory: true)
     }
-    return Self(
-      executableURL: executableURL,
-      launchRootDirectory: launchRootDirectory,
-      resourceBundles: resourceBundles
-    )
+    return launchRootDirectory
   }
 }

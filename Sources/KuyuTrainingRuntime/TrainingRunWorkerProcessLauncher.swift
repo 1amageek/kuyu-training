@@ -14,15 +14,25 @@ public struct TrainingRunWorkerProcessLauncher: Sendable {
   public static let standardErrorFileName = "worker.stderr.log"
 
   private let configuration: TrainingRunWorkerProcessConfiguration
+  private let executableBundlePreflight:
+    (any TrainingRunWorkerExecutableBundlePreflighting)?
 
-  public init(configuration: TrainingRunWorkerProcessConfiguration) {
+  public init(
+    configuration: TrainingRunWorkerProcessConfiguration,
+    executableBundlePreflight:
+      (any TrainingRunWorkerExecutableBundlePreflighting)? = nil
+  ) {
     self.configuration = configuration
+    self.executableBundlePreflight = executableBundlePreflight
   }
 
   public func launch(
     _ artifact: TrainingRunWorkerLaunchArtifact
   ) async throws -> TrainingRunWorkerProcessHandle {
-    let executable = try validatedExecutable(configuration.executableURL)
+    try verifyExecutableBundle(configuration.executableSource)
+    let executable = try validatedExecutable(
+      configuration.executableSource.executableURL
+    )
     let roots = TrainingRunWorkerAuthorizedRoots(artifact: artifact)
     try TrainingRunWorkerPathAuthorizationPolicy(
       allowedArtifactRoots: roots.artifactRoots,
@@ -39,7 +49,7 @@ public struct TrainingRunWorkerProcessLauncher: Sendable {
     let executableStager = TrainingRunWorkerExecutableStager()
     let receipt = try store.write(artifact) { launchDirectory in
       _ = try executableStager.stage(
-        sourceExecutableURL: executable.url,
+        source: configuration.executableSource,
         expectedIdentity: executable.identity,
         resourceBundles: configuration.resourceBundles,
         in: launchDirectory
@@ -65,11 +75,14 @@ public struct TrainingRunWorkerProcessLauncher: Sendable {
       launchSHA256Digest: receipt.sha256Digest
     )
     let launchDirectory = store.launchDirectory(for: artifact.launchID)
-    let stagedExecutableURL = executableStager.stagedExecutableURL(
-      sourceExecutableURL: executable.url,
+    let stagedExecutableSource = try executableStager.stagedSource(
+      source: configuration.executableSource,
       in: launchDirectory
     )
-    let stagedExecutable = try validatedExecutable(stagedExecutableURL)
+    try verifyExecutableBundle(stagedExecutableSource)
+    let stagedExecutable = try validatedExecutable(
+      stagedExecutableSource.executableURL
+    )
     let standardOutputURL = launchDirectory.appendingPathComponent(
       Self.standardOutputFileName,
       isDirectory: false
@@ -128,5 +141,20 @@ public struct TrainingRunWorkerProcessLauncher: Sendable {
         throw LaunchError.executableUnavailable(path: requestedURL.path)
       }
     }
+  }
+
+  private func verifyExecutableBundle(
+    _ source: TrainingRunWorkerExecutableSource
+  ) throws {
+    guard let executableBundlePreflight,
+      let root = source.bundleRootURL,
+      let executableRelativePath = source.executableRelativePath
+    else {
+      return
+    }
+    try executableBundlePreflight.verifyBundle(
+      at: root,
+      executableRelativePath: executableRelativePath
+    )
   }
 }

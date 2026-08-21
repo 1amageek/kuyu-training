@@ -1,6 +1,4 @@
-import Darwin
 import Foundation
-import KuyuEvolution
 
 public struct TrainingRunWorkerExecutableStager: Sendable {
   public enum StageError: Error, Sendable, Equatable {
@@ -10,6 +8,11 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
     case copyFailed(source: String, destination: String, reason: String)
     case sourceChanged(String)
     case stagedExecutableMismatch(String)
+    case invalidExecutableBundle(path: String, reason: String)
+    case overlappingExecutableBundlePaths(source: String, destination: String)
+    case executableBundleChanged(String)
+    case stagedExecutableBundleMismatch(String)
+    case resourceBundlesUnsupportedForExecutableBundle
     case duplicateResourceBundle(String)
     case invalidResourceBundle(path: String, reason: String)
     case resourceBundleChanged(String)
@@ -26,15 +29,10 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
     let destinationRoot: URL
     let executableURL: URL
     let resourceBundleDirectory: URL
+    let stagedSource: TrainingRunWorkerExecutableSource
   }
 
-  private struct PinnedResourceBundle {
-    let sourceURL: URL
-    let name: String
-    let identity: EvolutionCheckpointReference
-  }
-
-  private let cloner: any TrainingRunWorkerSourceSnapshotCloning
+  let cloner: any TrainingRunWorkerSourceSnapshotCloning
 
   public init(
     cloner: any TrainingRunWorkerSourceSnapshotCloning =
@@ -49,11 +47,35 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
     resourceBundles: [TrainingRunWorkerResourceBundle] = [],
     in launchDirectory: URL
   ) throws -> URL {
-    let pinnedResourceBundles = try pin(resourceBundles)
+    try stage(
+      source: TrainingRunWorkerExecutableSource(
+        executableURL: sourceExecutableURL
+      ),
+      expectedIdentity: expectedIdentity,
+      resourceBundles: resourceBundles,
+      in: launchDirectory
+    ).executableURL
+  }
+
+  func stage(
+    source: TrainingRunWorkerExecutableSource,
+    expectedIdentity: TrainingRunWorkerExecutableIdentity,
+    resourceBundles: [TrainingRunWorkerResourceBundle] = [],
+    in launchDirectory: URL
+  ) throws -> TrainingRunWorkerExecutableSource {
+    if source.isBundle, !resourceBundles.isEmpty {
+      throw StageError.resourceBundlesUnsupportedForExecutableBundle
+    }
     let stagingDirectory = launchDirectory.appendingPathComponent(
       Self.stagingDirectoryName,
       isDirectory: true
     )
+    try validateSeparatedBundlePaths(
+      source: source,
+      stagingDirectory: stagingDirectory
+    )
+    let pinnedExecutableBundle = try executableBundleIdentity(for: source)
+    let pinnedResourceBundles = try pin(resourceBundles)
     guard !FileManager.default.fileExists(atPath: stagingDirectory.path) else {
       throw StageError.stagingDirectoryExists(stagingDirectory.path)
     }
@@ -69,8 +91,8 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
         reason: String(describing: error)
       )
     }
-    let layout = layout(
-      sourceExecutableURL: sourceExecutableURL,
+    let layout = try layout(
+      source: source,
       stagingDirectory: stagingDirectory
     )
     try materialize(source: layout.sourceRoot, destination: layout.destinationRoot)
@@ -100,10 +122,10 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
     try makeReadOnly(stagingDirectory)
 
     let sourceAfterStaging = try TrainingRunWorkerExecutableIdentity.validated(
-      sourceExecutableURL
+      source.executableURL
     ).identity
     guard sourceAfterStaging == expectedIdentity else {
-      throw StageError.sourceChanged(sourceExecutableURL.path)
+      throw StageError.sourceChanged(source.executableURL.path)
     }
     let stagedIdentity = try TrainingRunWorkerExecutableIdentity.validated(
       layout.executableURL
@@ -112,6 +134,19 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
       stagedIdentity.sha256Digest == expectedIdentity.sha256Digest
     else {
       throw StageError.stagedExecutableMismatch(layout.executableURL.path)
+    }
+    if let pinnedExecutableBundle,
+      let sourceRoot = source.bundleRootURL,
+      let stagedRoot = layout.stagedSource.bundleRootURL
+    {
+      let sourceAfterStaging = try executableBundleIdentity(at: sourceRoot)
+      guard sourceAfterStaging == pinnedExecutableBundle else {
+        throw StageError.executableBundleChanged(sourceRoot.path)
+      }
+      let stagedBundle = try executableBundleIdentity(at: stagedRoot)
+      guard stagedBundle == pinnedExecutableBundle else {
+        throw StageError.stagedExecutableBundleMismatch(stagedRoot.path)
+      }
     }
     for resource in pinnedResourceBundles {
       let sourceAfterStaging = try resourceIdentity(
@@ -130,28 +165,60 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
         throw StageError.stagedResourceBundleMismatch(destination.path)
       }
     }
-    return layout.executableURL
+    return layout.stagedSource
   }
 
   func stagedExecutableURL(
     sourceExecutableURL: URL,
     in launchDirectory: URL
-  ) -> URL {
+  ) throws -> URL {
+    try stagedSource(
+      source: TrainingRunWorkerExecutableSource(
+        executableURL: sourceExecutableURL
+      ),
+      in: launchDirectory
+    ).executableURL
+  }
+
+  func stagedSource(
+    source: TrainingRunWorkerExecutableSource,
+    in launchDirectory: URL
+  ) throws -> TrainingRunWorkerExecutableSource {
     let stagingDirectory = launchDirectory.appendingPathComponent(
       Self.stagingDirectoryName,
       isDirectory: true
     )
-    return layout(
-      sourceExecutableURL: sourceExecutableURL,
+    return try layout(
+      source: source,
       stagingDirectory: stagingDirectory
-    ).executableURL
+    ).stagedSource
   }
 
   private func layout(
-    sourceExecutableURL: URL,
+    source: TrainingRunWorkerExecutableSource,
     stagingDirectory: URL
-  ) -> Layout {
-    let executable = sourceExecutableURL.standardizedFileURL
+  ) throws -> Layout {
+    if let sourceRoot = source.bundleRootURL,
+      let executableRelativePath = source.executableRelativePath
+    {
+      let destinationRoot = stagingDirectory.appendingPathComponent(
+        "bundle",
+        isDirectory: true
+      )
+      let stagedSource = try TrainingRunWorkerExecutableSource(
+        bundleRootURL: destinationRoot,
+        executableRelativePath: executableRelativePath
+      )
+      return Layout(
+        sourceRoot: sourceRoot,
+        destinationRoot: destinationRoot,
+        executableURL: stagedSource.executableURL,
+        resourceBundleDirectory: stagingDirectory,
+        stagedSource: stagedSource
+      )
+    }
+
+    let executable = source.executableURL.standardizedFileURL
     let macOSDirectory = executable.deletingLastPathComponent()
     let contentsDirectory = macOSDirectory.deletingLastPathComponent()
     let applicationBundle = contentsDirectory.deletingLastPathComponent()
@@ -163,16 +230,20 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
         applicationBundle.lastPathComponent,
         isDirectory: true
       )
+      let destinationExecutable = destinationBundle
+        .appendingPathComponent("Contents", isDirectory: true)
+        .appendingPathComponent("MacOS", isDirectory: true)
+        .appendingPathComponent(executable.lastPathComponent, isDirectory: false)
       return Layout(
         sourceRoot: applicationBundle,
         destinationRoot: destinationBundle,
-        executableURL: destinationBundle
-          .appendingPathComponent("Contents", isDirectory: true)
-          .appendingPathComponent("MacOS", isDirectory: true)
-          .appendingPathComponent(executable.lastPathComponent, isDirectory: false),
+        executableURL: destinationExecutable,
         resourceBundleDirectory: destinationBundle
           .appendingPathComponent("Contents", isDirectory: true)
-          .appendingPathComponent("Resources", isDirectory: true)
+          .appendingPathComponent("Resources", isDirectory: true),
+        stagedSource: TrainingRunWorkerExecutableSource(
+          executableURL: destinationExecutable
+        )
       )
     }
     let destination = stagingDirectory.appendingPathComponent(
@@ -183,198 +254,11 @@ public struct TrainingRunWorkerExecutableStager: Sendable {
       sourceRoot: executable,
       destinationRoot: destination,
       executableURL: destination,
-      resourceBundleDirectory: stagingDirectory
+      resourceBundleDirectory: stagingDirectory,
+      stagedSource: TrainingRunWorkerExecutableSource(
+        executableURL: destination
+      )
     )
   }
 
-  private func pin(
-    _ resourceBundles: [TrainingRunWorkerResourceBundle]
-  ) throws -> [PinnedResourceBundle] {
-    var names = Set<String>()
-    return try resourceBundles.map { resource in
-      let source = resource.sourceURL.standardizedFileURL
-      let name = source.lastPathComponent
-      guard source.isFileURL,
-        source.pathExtension == "bundle",
-        !name.isEmpty,
-        name != ".",
-        name != ".."
-      else {
-        throw StageError.invalidResourceBundle(
-          path: resource.sourceURL.absoluteString,
-          reason: "expected a file URL ending in .bundle"
-        )
-      }
-      guard names.insert(name.lowercased()).inserted else {
-        throw StageError.duplicateResourceBundle(name)
-      }
-      return PinnedResourceBundle(
-        sourceURL: source,
-        name: name,
-        identity: try resourceIdentity(at: source, name: name)
-      )
-    }
-  }
-
-  private func resourceIdentity(
-    at url: URL,
-    name: String
-  ) throws -> EvolutionCheckpointReference {
-    do {
-      return try EvolutionCheckpointIntegrity().reference(
-        checkpointID: name,
-        checkpointURL: url,
-        artifactRoot: url.deletingLastPathComponent()
-      )
-    } catch {
-      throw StageError.invalidResourceBundle(
-        path: url.path,
-        reason: String(describing: error)
-      )
-    }
-  }
-
-  private static func matches(
-    _ lhs: EvolutionCheckpointReference,
-    _ rhs: EvolutionCheckpointReference
-  ) -> Bool {
-    lhs.sha256Digest == rhs.sha256Digest
-      && lhs.fileCount == rhs.fileCount
-      && lhs.byteCount == rhs.byteCount
-  }
-
-  private func materialize(source: URL, destination: URL) throws {
-    do {
-      try cloner.clone(source: source, destination: destination)
-    } catch let error as POSIXTrainingRunWorkerSourceSnapshotCloner.CloneError {
-      guard case .failed(let code) = error else { throw error }
-      guard Self.supportsCopyFallback(for: code) else {
-        throw StageError.cloneFailed(
-          source: source.path,
-          destination: destination.path,
-          code: code
-        )
-      }
-      do {
-        try FileManager.default.copyItem(at: source, to: destination)
-      } catch {
-        throw StageError.copyFailed(
-          source: source.path,
-          destination: destination.path,
-          reason: String(describing: error)
-        )
-      }
-    } catch {
-      throw StageError.copyFailed(
-        source: source.path,
-        destination: destination.path,
-        reason: String(describing: error)
-      )
-    }
-  }
-
-  private func makeReadOnly(_ root: URL) throws {
-    var rootStatus = stat()
-    let rootResult = root.withUnsafeFileSystemRepresentation { path in
-      guard let path else { return Int32(-1) }
-      return lstat(path, &rootStatus)
-    }
-    guard rootResult == 0 else {
-      throw StageError.permissionUpdateFailed(path: root.path, code: errno)
-    }
-    let rootType = rootStatus.st_mode & mode_t(S_IFMT)
-    if rootType == mode_t(S_IFREG) {
-      let permissions: mode_t = rootStatus.st_mode & mode_t(0o111) == 0
-        ? S_IRUSR
-        : S_IRUSR | S_IXUSR
-      guard Darwin.chmod(root.path, permissions) == 0 else {
-        throw StageError.permissionUpdateFailed(path: root.path, code: errno)
-      }
-      return
-    }
-    guard rootType == mode_t(S_IFDIR) else {
-      throw StageError.unsupportedEntry(root.path)
-    }
-    var enumerationFailure: Error?
-    guard let enumerator = FileManager.default.enumerator(
-      at: root,
-      includingPropertiesForKeys: nil,
-      options: [],
-      errorHandler: { _, error in
-        enumerationFailure = error
-        return false
-      }
-    ) else {
-      throw StageError.unsupportedEntry(root.path)
-    }
-    var entries: [URL] = []
-    for case let entry as URL in enumerator {
-      entries.append(entry)
-    }
-    if let enumerationFailure {
-      throw StageError.copyFailed(
-        source: root.path,
-        destination: root.path,
-        reason: String(describing: enumerationFailure)
-      )
-    }
-    for entry in entries.reversed() {
-      var status = stat()
-      let result = entry.withUnsafeFileSystemRepresentation { path in
-        guard let path else { return Int32(-1) }
-        return lstat(path, &status)
-      }
-      guard result == 0 else {
-        throw StageError.permissionUpdateFailed(path: entry.path, code: errno)
-      }
-      let fileType = status.st_mode & mode_t(S_IFMT)
-      if fileType == mode_t(S_IFLNK) {
-        try validateSymbolicLink(entry, root: root)
-        continue
-      }
-      let permissions: mode_t
-      if fileType == mode_t(S_IFDIR) {
-        permissions = S_IRUSR | S_IXUSR
-      } else if fileType == mode_t(S_IFREG) {
-        permissions = status.st_mode & mode_t(0o111) == 0
-          ? S_IRUSR
-          : S_IRUSR | S_IXUSR
-      } else {
-        throw StageError.unsupportedEntry(entry.path)
-      }
-      guard Darwin.chmod(entry.path, permissions) == 0 else {
-        throw StageError.permissionUpdateFailed(path: entry.path, code: errno)
-      }
-    }
-    guard Darwin.chmod(root.path, S_IRUSR | S_IXUSR) == 0 else {
-      throw StageError.permissionUpdateFailed(path: root.path, code: errno)
-    }
-  }
-
-  private func validateSymbolicLink(_ url: URL, root: URL) throws {
-    let target: String
-    do {
-      target = try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
-    } catch {
-      throw StageError.unsafeSymbolicLink(url.path)
-    }
-    guard !target.hasPrefix("/") else {
-      throw StageError.unsafeSymbolicLink(url.path)
-    }
-    let resolved = url.deletingLastPathComponent()
-      .appendingPathComponent(target)
-      .standardizedFileURL
-      .resolvingSymlinksInPath()
-    let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
-    let rootPrefix = canonicalRoot.path.hasSuffix("/")
-      ? canonicalRoot.path
-      : canonicalRoot.path + "/"
-    guard resolved.path.hasPrefix(rootPrefix) else {
-      throw StageError.unsafeSymbolicLink(url.path)
-    }
-  }
-
-  private static func supportsCopyFallback(for code: Int32) -> Bool {
-    code == EXDEV || code == ENOTSUP || code == ENOSYS || code == ELOOP
-  }
 }

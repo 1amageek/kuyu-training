@@ -95,12 +95,14 @@ flowchart LR
 
 Long-running training is executed outside the UI process. `kuyu-training` owns
 the generic launch, supervision, stop, registration, and reconnection contract;
-the concrete worker service and MLX execution remain in `kuyu` and `kuyu-mlx`.
+the concrete worker service and accelerated execution remain in `kuyu` and the
+selected backend package.
 
 ```mermaid
 flowchart LR
   UI["KuyuUI / Bounded"] --> Executor["AnyTrainingRunExecuting"]
   Executor --> Launch["immutable launch artifact"]
+  Bundle["executable or exact runtime bundle"] --> Launch
   Launch --> Snapshot["read-only CoW source snapshot"]
   Snapshot --> Worker["authenticated worker process"]
   Worker --> Progress["durable append-only progress journal"]
@@ -112,7 +114,7 @@ flowchart LR
 
 | Boundary | Required behavior |
 |---|---|
-| Launch | The launcher creates a read-only copy-on-write `SOURCE_SNAPSHOT`, rewrites the immutable launch artifact to that snapshot, and verifies its digest. Before execution, the worker promotes or reuses the verified source under the destination artifact's `training-continuation/SOURCE_SNAPSHOT`, so resume does not depend on launch-cache retention. The selected executable, or its containing app bundle, is staged into the private launch directory and revalidated by byte count and SHA-256 digest before and after spawn. |
+| Launch | The launcher creates a read-only copy-on-write `SOURCE_SNAPSHOT`, rewrites the immutable launch artifact to that snapshot, and verifies its digest. Before execution, the worker promotes or reuses the verified source under the destination artifact's `training-continuation/SOURCE_SNAPSHOT`, so resume does not depend on launch-cache retention. A standalone executable or containing app bundle preserves the existing byte-count and SHA-256 entrypoint checks. An explicit `TrainingRunWorkerExecutableSource` bundle preserves its relative executable layout, rejects overlapping launch/source roots and separately injected resources, hashes every file and directory entry, stages the exact tree read-only, and rechecks source plus staged identities. An injected `TrainingRunWorkerExecutableBundlePreflighting` verifier runs on both the source and staged bundle; only the staged result can proceed to spawn. |
 | Identity | A registry PID is diagnostic only. A run attempt is identified by launch ID, attempt ID, launch digest, run ID, artifact root, and an exclusively held lease. The original launcher may signal only the unreaped child generation it directly owns; signal and `waitpid` operations are serialized by that process owner so PID reuse cannot redirect a signal. |
 | Stop | Cancellation writes only `RUN_CONTROL/<launch>.<attempt>.stop`. The original parent may escalate after a bounded grace period; a reconnected observer fails closed when its cooperative-stop deadline expires. Once a terminal outcome is visible, stop timeout no longer applies and a separate bounded lease-quiescence deadline begins. |
 | Progress | One persistent writer appends every event to ordered 16 MiB segments named `TRAINING_RUN_WORKER_PROGRESS/<launch>.<attempt>.<segment>.jsonl`. It holds an exclusive attempt lock, synchronizes each segment and the containing directory, rotates without imposing a total-run size cap, and validates sequence plus attempt identity on every read. Reconnection resumes from a `(segment, byteOffset)` cursor; only a torn tail in the final segment is repaired. A persistence failure cancels the run rather than allowing unobservable training. |

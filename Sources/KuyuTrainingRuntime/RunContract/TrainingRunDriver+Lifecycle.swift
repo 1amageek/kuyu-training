@@ -13,8 +13,8 @@ public extension TrainingRunDriver {
         profile: String,
         semanticVersion: String,
         cacheKey: String,
-        mlxRandomSeedBase: UInt64,
-        mlxRandomnessContractID: String,
+        randomSeedBase: UInt64,
+        randomnessContractID: String,
         noiseSeedSalt: UInt64?,
         determinismTier: Int,
         runRoot: URL,
@@ -31,8 +31,8 @@ public extension TrainingRunDriver {
             cacheKey: cacheKey,
             code: code,
             determinism: TrainingRunManifest.DeterminismStamp(
-                mlxRandomSeedBase: mlxRandomSeedBase,
-                mlxRandomnessContractID: mlxRandomnessContractID,
+                randomSeedBase: randomSeedBase,
+                randomnessContractID: randomnessContractID,
                 noiseSeedSalt: noiseSeedSalt,
                 tier: determinismTier
             ),

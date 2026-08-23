@@ -556,7 +556,7 @@ struct TrainingDatasetWriterTests {
             recordCount: 1,
             schemaVersion: 3,
             episodeId: "legacy-v3",
-            policyId: "manasMLX"
+            policyId: "manasMojo"
         )
         let record = TrainingDatasetRecord(
             time: 0,

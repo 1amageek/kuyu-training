@@ -242,7 +242,7 @@ private func makeRecoveryEpisode(
         scenarioId: definition.config.id.rawValue,
         seed: definition.config.seed.rawValue,
         workerIndex: 0,
-        policyId: "manasMLX-policy",
+        policyId: "manasMojo-policy",
         configHash: "recovery-episode-test",
         robotManifestID: nil,
         rewardSum: -0.5,

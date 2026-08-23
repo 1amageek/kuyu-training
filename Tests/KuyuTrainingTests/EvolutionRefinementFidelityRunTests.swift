@@ -110,7 +110,7 @@ private func refinementRunConfig(
         runID: runID,
         taskID: "attitude",
         configHash: "config-hash",
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         populationSize: 3,
         generationCount: 2,
         eliteCount: 1,

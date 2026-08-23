@@ -6,8 +6,8 @@ Generic training contracts and runtime infrastructure for the Kuyu simulation en
 
 kuyu-training owns backend-agnostic training contracts: project packages,
 templates, rollout artifacts, GA/RL protocols, training plans, runtime
-orchestration, and artifact validation. Concrete Manas/MLX checkpoint work
-belongs in `kuyu-mlx`.
+orchestration, and artifact validation. Concrete Manas Mojo execution and
+checkpoint work belongs in `kuyu-mojo`.
 
 The generic contract reset is defined in
 `GENERIC_TRAINING_CONTRACT_DESIGN.md`. Generic validators must check contract
@@ -38,7 +38,7 @@ artifacts.
 flowchart LR
   Scenarios["kuyu-scenarios\nscenario semantics"]
   Training["kuyu-training\ntraining contracts"]
-  Backend["kuyu-mlx\nconcrete MLX backend"]
+  Backend["kuyu-mojo\nconcrete Mojo backend"]
   Artifacts["datasets / gates / summaries"]
 
   Scenarios --> Training
@@ -51,7 +51,7 @@ flowchart LR
 |---|---|---|
 | Dataset schemas and writers | Scenario definitions and deterministic seeds | Reward formula authority |
 | Rollout episode contracts and health gates | `RewardDescriptor` provenance | Target altitude/pose semantics |
-| Training plans, templates, and runtime orchestration | Failure, truncation, and terminal reasons | PPO/MLX kernels |
+| Training plans, templates, and runtime orchestration | Failure, truncation, and terminal reasons | PPO/Mojo kernels |
 | Artifact validation and acceptance contracts | Task-quality evaluation results | Manas checkpoint internals |
 | Generic observation/action/policy contracts | Profile-specific schema requirements | Robot-specific action semantics |
 
@@ -89,7 +89,7 @@ flowchart LR
 - Training code must consume typed scenario APIs for task references and gates;
   fallback target heights or reward constants must not be duplicated here.
 - Backend-specific acceleration and checkpoint serialization belong in
-  `kuyu-mlx`; this package should expose typed contracts and validation only.
+  `kuyu-mojo`; this package exposes typed contracts and validation only.
 
 ### Process Worker Contract
 
@@ -156,7 +156,7 @@ Existing evolution code is connected to the typed skeleton through adapters:
 | `TypedEvolutionLegacyEvaluatorAdapter` | `TypedTrainingBackend` -> existing `EvolutionCandidateEvaluating` |
 | `AnyCheckpointEvaluator` | concrete `CheckpointEvaluating` -> type-erased checkpoint evaluator |
 
-This lets existing orchestrators keep running while new MLX backends implement
+This lets existing orchestrators keep running while Mojo backends implement
 the generic typed protocols directly.
 
 ### Data Collection
@@ -184,7 +184,7 @@ the generic typed protocols directly.
 ### Learning Project Templates
 
 `LearningProjectTemplate` is the typed project format used by UI, CLI, and validators before a learning run starts.
-It describes the robot class, descriptor reference, task, curriculum, observation/action contracts, checkpoint policy, compute profile, and evaluation gate without depending on any concrete MLX implementation.
+It describes the robot class, descriptor reference, task, curriculum, observation/action contracts, checkpoint policy, compute profile, and evaluation gate without depending on a concrete numerical implementation.
 
 ```text
 LearningProjectTemplate
@@ -305,7 +305,7 @@ KuyuCore
   |           |
   |           +-- KuyuTraining (this package)
   |                 |
-  |                 +-- kuyu-mlx (implements Manas/MLX backends)
+  |                 +-- kuyu-mojo (implements Manas/Mojo backends)
   |                       |
   |                       +-- kuyu-app (CLI/UI adapters)
   |                             |

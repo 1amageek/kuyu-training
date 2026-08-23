@@ -42,8 +42,8 @@ struct TrainingRunContractTests {
                 buildConfiguration: "Debug"
             ),
             determinism: TrainingRunManifest.DeterminismStamp(
-                mlxRandomSeedBase: 7,
-                mlxRandomnessContractID: "test-task-local-rng-v1",
+                randomSeedBase: 7,
+                randomnessContractID: "test-task-local-rng-v1",
                 noiseSeedSalt: 11,
                 tier: tier
             ),
@@ -55,7 +55,7 @@ struct TrainingRunContractTests {
             launch: TrainingRunManifest.LaunchRecord(
                 executablePath: "/usr/bin/kuyu",
                 arguments: ["train", "attitude"],
-                environmentOverrides: ["KUYU_MLX_RUN_REAL_ROBOT_PPO": "1"]
+                environmentOverrides: ["KUYU_MOJO_RUN_REAL_ROBOT_PPO": "1"]
             )
         )
     }

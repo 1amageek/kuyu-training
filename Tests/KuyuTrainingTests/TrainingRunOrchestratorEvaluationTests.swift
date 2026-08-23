@@ -189,7 +189,7 @@ struct TrainingRunOrchestratorEvaluationTests {
 
     private func makeRequest() throws -> SimulationRunRequest {
         SimulationRunRequest(
-            controller: .manasMLX,
+            controller: .learnedPolicy,
             taskMode: .singleLift,
             gains: try ImuRateDampingCutGains(kp: 2, kd: 0.25, yawDamping: 0.2),
             cutPeriodSteps: 1,

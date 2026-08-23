@@ -113,7 +113,7 @@ private func resumeConfig(runID: String, generationCount: Int) -> EvolutionRunCo
         runID: runID,
         taskID: "lift",
         configHash: "resume-config-hash",
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         populationSize: 4,
         generationCount: generationCount,
         eliteCount: 2,

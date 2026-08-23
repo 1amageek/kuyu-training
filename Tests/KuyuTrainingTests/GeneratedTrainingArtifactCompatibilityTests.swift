@@ -1027,7 +1027,7 @@ private func generatedEvolutionArtifact(
         runID: runID,
         taskID: "lift",
         configHash: "config-hash",
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         populationSize: 1,
         generationCount: 1,
         eliteCount: 1,

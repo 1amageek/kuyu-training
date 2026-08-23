@@ -34,8 +34,8 @@ private func beginControlTestRecorder(runRoot: URL) throws -> TrainingRunDriver 
             buildConfiguration: "debug"
         ),
         determinism: TrainingRunManifest.DeterminismStamp(
-            mlxRandomSeedBase: 0,
-            mlxRandomnessContractID: "test-task-local-rng-v1",
+            randomSeedBase: 0,
+            randomnessContractID: "test-task-local-rng-v1",
             noiseSeedSalt: nil,
             tier: 0
         ),

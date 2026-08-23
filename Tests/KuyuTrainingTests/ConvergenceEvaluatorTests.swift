@@ -89,7 +89,7 @@ import Testing
         configHash: "config-hash",
         suiteID: "Single Lift",
         seedSet: [1, 2],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         parentCheckpointID: nil,
         outputCheckpointID: "ckpt-out",
         workerCount: 2,
@@ -183,7 +183,7 @@ import Testing
         configHash: "config-hash",
         suiteID: "Single Lift",
         seedSet: [1],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         outputCheckpointID: nil,
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),
@@ -237,7 +237,7 @@ import Testing
         configHash: "config-hash",
         suiteID: "Lift",
         seedSet: [1],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         outputCheckpointID: nil,
         workerCount: 2,
         startedAt: Date(timeIntervalSince1970: 1),
@@ -497,7 +497,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -540,7 +540,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -590,7 +590,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -627,7 +627,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -671,7 +671,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -721,7 +721,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -767,7 +767,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -810,7 +810,7 @@ import Testing
                 workerIndex: index,
                 snapshot: WorkerSnapshot(
                     identity: SnapshotIdentity(
-                        policyID: "manasMLX",
+                        policyID: "manasMojo",
                         snapshotID: "worker-\(index)"
                     ),
                     workerIndex: index,
@@ -847,7 +847,7 @@ import Testing
             workerCount: 4,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX",
+            policyID: "manasMojo",
             parallelWorkerPlan: workerPlan
         ),
         runRequest: try trainingContractRunRequest(),
@@ -903,7 +903,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         runRequest: try trainingContractRunRequest(),
         trainingTemplate: TrainingBackendRequest(
@@ -954,7 +954,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1190,7 +1190,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1272,7 +1272,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1356,7 +1356,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1415,7 +1415,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1466,7 +1466,7 @@ import Testing
             enableDatasetExport: true,
             enableTraining: true,
             parentCheckpointID: "source-checkpoint",
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1520,7 +1520,7 @@ import Testing
             minDelta: 0.01,
             enableDatasetExport: true,
             enableTraining: true,
-            policyID: "manasMLX"
+            policyID: "manasMojo"
         ),
         trainingTemplate: TrainingBackendRequest(
             datasetURL: directory,
@@ -1550,7 +1550,7 @@ import Testing
         configHash: "config-a",
         suiteID: "Single Lift",
         seedSet: [1],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),
         terminalState: .running
@@ -1575,7 +1575,7 @@ import Testing
     let provider = FakeSnapshotProvider(lease: SnapshotLease(
         snapshot: WorkerSnapshot(
             identity: SnapshotIdentity(
-                policyID: "manasMLX",
+                policyID: "manasMojo",
                 snapshotID: "snapshot-worker-0",
                 robotManifestID: "robot-a",
                 configHash: "config-a"
@@ -1589,7 +1589,7 @@ import Testing
 
     let lease = try await provider.leaseSnapshot(workerIndex: 0)
 
-    #expect(lease.snapshot.identity.policyID == "manasMLX")
+    #expect(lease.snapshot.identity.policyID == "manasMojo")
     #expect(lease.snapshot.identity.snapshotID == "snapshot-worker-0")
     #expect(lease.snapshot.workerIndex == 0)
     #expect(lease.snapshot.checkpointURL.path == "/tmp/snapshot-worker-0")
@@ -1675,7 +1675,7 @@ private func writeTrainingRunArtifact(
         configHash: "config-hash",
         suiteID: "Lift",
         seedSet: [1],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         outputCheckpointID: outputCheckpointID,
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),
@@ -1825,7 +1825,7 @@ private struct WorkerIndexedSnapshotProvider: SnapshotProviding {
     func leaseSnapshot(workerIndex: Int) async throws -> SnapshotLease {
         SnapshotLease(snapshot: WorkerSnapshot(
             identity: SnapshotIdentity(
-                policyID: "manasMLX",
+                policyID: "manasMojo",
                 snapshotID: "snapshot-worker-\(workerIndex)"
             ),
             workerIndex: workerIndex,
@@ -1896,7 +1896,7 @@ private final class FakeTrainingProbeExecutor: TrainingProbeScenarioExecuting {
 
 private func trainingContractRunRequest() throws -> SimulationRunRequest {
     SimulationRunRequest(
-        controller: .manasMLX,
+        controller: .learnedPolicy,
         taskMode: .singleLift,
         gains: try ImuRateDampingCutGains(kp: 2.0, kd: 0.25, yawDamping: 0.2),
         cutPeriodSteps: 1,

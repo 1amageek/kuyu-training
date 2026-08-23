@@ -18,7 +18,7 @@ struct TrainingRunWorkerResourceBundleTests {
       ofItemAtPath: sourceExecutable.path
     )
     let resourceBundle = directory.appendingPathComponent(
-      "mlx-swift_Cmlx.bundle",
+      "mojo-runtime.bundle",
       isDirectory: true
     )
     let resourceDirectory = resourceBundle
@@ -85,7 +85,7 @@ struct TrainingRunWorkerResourceBundleTests {
 
     #expect(
       throws: TrainingRunWorkerExecutableStager.StageError.duplicateResourceBundle(
-        "mlx-swift_Cmlx.bundle"
+        "mojo-runtime.bundle"
       )
     ) {
       _ = try TrainingRunWorkerExecutableStager().stage(
@@ -110,7 +110,7 @@ struct TrainingRunWorkerResourceBundleTests {
   }
 
   private func resourceBundle(in root: URL) throws -> URL {
-    let bundle = root.appendingPathComponent("mlx-swift_Cmlx.bundle", isDirectory: true)
+    let bundle = root.appendingPathComponent("mojo-runtime.bundle", isDirectory: true)
     try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
     try Data("resource".utf8).write(
       to: bundle.appendingPathComponent("default.metallib", isDirectory: false)

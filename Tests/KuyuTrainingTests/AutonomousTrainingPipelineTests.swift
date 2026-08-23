@@ -339,7 +339,7 @@ private func makeTrainingRunArtifactBundle(
         configHash: "config",
         suiteID: suiteID,
         seedSet: [1],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         outputCheckpointID: checkpointURL?.lastPathComponent,
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),

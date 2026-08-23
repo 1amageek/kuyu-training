@@ -16,7 +16,7 @@ import Testing
     #expect(profile.maximumAltitudeErrorRatio == 1)
     #expect(profile.requiresParentCheckpointEvaluation)
     #expect(profile.liftThresholdSource == "scenario.liftEnvelope")
-    #expect(profile.motorNerveSettings(controllerRawValue: "manasMLX").rateLimitPerSecond == 2)
+    #expect(profile.motorNerveSettings(controllerRawValue: "manasMojo").rateLimitPerSecond == 2)
     #expect(profile.motorNerveSettings(controllerRawValue: "Teacher Active Altitude Hold").rateLimitPerSecond == 100)
 }
 
@@ -31,7 +31,7 @@ import Testing
     #expect(profile.minimumHoldTimeRatio == 1)
     #expect(profile.maximumAltitudeErrorRatio == 1)
     #expect(profile.requiresParentCheckpointEvaluation)
-    #expect(profile.motorNerveSettings(controllerRawValue: "manasMLX").rateLimitPerSecond == 100)
+    #expect(profile.motorNerveSettings(controllerRawValue: "manasMojo").rateLimitPerSecond == 100)
 }
 
 @Test func taskEvaluationProfileDefinesAttitudeAsNonLiftContract() throws {

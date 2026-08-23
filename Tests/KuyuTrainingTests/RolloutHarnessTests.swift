@@ -13,14 +13,14 @@ import KuyuScenarios
 
 @Test func policySnapshotCarriesWorkerLocalModelIdentity() {
     let snapshot = PolicySnapshot(
-        policyId: "manasMLX",
+        policyId: "manasMojo",
         snapshotId: "snapshot-a",
         robotManifestId: "robot-a",
         modelPath: "/tmp/model",
         configHash: "hash-a"
     )
 
-    #expect(snapshot.policyId == "manasMLX")
+    #expect(snapshot.policyId == "manasMojo")
     #expect(snapshot.snapshotId == "snapshot-a")
     #expect(snapshot.robotManifestId == "robot-a")
     #expect(snapshot.configHash == "hash-a")

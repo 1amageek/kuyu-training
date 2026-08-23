@@ -1,14 +1,14 @@
 import Foundation
 
 extension TrainingRunDriver {
-    /// Resolves the MLX task-local seed base from `KUYU_MLX_SEED`, defaulting to 0.
+    /// Resolves the backend-neutral task-local seed base from `KUYU_RANDOM_SEED`, defaulting to 0.
     /// An unparsable value is a typed error — never silently fall back.
-    public static func resolveMLXRandomSeedBase(environment: [String: String]) throws -> UInt64 {
-        guard let raw = environment["KUYU_MLX_SEED"] else {
+    public static func resolveRandomSeedBase(environment: [String: String]) throws -> UInt64 {
+        guard let raw = environment["KUYU_RANDOM_SEED"] else {
             return 0
         }
         guard let seed = UInt64(raw) else {
-            throw DriverError.invalidSeedOverride(variable: "KUYU_MLX_SEED", value: raw)
+            throw DriverError.invalidSeedOverride(variable: "KUYU_RANDOM_SEED", value: raw)
         }
         return seed
     }

@@ -101,7 +101,7 @@ private func runObservabilityManifest() -> LearningRunManifest {
         configHash: "config-hash",
         suiteID: "attitude",
         seedSet: [42],
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         outputCheckpointID: "candidate",
         workerCount: 1,
         startedAt: Date(timeIntervalSince1970: 1),

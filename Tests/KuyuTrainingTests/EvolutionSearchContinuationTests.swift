@@ -154,7 +154,7 @@ private func continuationRunConfig(
         runID: runID,
         taskID: "attitude",
         configHash: "config-hash",
-        policyID: "manasMLX",
+        policyID: "manasMojo",
         populationSize: 3,
         generationCount: generationCount,
         eliteCount: 1,
